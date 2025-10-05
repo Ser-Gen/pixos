@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		body {
+			background-color: #333;
+			color: #fff;
+		}
+	</style>
+</head>
+<body>
+
+<img src="image.1.png" id="omg" alt="">
+<select name="" id="kek">
+	<option value="eng">eng</option>
+	<option value="rus">rus</option>
+	<option value="engrus">eng + rus</option>
+</select>
+<button id="lol">start</button>
+
+<!-- https://github.com/naptha/tesseract.js -->
+<!-- v5 -->
+<script src='tesseract.5.1.0.min.js'></script>
+<script type="module">
+window.openFile = function (imgURL) {
+	omg.src = imgURL;
+
+	lol.onclick = async function () {
+		console.log('kek')
+		const { createWorker } = await Tesseract;
+		var langs;
+
+		switch (kek.value) {
+			case 'eng':
+				langs = ['eng'];
+				break;
+			case 'rus':
+				langs = ['rus'];
+				break;
+			case 'engrus':
+				langs = ['eng', 'rus'];
+				break;
+		}
+
+		const worker = await createWorker(langs);
+
+		(async () => {
+			const { data } = await worker.recognize(imgURL);
+
+			// https://github.com/naptha/tesseract.js/issues/738
+			// data.lines.forEach(line => {
+			// 	console.log(line);
+			// })
+
+document.body.insertAdjacentHTML('beforeend', `<textarea>
+${data.text}
+</textarea>`);
+			await worker.terminate();
+		})();
+	}
+}
+
+onload = function () {
+	// openFile(omg.src);
+}
+</script>
+</body>
+</html>

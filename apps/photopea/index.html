@@ -1,0 +1,57 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+	<style>
+		#photopea {
+			position: fixed;
+			top: 0;
+			left: 0;
+			width: 100% !important;
+			height: 100% !important;
+		}
+	</style>
+
+    <title>Photopea-api-demo-2</title>
+    
+    <script>
+      var n = 0, wnd;
+	  var toOpen = [];
+      function iframeLoaded(pp) {
+        wnd = pp.contentWindow;
+        window.addEventListener("message", ppReady);
+      }
+
+      function ppReady(e) {
+        console.log(e);
+        
+        if (e.data == "done") {
+          n++;
+
+          if(n==1) {
+			wnd.postMessage(toOpen.pop(), "*");
+          }
+          if(n==2) wnd.postMessage("activeDocument.saveToOE(\"jpg\")","*");
+        }
+      }
+
+      function openFile(ab) {
+          toOpen.push(ab);
+      }
+
+	  window.openFile = openFile;
+    </script>    
+  </head>  
+  <body>
+    <h1>
+      Load a file (as ArrayBuffer) and give it to Photopea
+    </h1>
+    <p>
+      This is demo 2 for <a href="https://www.photopea.com/api/live">Photopea Live Messaging API</a><br/>
+    </p>
+    <iframe id="photopea" src="https://www.photopea.com" style="width:800px; height:500px; border:none;" onload="iframeLoaded(this)"></iframe>
+  </body>
+</html>
