@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+</head>
+<body>
+<script src="vips.js"></script>
+<script type="module">
+	const vips = await Vips();
+	console.log(vips);
+	// let im = vips.Image.newFromFile('/__browserfs__/files/IMG_7044');
+	// const out = im.writeToBuffer('.jpg');
+	// console.log(im);
+
+fetch('/__browserfs__/files/pizza_panda-1.p8.png')
+// fetch('/__browserfs__/files/IMG_7044')
+.then(r=>r.arrayBuffer()).then(ab => {
+	console.log(ab);
+	let im = vips.Image.newFromBuffer(ab);
+	const out = im.writeToBuffer('.jpg');
+	console.log(im);
+	console.log(out.buffer);
+});
+</script>
+</body>
+</html>
