@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>jquery terminal</title>
+	<style>
+		body {
+			background-color: #000;
+			color: #fff;
+		}
+	</style>
+</head>
+<body>
+
+<ul>
+	<li>https://terminal.jcubic.pl/api_reference.php</li>
+	<li>https://browser.rammerhead.org/146b42a1d9964546914817308e6bee00/_rhsredmM://kgkYe3Q3.3eHdh7.Hu/w1h9EV4~.1yq#pipe</li>
+	<li>https://codepen.io/jcubic/pen/vYLvvXx?editors=0010</li>
+	<li>https://github.com/jcubic/jquery.terminal/wiki/Getting-Started</li>
+	<li>https://github.com/DustinBrett/daedalOS/blob/main/utils/functions.ts</li>
+	<li>https://github.com/DustinBrett/daedalOS/blob/main/components/apps/Terminal/useCommandInterpreter.ts#L401</li>
+</ul>
+
+<script src="../jquery-1.12.4.js"></script>
+<script src="autocomplete_menu.js"></script>
+<script src="jquery.terminal.min.js"></script>
+<script src="pipe.js"></script>
+<link rel="stylesheet" href="jquery.terminal.min.css">
+
+<!-- <script src="https://use.ntpjs.org/ntp.js" async defer></script> -->
+
+<script>
+var termHandlers = {
+    echo: function(string) {
+        return new Promise(function(resolve) {
+            term.echo(string);
+			resolve()
+        });
+    },
+	echoch: function(string) {
+        return new Promise(function(resolve) {
+            term.echo(string);
+			resolve()
+        });
+    },
+    // read: function() {
+    //     return term.read('').then(function(string) {
+    //         term.echo('read[' +(++count)+']: ' + string);
+    //     });
+    // }
+};
+var term = $('body').terminal(termHandlers, {
+    pipe: true,
+	checkArity: false,
+	greetings: 'My Terminal\n',
+	tabcompletion: true,
+	completion: function() {
+		return Object.keys(termHandlers);
+	},
+	autocompleteMenu: true,
+});
+</script>
+</body>
+</html>

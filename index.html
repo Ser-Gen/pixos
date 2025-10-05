@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		body {
+			background-color: #333;
+			color: #fff;
+			margin: 0;
+		}
+	</style>
+</head>
+<body>
+<script src="browserfs.js"></script>
+<script src="js/jquery-1.11.1.min.js"></script>
+
+<script src="js/goldenlayout/goldenlayout.min.js"></script>
+<link rel="stylesheet" href="js/goldenlayout/goldenlayout-base.css">
+<link rel="stylesheet" href="js/goldenlayout/goldenlayout-dark-theme.css">
+<style>
+	html,
+	body,
+	#root {
+		margin: 0;
+		height: 100%;
+	}
+	body {
+		background-color: #333;
+		color: #fff;
+	}
+	iframe {
+		border: 1px solid #000;
+		background-color: rgba(255,255,255,.3);
+		box-sizing: border-box;
+	}
+	#omg {
+		position: fixed;
+		top: 0;
+		left: 50%;
+		z-index: 100;
+	}
+</style>
+
+<div id="root"></div>
+
+<script type="module">
+import WM from "./js/goldenlayout/goldenlayout.wm.js";
+
+var winManager = new WM({
+	root: '#root',
+});
+
+var scope = location.pathname.replace(/\/[^\/]+$/, '/');
+
+if ('serviceWorker' in navigator) {
+	// loading this repo from browerFS will not work because serviceWorker can't be loaded from
+	// service worker.
+	if (!scope.match(/__browserfs__/)) {
+		navigator.serviceWorker.register('sw.js', {scope})
+			.then(function(reg) {
+				reg.addEventListener('updatefound', function() {
+					var installingWorker = reg.installing;
+					console.log('A new service worker is being installed:',
+								installingWorker);
+				});
+				// registration worked
+				console.log('Registration succeeded. Scope is ' + reg.scope);
+
+				BrowserFS.configure({
+					fs: "IndexedDB",
+					options: {
+						storeName: 'lol'
+					}
+				}, fsOnInit);
+			}).catch(function(error) {
+				// registration failed
+					console.log('Registration failed with ' + error);
+			});
+	}
+}
+
+// СДЕЛАТЬ: возможно, нужно показывать прогресбар
+function fsOnInit () {
+	window.fs = BrowserFS.BFSRequire('fs');
+	window.path = BrowserFS.BFSRequire('path');
+	var {Buffer} = BrowserFS.BFSRequire('buffer');
+	Promise.all([
+
+		// COMMON
+		'/apps/jquery-1.11.1.min.js',
+		'/apps/jszip.3.10.1.min.js',
+		'/apps/file-type.19.0.0.js',
+
+		// EXPLORER
+		'/apps/explorer/index.html',
+
+		// ACE EDITOR
+		'/apps/ace/index.html',
+		'/apps/ace/pixos_supported',
+
+		// 7ZIP
+		'/apps/7z/main.js',
+		'/apps/7z/7zz.wasm',
+		'/apps/7z/7zz.es6.min.js',
+
+		// APP MANAGER
+		'/apps/app-manager/index.html',
+	]
+	.map(item=>{
+		fs.stat(item, function (e, stats) {
+			if (
+				!stats
+				|| item.startsWith('/apps/explorer/')
+				|| item.startsWith('/apps/app-manager/')
+			) {
+				return fetch(item +'?'+Math.random())
+					.then(r=>r.arrayBuffer())
+					.then(ab=> {
+						return new Promise(function (resolve, reject) {
+							writeFile(item, Buffer.from(ab), function (e) {
+								resolve(item);
+							})
+						})
+					})
+			}
+			else {
+				return Promise.resolve();
+			}
+		});
+	}))
+	.then(function () {
+		return new Promise(function (resolve) {
+			var appsDir = '/apps/';
+
+			fs.readdir('/apps/', function(e, contents) {
+				if (!contents) {
+					contents = []
+				}
+				Promise.all(contents.map(content=> {
+					return new Promise(function (resolve) {
+						fs.stat(path.join(appsDir, content), function (e, contents) {
+							fs.stat(path.join(appsDir, content, 'pixos_supported'), function (e, stat) {
+								if (stat) {
+									fs.readFile(path.join(appsDir, content, 'pixos_supported'), function (e, file) {
+										resolve([content, file.toString().trim().split(/\n/)])
+									})
+								}
+								else {
+									resolve([content, false])
+								}
+							})
+						})
+					})
+				})).then(function (stats) {
+					resolve(stats);
+				})
+			});
+		})
+	})
+	.then(function (apps) {
+		window.apps = apps;
+
+		winManager.openWindow({
+			title: 'PixOS',
+			content: `<iframe id="view" src="__browserfs__/apps/explorer"></iframe>`,
+		});
+	})
+
+	function writeFile(filePath, contents, cb) {
+		fs.stat(path.dirname(filePath), async function (e, stats) {
+			if (stats) {
+				fs.writeFile(filePath, contents, cb);
+			}
+			else {
+				await checkAndCreateDestinationPath(path.dirname(filePath));
+				console.log(e);
+				fs.writeFile(filePath, contents, cb);
+			}
+		})
+	}
+
+	function checkAndCreateDestinationPath (fileDestination) {
+		const dirPath = fileDestination.split('/');
+
+		return Promise.all(
+			dirPath.map(async (element, index) => {
+				var stats = await stat(dirPath.slice(0, index + 1).join('/'));
+
+				if (!stats) {
+					return await mkdir(dirPath.slice(0, index + 1).join('/')); 
+				}
+				else {
+					return Promise.resolve(true)
+				}
+			})
+		)
+	}
+
+	function stat (path) {
+		return new Promise(function (resolve) {
+			fs.stat(path, function (e, stats) {
+				console.log(e);
+				if (stats) {
+					resolve(true);
+				}
+				else {
+					resolve(false);
+				}
+			})
+		})
+	}
+	function mkdir (path) {
+		return new Promise(function (resolve) {
+			fs.mkdir(path, function (e) {
+				console.log(e);
+				resolve();
+			})
+		})
+	}
+
+	window.saveFileLocal = function (path, content) {
+		path = path.replace('/__browserfs__', '');
+		fs.writeFile(path, content, function (e) {
+			if (e) {
+				console.error(e);
+			}
+		});
+	}
+
+}
+
+window.openPath = openPath;
+window.openFile = openFile;
+
+window.viewCounter = 0;
+
+async function openPath (path, app) {
+	window.viewCounter++;
+
+	if (app === 'new explorer') {
+		winManager.openWindow({
+			title: 'PixOS',
+			content: `<iframe id="view${window.viewCounter}" src="__browserfs__/apps/explorer"></iframe>`,
+		});
+		window['view'+ window.viewCounter].onload = function () {
+			this.contentWindow.cwd = path;
+		}
+	}
+}
+
+async function openFile (path, app) {
+	window.viewCounter++;
+
+	if (
+		app
+		&& app.match(/tic/)
+	) {
+		var ab = await fetch(`/__browserfs__${path}`).then(r=>r.blob());
+		var b = URL.createObjectURL(ab);
+
+		window.__ticUrl = b;
+
+		winManager.openWindow({
+			title: path,
+			content: `<iframe id="view${window.viewCounter}" src="__browserfs__${(app?`/apps/${app}`:path)}"></iframe>`,
+		});
+
+		return;
+	}
+
+	winManager.openWindow({
+		title: path,
+		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${(app?`/apps/${app}`:path)}"></iframe>`,
+	});
+
+	if (app) {
+		if (app === 'photopea') {
+			window['view'+ window.viewCounter].onload = function () {
+				this.contentWindow.openFile(ab, window.path.basename(path));
+			}
+			return;
+		}
+		window['view'+ window.viewCounter].onload = function () {
+			this.contentWindow.openFile(`/__browserfs__${path}`, window.path.basename(path));
+		}
+	}
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, _) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+}
+
+</script>
+</body>
+</html>
