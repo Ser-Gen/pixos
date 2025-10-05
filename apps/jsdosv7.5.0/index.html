@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		body {
+			margin: 0;
+		}
+		#container {
+			width: 100vw;
+			height: 100vh;
+		}
+	</style>
+
+	<script src="js-dos.js"></script>
+	<link href="js-dos.css" rel="stylesheet">
+</head>
+<body>
+<div id="container"></div>
+<script>
+function openFile (src) {
+	// emulators.pathPrefix = "/apps/jsdosv7.5.0/";
+	var d = Dos(document.getElementById("container"));
+	d.run(src);
+}
+</script>
+</body>
+</html>

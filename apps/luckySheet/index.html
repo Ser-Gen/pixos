@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>Hello World!</title>
+<link rel='stylesheet' href='pluginsCss.css' />
+<link rel='stylesheet' href='plugins.css' />
+<link rel='stylesheet' href='luckysheet.css' />
+<link rel='stylesheet' href='iconfont.css' />
+<script src="plugin.js"></script>
+<script src="luckysheet.umd.js"></script>
+<script>
+$(function () {
+	//Configuration item
+	var options = {
+		container: 'luckysheet', //luckysheet is the container id
+		showinfobar:false,
+		plugins:['chart']
+	}
+	luckysheet.create(options)
+});
+</script>
+</head>
+<body>
+<div id="lucky-mask-demo" style="position: absolute;z-index: 1000000;left: 0px;top: 0px;bottom: 0px;right: 0px; background: rgba(255, 255, 255, 0.8); text-align: center;font-size: 40px;align-items:center;justify-content: center;display: none;">Downloading</div>
+<div id="luckysheet" style="margin:0px;padding:0px;position:absolute;width:100%;left: 0px;top: 0;bottom: 0px;outline: none;"></div>
+<script src="luckyexcel.umd.js"></script>
+<!-- <script type="module">
+import l from './luckyexcel.js';
+console.info('=====',l)
+// window.onload = () => {
+//     let upload = document.getElementById("file");
+//     upload.addEventListener("change", function(evt){
+//         var files = evt.target.files;   
+//         importFile(files[0]);
+//     });
+// }
+</script> -->
+<script>
+window.onload = async () => {
+	window.openFile = async function (url) {
+		var file = await fetch(url).then(r=>r.blob());
+		LuckyExcel.transformExcelToLucky(file, function(exportJson, luckysheetfile){
+			
+			if(exportJson.sheets==null || exportJson.sheets.length==0){
+				alert("Failed to read the content of the excel file, currently does not support xls files!");
+				return;
+			}
+			// console.log(exportJson, luckysheetfile);
+			window.luckysheet.destroy();
+			
+			window.luckysheet.create({
+				container: 'luckysheet',
+				showinfobar:false,
+				data:exportJson.sheets,
+				title:exportJson.info.name,
+				userInfo:exportJson.info.name.creator,
+				plugins:['chart']
+			});
+		});
+	}
+}
+</script>
+</body>
+</html>
