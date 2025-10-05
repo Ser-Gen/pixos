@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		body {
+			margin: 0;
+		}
+		#container {
+			width: 100vw;
+			height: 100vh;
+		}
+		ruffle-player {
+			width: 100% !important;
+			height: 100% !important;
+		}
+	</style>
+
+	<script src="ruffle.js"></script>
+</head>
+<body>
+<div id="container"></div>
+<script>
+function openFile (src, cfg) {
+	if (!cfg) {
+		cfg = {}
+	};
+	console.log(location.origin+ src.split('/').slice(0,-1).join('/')+'/');
+	const ruffle = window.RufflePlayer.newest();
+	window.player = ruffle.createPlayer();
+	window.player.config = {
+		autoplay: cfg.autoplay || "on",
+		letterbox: cfg.letterbox || "on",
+		base: cfg.base || location.origin+ src.split('/').slice(0,-1).join('/')+'/',
+		// "unmuteOverlay": "hidden",
+		// "contextMenu": false,
+		// "preloader": false,
+		// "warnOnUnsupportedContent": false,
+	};
+	container.appendChild(window.player);
+	window.player.load(src).then(()=> {
+		setTimeout(() => {
+			window.player.style.width = window.player.metadata.width +'px';
+			window.player.style.height = window.player.metadata.height +'px';
+		}, 1000);
+	});
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		body {
+			background-color: #333;
+			color: #fff;
+			margin: 0;
+		}
+		html,
+		body,
+		#term {
+			height: 100%;
+		}
+	</style>
+</head>
+<body>
+
+<div id="term"></div>
+
+<script src="../jquery-1.11.1.min.js"></script>
+<script src="jquery.terminal.min.js"></script>
+<script src="autocomplete_menu.js"></script>
+<script src="pipe.js"></script>
+<link rel="stylesheet" href="jquery.terminal.min.css">
+
+<script type="module">
+
+window.BrowserFS = parent.BrowserFS;
+
+BrowserFS.configure({
+	fs: "IndexedDB",
+	options: {
+		storeName: 'lol'
+	}
+}, fsOnInit);
+
+window.fs = BrowserFS.BFSRequire('fs');
+window.path = BrowserFS.BFSRequire('path');
+var {Buffer} = BrowserFS.BFSRequire('buffer');
+
+function fsOnInit (e) {
+	if (e) throw e;
+
+	openTerminal();
+}
+
+
+// https://github.com/DustinBrett/daedalOS/blob/eb35a5425accb8508d942d01e003fc0842b60cc3/utils/functions.ts#L675
+function getTZOffsetISOString () {
+	const date = new Date();
+
+	return new Date(
+		date.getTime() - date.getTimezoneOffset() * 60000
+	).toISOString();
+}
+
+function openTerminal () {
+	var currentPath = '/';
+
+	var termHandlers = {
+		// copy — копировать файл
+		// rm — удалить файл
+		// move — переместить и переименовать файл
+		ls: function () {
+			return new Promise(function (resolve) {
+				fs.readdir(currentPath, function(e, contents) {
+					resolve(contents);
+				});
+			})
+		},
+		cat: function (string) {
+			return new Promise(function (resolve) {
+				fs.readFile(path.join(currentPath, string), function (e, contents) {
+						resolve(contents.toString());
+					})
+			})
+		},
+
+		// надо проверять, что путь существует, куда собираемся перейти
+		cd: function (string) {
+			return new Promise(function (resolve) {
+				currentPath = path.join(currentPath, string);
+				term.set_prompt(function (set_prompt) {
+					set_prompt(currentPath+'> ');
+				})
+				resolve()
+			})
+		},
+		mkdir: function (string) {
+			return new Promise(function (resolve) {
+				fs.mkdir(path.join(currentPath, string), function () {
+					resolve();
+				})
+			})
+		},
+		// find — поиск внутри файлов?
+		// touch — поменять дату модификации файла
+
+		// mount — монтировать диск в нужном месте
+		// file — тип файла
+		// mediainfo — инфо о файле
+		// color
+		// echo
+		// exit
+		// ffmpeg
+		// imagemagick
+		// git
+		// ipfs
+		// ? kill
+		// license
+		// systeminfo | neofetch
+		// nslookup
+		// sheep
+		// ? ps
+		// python
+		// quickjs
+		// logout
+		// title
+		// uptime
+		// version
+		// wasmer
+		// ? whoami
+		// wsl
+		// xlsx
+		time: function () {
+			return new Promise(function (resolve) {
+				resolve(`The current time is: ${getTZOffsetISOString()}`);
+			})
+		},
+		weather: function () {
+			return fetch(
+				"https://wttr.in/?1nAF",
+			).then(r=>r.text())
+		},
+
+		// похоже, не работает в РФ
+		whatsmyip: function () {
+			return fetch("https://cloudflare.com/cdn-cgi/trace").then(r=>r.text()).then(cloudFlareIpTraceText => {
+				const { ip = "" } = Object.fromEntries(
+					cloudFlareIpTraceText
+					.trim()
+					.split("\n")
+					.map((entry) => entry.split("=")) || []
+				);
+				const isValidIp = (possibleIp) => {
+					const octets = possibleIp.split(".");
+
+					return (
+					octets.length === 4 &&
+					octets.map(Number).every((octet) => octet > 0 && octet < 256)
+					);
+				};
+
+				return(`IP Configuration
+
+	IPv4 Address. . . . . . . . . . . : ${
+		isValidIp(ip) ? ip : "Unknown"
+}`);
+			})
+		},
+		help: function (string) {
+			return new Promise(function (resolve) {
+				if (!string) {
+					resolve(`Доступные команды:
+${Object.keys(termHandlers)}
+
+Помощь по команде:
+help имяКоманды`)
+				}
+				else {
+					resolve(`Команда ${string}`)
+				}
+			})
+		},
+
+
+		write: function (string) {
+			return new Promise(function (resolve) {
+				fs.writeFile('/test.txt', string || '', function () {
+					resolve();
+				})
+			})
+		},
+		read: function () {
+			return new Promise(function (resolve) {
+				fs.readFile('/test.txt', function (e, contents) {
+						resolve(contents.toString());
+					})
+			})
+		},
+		stat: function () {
+			return new Promise(function (resolve) {
+				fs.stat('/test.txt', function (e, contents) {
+					resolve(contents.isDirectory().toString());
+				})
+			})
+		},
+		fsMethods: function () {
+			return new Promise(function (resolve) {
+				resolve(Object.keys(fs));
+			})
+		},
+		echo: function(string) {
+			return new Promise(function(resolve) {
+				term.echo(string);
+				resolve()
+			});
+		},
+		echoch: function(string) {
+			return new Promise(function(resolve) {
+				term.echo(string);
+				resolve()
+			});
+		},
+		// read: function() {
+		//     return term.read('').then(function(string) {
+		//         term.echo('read[' +(++count)+']: ' + string);
+		//     });
+		// }
+	};
+	var term = $('#term').terminal(termHandlers, {
+		pipe: true,
+		checkArity: false,
+		greetings: `::::::::: ::::::::::: :::    :::  ::::::::   ::::::::  
+:+:    :+:    :+:     :+:    :+: :+:    :+: :+:    :+: 
++:+    +:+    +:+      +:+  +:+  +:+    +:+ +:+        
++#++:++#+     +#+       +#++:+   +#+    +:+ +#++:++#++ 
++#+           +#+      +#+  +#+  +#+    +#+        +#+ 
+#+#           #+#     #+#    #+# #+#    #+# #+#    #+# 
+###       ########### ###    ###  ########   ########  \n`,
+
+		// https://codepen.io/jcubic/pen/MJyYEx
+		// https://github.com/jcubic/jquery.terminal/wiki/Tab-completion
+		completion: function (string, callback) {
+			if (
+				this.get_command().match(/^cat /)
+				|| this.get_command().match(/^cd /)
+			) {
+				return new Promise(function (resolve) {
+				fs.readdir(currentPath, function(e, contents) {
+					resolve(contents);
+				});
+			})	;
+			} else {
+				callback(Object.keys(termHandlers));
+			}
+		},
+		autocompleteMenu: true,
+	});
+
+	term.set_prompt(function (set_prompt) {
+		set_prompt(currentPath+'> ');
+	});
+}
+
+</script>
+</body>
+</html>
