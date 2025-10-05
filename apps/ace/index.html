@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		body {
+			margin: 0;
+		}
+		#container {
+			width: 100vw;
+			height: 100vh;
+		}
+		#saveass {
+			position: fixed;
+			top: 0;
+			right: 10px;
+			z-index: 1000;
+		}
+	</style>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.32.7/ace.js" integrity="sha512-oz/97HdPI510jvvYzVqE2tzz+jWpvUeVkK5OT0S2kPZOxuR+9cE8zT1V6UgwtRG71ThICBEtkPEzN5tfP/YeYw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+
+<style type="text/css" media="screen">
+	#editor { 
+		position: absolute;
+		top: 0;
+		right: 0;
+		bottom: 0;
+		left: 0;
+	}
+</style>
+
+<div id="editor"></div>
+<button id="saveass">Save As..</button>
+
+<script>
+	var handler;
+	var path;
+	var name;
+	var type;
+	var editor = ace.edit("editor");
+	editor.setTheme("ace/theme/github_dark");
+	editor.session.setMode("ace/mode/markdown");
+	editor.setOptions({
+		useWrapMode: true,   // wrap text to view
+		indentedSoftWrap: true,
+		wrap: "free",
+		wrapMethod: 'auto',
+	});
+function openFile (src) {
+	path = src;
+
+	fetch(path).then(r=>r.text()).then(text => {
+		editor.setValue(text);
+	});
+}
+
+addEventListener('keydown', function (e) {
+	if (
+		(
+			e.ctrlKey
+			|| e.metaKey
+		)
+		&& e.keyCode === 83
+	) {
+		e.preventDefault();
+
+		if (handler) {
+			parent.saveFile(handler, editor.getValue());
+		}
+		else {
+			parent.saveFileLocal(path, editor.getValue(), name, type);
+		}
+	}
+});
+
+saveass.onclick = function () {
+	var name = prompt('kek?', 'kek.txt');
+	var a = document.createElement('a');
+	document.body.append(a);
+	a.href = URL.createObjectURL(blobToFile(textToBlob(editor.getValue()), name));
+	a.download = name;
+	a.click();
+	setTimeout(() => {
+		a.remove();
+		URL.revokeObjectURL(a.href);
+	}, 1000);
+}
+
+
+function blobToFile(theBlob, fileName){
+	return new File([theBlob], fileName, {
+		lastModified: new Date().getTime(),
+		type: theBlob.type
+	});
+}
+function textToBlob (text) {
+	return new Blob([text], {
+		type: "text/plain;charset=utf-8"
+	});
+}
+</script>
+<script>
+</script>
+</body>
+</html>
