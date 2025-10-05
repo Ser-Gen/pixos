@@ -116,7 +116,7 @@ function fsOnInit () {
 				|| item.startsWith('/apps/explorer/')
 				|| item.startsWith('/apps/app-manager/')
 			) {
-				return fetch(item +'?'+Math.random())
+				return fetch(path.join(scope, item) +'?'+Math.random())
 					.then(r=>r.arrayBuffer())
 					.then(ab=> {
 						return new Promise(function (resolve, reject) {
@@ -176,7 +176,6 @@ function fsOnInit () {
 			}
 			else {
 				await checkAndCreateDestinationPath(path.dirname(filePath));
-				console.log(e);
 				fs.writeFile(filePath, contents, cb);
 			}
 		})
@@ -202,7 +201,6 @@ function fsOnInit () {
 	function stat (path) {
 		return new Promise(function (resolve) {
 			fs.stat(path, function (e, stats) {
-				console.log(e);
 				if (stats) {
 					resolve(true);
 				}
@@ -215,7 +213,6 @@ function fsOnInit () {
 	function mkdir (path) {
 		return new Promise(function (resolve) {
 			fs.mkdir(path, function (e) {
-				console.log(e);
 				resolve();
 			})
 		})
