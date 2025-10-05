@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		html,
+		body {
+			height: 100%;
+		}
+		body {
+			background-color: #333;
+			color: #fff;
+			margin: 0;
+		}
+		span.active {
+			text-decoration: underline;
+			cursor: pointer;
+		}
+	</style>
+</head>
+<body>
+
+<div id="explorer"></div>
+
+<script src="../jszip.3.10.1.min.js"></script>
+<script src="../file-type.19.0.0.js"></script>
+<script type="module">
+import wasm7z from "../7z/main.js";
+
+window.BrowserFS = parent.BrowserFS;
+
+BrowserFS.configure({
+	fs: "IndexedDB",
+	options: {
+		storeName: 'lol'
+	}
+}, fsOnInit);
+
+window.fs = BrowserFS.BFSRequire('fs');
+window.path = BrowserFS.BFSRequire('path');
+var {Buffer} = BrowserFS.BFSRequire('buffer');
+
+function fsOnInit (e) {
+	if (e) throw e;
+
+	openExplorer();
+
+	fs.stat('/apps/ffmpeg.0.12.10/ffmpeg.js', function (e, stats) {
+		if (stats) {
+			var s = document.createElement("script");
+			s.type = "text/javascript";
+			s.src = "../ffmpeg.0.12.10/ffmpeg.js";
+			s.onload = function () {
+				window.FFmpeg = FFmpegWASM.FFmpeg;
+			}
+			document.body.append(s);
+		}
+	});
+}
+
+
+async function openExplorer () {
+	var cwd = window.cwd || '/';
+	var root = '#explorer';
+	var rootElem = document.querySelector(root);
+
+	var tmpl = `
+<div class="Explorer">
+	<div class="Explorer__controls" style="border-bottom: 1px solid;">
+		<button class="Explorer__up">up</button>
+		<button class="Explorer__newFile" style="background-color: #0f0;">new File</button>
+		<button class="Explorer__newOnlineFile" style="background-color: #0f0;">add online file</button>
+		<button class="Explorer__newFolder" style="background-color: #0f0;">new Folder</button>
+		<button class="Explorer__rename">rename!</button>
+		<button class="Explorer__getHash">getHash!</button>
+		<button class="Explorer__download">download!</button>
+		<button class="Explorer__extract7z">extract7z</button>
+		<button class="Explorer__extract">extract</button>
+		<button class="Explorer__ffmpeg">ffmpeg</button>
+		<button class="Explorer__remove" style="background-color: #f00;">remove!</button>
+		<input class="Explorer__fileInput" type="file" multiple>
+		<select class="Explorer__viewOptions"></select>
+		<button class="Explorer__viewOptionsSubmit">open!</button>
+	</div>
+	<div class="Explorer__address" style="border-bottom: 1px solid;"></div>
+	<div class="Explorer__selectAll">
+		<input class="Explorer__selectAllCheckbox" type="checkbox">
+	</div>
+	<div class="Explorer__content"></div>
+</div>
+`;
+
+	rootElem.innerHTML = tmpl;
+
+	var ui = {
+		rootElem,
+		explorer: rootElem.querySelector('.Explorer'),
+		up: rootElem.querySelector('.Explorer__up'),
+		newFile: rootElem.querySelector('.Explorer__newFile'),
+		newOnlineFile: rootElem.querySelector('.Explorer__newOnlineFile'),
+		newFolder: rootElem.querySelector('.Explorer__newFolder'),
+		rename: rootElem.querySelector('.Explorer__rename'),
+		getHash: rootElem.querySelector('.Explorer__getHash'),
+		download: rootElem.querySelector('.Explorer__download'),
+		extract7z: rootElem.querySelector('.Explorer__extract7z'),
+		extract: rootElem.querySelector('.Explorer__extract'),
+		ffmpeg: rootElem.querySelector('.Explorer__ffmpeg'),
+		remove: rootElem.querySelector('.Explorer__remove'),
+		fileInput: rootElem.querySelector('.Explorer__fileInput'),
+		address: rootElem.querySelector('.Explorer__address'),
+		selectAll: rootElem.querySelector('.Explorer__selectAll'),
+		selectAllCheckbox: rootElem.querySelector('.Explorer__selectAllCheckbox'),
+		viewOptions: rootElem.querySelector('.Explorer__viewOptions'),
+		viewOptionsSubmit: rootElem.querySelector('.Explorer__viewOptionsSubmit'),
+		content: rootElem.querySelector('.Explorer__content'),
+	}
+
+	ui.explorer.ondblclick = function (e) {
+		if (e.target.closest('.Explorer__item')) {
+			var item = e.target.closest('.Explorer__item');
+			var fileType = item.dataset.type;
+			var filePath = item.dataset.path;
+
+			if (fileType === 'dir') {
+				drawPath(filePath);
+			}
+			else {
+				parent.openFile(filePath);
+			}
+		}
+	}
+
+	ui.up.onclick = function () {
+		drawPath();
+	}
+
+	ui.newFile.onclick = function () {
+		var content = prompt('file content?', 'a,b,c,d');
+		var fname = prompt('file name?', 'kke.txt') ;
+
+		new File([content], fname).arrayBuffer().then(ab=>{
+			fs.writeFile(path.join(cwd, fname), Buffer.from(ab), function (e) {
+
+				// перерисовываем текущее отображение
+				// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+				drawPath();
+			})
+		})
+	}
+
+	ui.newOnlineFile.onclick = function (cfg) {
+		var fileLink = cfg.fileLink || prompt('', '');
+
+		if (fileLink) {
+
+			// СДЕЛАТЬ: переписать эту часть
+// 			if (fileLink.match(/^ipfs:\/\//)) {
+// 		// - ipfs://bafybeihkoviema7g3gxyt6la7vd5ho32ictqbilu3wnlo3rs7ewhnp7lly
+// 				var ipfsLinkTmpl = "https://ipfs.io/ipfs/<CID>";
+// //   "https://<CID>.ipfs.cf-ipfs.com/",
+// //   "https://<CID>.ipfs.dweb.link/",
+// //   "https://cloudflare-ipfs.com/ipfs/<CID>/",
+// 		// "https://gateway.ipfs.io/ipfs/<CID>/"
+// 				var fileCID = fileLink.replace('ipfs://', '');
+
+// 				fileLink = ipfsLinkTmpl.replace('<CID>', fileCID);
+
+// 				fetch(fileLink).then(r => r.arrayBuffer()).then(async function (ab) {
+// 					var fileType = await window.fileTypeFromBuffer(ab);
+// 					var name = fileCID +'.'+ fileType?.ext;
+
+// 					onFileHandler(blobToFile( new Blob([ab], {
+// 						type: fileType?.mime,
+// 					}), name));
+// 				});
+// 				return;
+// 			}
+			fetch(fileLink).then(r=>r.arrayBuffer()).then(ab=>{
+				var name = getNameByPath(decodeURIComponent(fileLink));
+
+				fs.writeFile(path.join(cwd, name), Buffer.from(ab), function (e) {
+
+					// перерисовываем текущее отображение
+					// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+					drawPath();
+				})
+			});
+		}
+	}
+
+	ui.newFolder.onclick = function () {
+		var fname = prompt('folder name?', 'omg') ;
+
+		fs.mkdir(path.join(cwd, fname), function(e) {
+
+			// перерисовываем текущее отображение
+			// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+			drawPath();
+		});
+	}
+
+	ui.getHash.onclick = function () {
+		ui.content.querySelectorAll('.Item__checkbox:checked').forEach(checked => {
+			var item = checked.closest('.Item');
+			var type = item.dataset.type;
+			var path = item.dataset.path;
+
+			fs.readFile(path, function (e, contents) {
+				crypto.subtle.digest("SHA-1", contents).then(hashBuffer => {
+					const hashArray = Array.from(new Uint8Array(hashBuffer));
+					const hashHex = hashArray
+						.map((b) => b.toString(16).padStart(2, "0"))
+						.join("");
+
+					prompt('', hashHex);
+				});
+			})
+		});
+	}
+
+	ui.extract7z.onclick = function () {
+		ui.content.querySelectorAll('.Item__checkbox:checked').forEach(async checked => {
+			var item = checked.closest('.Item');
+			var type = item.dataset.type;
+			var path = item.dataset.path;
+			var name = window.path.basename(path) +'.zip';
+
+			var ab = await readFile(path);
+
+			wasm7z(ab).then(async zip => {
+				await writeFile(window.path.join(cwd, name), Buffer.from(zip))
+
+				drawPath();
+			});
+		});
+	}
+
+	ui.extract.onclick = async function () {
+		ui.content.querySelectorAll('.Item__checkbox:checked').forEach(async checked => {
+			var item = checked.closest('.Item');
+			var type = item.dataset.type;
+			var path = item.dataset.path;
+			var name = window.path.basename(path) +'-extracted';
+
+			if (!await stat(window.path.join(cwd, name))) {
+				await mkdir(window.path.join(cwd, name));
+			}
+
+			var zipData = await readFile(path);
+			var zip = new JSZip();
+
+			zip.loadAsync(copyBuffer(zipData.buffer), {createFolders: true}).then(zip => {
+				var files = zip.files;
+
+				Object.keys(zip.files).forEach(async filePath => {
+					var file = zip.files[filePath];
+
+					if (file.dir) {
+						await mkdir(window.path.join(cwd, name, filePath));
+					}
+					else {
+						var ab = await file.async('arraybuffer');
+						await writeFile(window.path.join(cwd, name, filePath), Buffer.from(ab))
+					}
+				});
+
+				drawPath();
+			})
+		});
+	}
+
+	ui.ffmpeg.onclick = async function () {
+		if (!window.FFmpeg) {
+			alert('FFmpeg не установлен!');
+			return;
+		}
+		if (!window.ffmpeg) {
+			window.ffmpeg = new FFmpeg();
+			window.ffmpeg.on("log", ({ message }) => {
+				console.log(message);
+			})
+			window.ffmpeg.on("progress", ({ progress }) => {
+				console.log(`${progress * 100} %`);
+			});
+			await window.ffmpeg.load({
+				coreURL: location.href+ "../ffmpeg.0.12.10/ffmpeg-core.js",
+			});
+		}
+
+		ui.content.querySelectorAll('.Item__checkbox:checked').forEach(async checked => {
+			var item = checked.closest('.Item');
+			var type = item.dataset.type;
+			var path = item.dataset.path;
+			var name = window.path.basename(path);
+
+			var file = await readFile(path);
+			await ffmpeg.writeFile('input', new Uint8Array(file.buffer));
+			// await ffmpeg.exec(['-i', 'input', '-ss', '0', '-to', '1', 'output.mp4']);
+			await ffmpeg.exec(['-i', 'input', '-c:v', 'libx264', '-movflags', 'faststart', '-crf', '30', '-preset', 'superfast', 'output.mp4']);
+			var ab = await ffmpeg.readFile('output.mp4');
+			var fileType = await window.fileTypeFromBuffer(ab);
+			name = name +'.'+ fileType?.ext;
+
+			writeFile(window.path.join(cwd, name), Buffer.from(ab));
+
+			console.log(ab);
+			console.log(name);
+			console.log(fileType);
+
+			// перерисовываем текущее отображение
+			// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+			drawPath();
+		});
+	}
+
+	ui.download.onclick = function () {
+		ui.content.querySelectorAll('.Item__checkbox:checked').forEach(checked => {
+			var item = checked.closest('.Item');
+			var type = item.dataset.type;
+			var path = item.dataset.path;
+			var name = window.path.basename(path);
+
+			fs.readFile(path, function (e, contents) {
+				downloadBlob(new Blob([contents]), name);
+			})
+		});
+	}
+
+	ui.rename.onclick = function () {
+		ui.content.querySelectorAll('.Item__checkbox:checked').forEach(checked => {
+			var item = checked.closest('.Item');
+			var type = item.dataset.type;
+			var oldPath = item.dataset.path;
+			var fileDir = window.path.dirname(oldPath);
+			var oldName = window.path.basename(oldPath);
+			var newName = prompt('New Name?', oldName);
+
+			if (!newName) {
+				return;
+			}
+
+			var newPath = window.path.join(fileDir, newName);
+
+			fs.rename(oldPath, newPath, function (e) {
+
+				// перерисовываем текущее отображение
+				// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+				drawPath();
+			})
+		});
+	}
+
+	ui.remove.onclick = async function () {
+		await Promise.all(
+			Array.from(ui.content.querySelectorAll('.Item__checkbox:checked')).map(async checked => {
+				var item = checked.closest('.Item');
+				var type = item.dataset.type;
+				var path = item.dataset.path;
+
+				return await unlink(path);
+			})
+		);
+
+		// перерисовываем текущее отображение
+		// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+		drawPath();
+	}
+
+	ui.fileInput.onchange = async function (e) {
+		await Promise.all(Array.from(ui.fileInput.files).map(function (file) {
+			return new Promise(function (resolve) {
+				var name = file.name;
+				var type = file.type;
+				var lastModified = file.lastModified;
+
+				var reader = new FileReader();
+
+				reader.onload = async function () {
+					var ab = this.result;
+
+					await writeFile(
+						path.join(cwd, name),
+						Buffer.from(ab),
+					)
+
+					resolve();
+				}
+
+				reader.readAsArrayBuffer(file);
+			})
+		}));
+
+		// перерисовываем текущее отображение
+		// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+		drawPath();
+	}
+
+	ui.selectAllCheckbox.onchange = function () {
+		if (this.checked) {
+			ui.content.querySelectorAll('input[type="checkbox"]').forEach(input => {
+				input.checked = true;
+			})
+		}
+		else {
+			ui.content.querySelectorAll('input[type="checkbox"]').forEach(input => {
+				input.checked = false;
+			})
+		}
+	}
+
+	ui.viewOptionsSubmit.onclick = function () {
+		if (ui.viewOptions.value) {
+			var item = ui.content.querySelector('.Item__checkbox:checked').closest('.Item');
+			var type = item.dataset.type;
+			var path = item.dataset.path;
+
+			if (
+				type === 'dir'
+			) {
+				if (ui.viewOptions.value === 'explorer') {
+					drawPath(path);
+				}
+				else {
+					parent.openPath(path, ui.viewOptions.value);
+				}
+			}
+			else {
+				parent.openFile(path, ui.viewOptions.value);
+			}
+
+			ui.content.querySelectorAll('.Item__checkbox:checked').forEach(item=>{
+				item.checked = false;
+			})
+		}
+	}
+
+	document.addEventListener('change', function (e) {
+		if (e.target.closest('.Item')) {
+			var input = e.target;
+
+			ui.viewOptions.childNodes.forEach(item=>{
+				item.remove()
+			})
+
+			if (!input.checked) {
+				return;
+			}
+
+			var item = input.closest('.Item');
+			var type = item.dataset.type;
+			var apps = [];
+
+			if (type === 'dir') {
+				apps = [
+					'explorer',
+					'new explorer',
+					'terminal',
+				]
+			}
+			else {
+				var path = item.dataset.path;
+				var ext = window.path.extname(path).replace(/\./, '');
+
+				parent.apps.forEach(app => {
+					if (
+						app[1]
+						&& app[1].indexOf(ext) > -1
+					) {
+						apps.push(app[0]);
+					}
+				});
+			}
+
+			ui.viewOptions.childNodes.forEach(item=>{
+				item.remove()
+			})
+
+			apps.forEach(app=> {
+				ui.viewOptions.add(new Option(app));
+			})
+		}
+	})
+
+	document.addEventListener('paste', async (e) => {
+		e.preventDefault();
+
+		var pastedText = e.clipboardData.getData('Text');
+
+		if (pastedText.trim()) {
+			var pastedTextBlob = new Blob([pastedText], {
+				type: 'text/plain'
+			});
+
+			await onFileHandler(blobToFile(pastedTextBlob, 'pastedText.txt'));
+
+			// перерисовываем текущее отображение
+			// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+			drawPath();
+		}
+
+		if (!e.clipboardData.files.length) {
+			return;
+		}
+
+		await Promise.all(Array.from(e.clipboardData.files).map(onFileHandler));
+
+		// перерисовываем текущее отображение
+		// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+		drawPath();
+	});
+
+	// заброс файла
+	document.body.addEventListener('drop', function handleDragOver(e) {
+		onFile(e);
+		document.body.classList.remove('Page--onDragOver');
+	});
+
+	// реакция на наведение файлом
+	document.body.addEventListener('dragover', function handleDragOver(e) {
+		e.stopPropagation();
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'copy';
+		document.body.classList.add('Page--onDragOver');
+	});
+
+	// отправка файла
+	async function onFile (e) {
+		e.preventDefault();
+
+		var input = e.target;
+		var files = e.dataTransfer ? e.dataTransfer.files : e.target.files;
+
+		if (!files) {
+			var entries = await getAllFileEntries(event.dataTransfer.items);
+
+			entries.forEach(async item=>{
+				const contents = await getFileFromFileEntry(item)
+
+				await onFileHandler(contents, item.fullPath)
+			})
+			drawPath();
+
+			return;
+		};
+
+		await Promise.all(
+			Array.from(files).map(onFileHandler)
+		)
+
+		// перерисовываем текущее отображение
+		// СДЕЛАТЬ: генерить событие наружу, чтобы остальные отображения перерисовывать
+		drawPath();
+	};
+
+	function getFileFromFileEntry (entry) {
+		return new Promise(function (resolve) {
+			entry.file(file=>{
+				resolve(file);
+			});
+		})
+	}
+
+	// Drop handler function to get all files
+async function getAllFileEntries(dataTransferItemList) {
+  let fileEntries = [];
+  // Use BFS to traverse entire directory/file structure
+  let queue = [];
+  // Unfortunately dataTransferItemList is not iterable i.e. no forEach
+  for (let i = 0; i < dataTransferItemList.length; i++) {
+    // Note webkitGetAsEntry a non-standard feature and may change
+    // Usage is necessary for handling directories
+    queue.push(dataTransferItemList[i].webkitGetAsEntry());
+  }
+  while (queue.length > 0) {
+    let entry = queue.shift();
+    if (entry.isFile) {
+      fileEntries.push(entry);
+    } else if (entry.isDirectory) {
+      let reader = entry.createReader();
+      queue.push(...await readAllDirectoryEntries(reader));
+    }
+  }
+  return fileEntries;
+}
+
+// Get all the entries (files or sub-directories) in a directory by calling readEntries until it returns empty array
+async function readAllDirectoryEntries(directoryReader) {
+  let entries = [];
+  let readEntries = await readEntriesPromise(directoryReader);
+  while (readEntries.length > 0) {
+    entries.push(...readEntries);
+    readEntries = await readEntriesPromise(directoryReader);
+  }
+  return entries;
+}
+
+// Wrap readEntries in a promise to make working with readEntries easier
+async function readEntriesPromise(directoryReader) {
+  try {
+    return await new Promise((resolve, reject) => {
+      directoryReader.readEntries(resolve, reject);
+    });
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+	drawPath();
+
+	function drawPath (newCwd) {
+
+		// если нужно открыть нужный путь, пытаемся
+		if (newCwd) {
+			cwd = newCwd;
+		}
+
+		// нормализуем путь
+		// СДЕЛАТЬ: дополнительно проверять на существование
+		if (!cwd) {
+			cwd = '/'
+		}
+
+		ui.content.innerHTML = '';
+
+		fs.readdir(cwd, function(e, contents) {
+			var stats = contents.map(item => {
+				return new Promise(function (resolve) {
+					fs.stat(path.join(cwd, item), function (e, stat) {
+						resolve({
+							fileName: item,
+							filePath: path.join(cwd, item),
+							mDate: stat.mtime.toISOString().slice(0, 10),
+							isDirectory: stat.isDirectory(),
+						});
+					});
+				});
+			});
+
+			Promise.all(stats).then(files => {
+				ui.selectAll.hidden = !files.length;
+
+				files.sort((a,b)=> {
+					return b.isDirectory - a.isDirectory;
+				}).forEach(file=>{
+				ui.content.innerHTML += `
+		<div class="Explorer__item Item" data-path="${file.filePath}" data-type="${file.isDirectory ? 'dir' : 'file'}">
+			<input class="Item__checkbox" type="checkbox">
+			${file.isDirectory ? '📁' : '📄'}
+			${file.fileName}
+		</div>`;
+				});
+			})
+		});
+
+		ui.address.innerHTML = cwd.split('/').map((item, index, array)=>{
+			return `<span ${((index === 0 && cwd === '/') || index === array.length - 1) ? '' : 'class="active"'} style="margin: 0 .3em;" data-path="${'/'+ array.slice(1, index + 1).join('/')}">${item}</span>`;
+		}).join('/');
+		ui.address.querySelector('span:first-child').innerHTML = 'rootfs';
+
+		ui.address.onclick = function (e) {
+			if (e.target.closest('span[data-path]')) {
+				var item = e.target.closest('span[data-path]');
+				var path = item.dataset.path;
+
+				drawPath(path);
+			}
+		}
+	}
+
+
+	async function onFileHandler (file, filePath) {
+		return new Promise(async function (resolve) {
+			var fname = file.name;
+			var ab = await fileToAB(file);
+		
+			await writeFile(
+				path.join(cwd, filePath || fname),
+				Buffer.from(ab)
+			)
+
+			resolve();
+		})
+	}
+
+
+	function getNameByPath (path) {
+		return path.split('/').pop();
+	}
+
+
+
+	function copyBuffer(src)  {
+		var dst = new ArrayBuffer(src.byteLength);
+		new Uint8Array(dst).set(new Uint8Array(src));
+		return dst;
+	}
+
+	function readFile (path) {
+		return new Promise(function (resolve) {
+			fs.readFile(path, function (e, content) {
+				resolve(content);
+			})
+		})
+	}
+
+	function writeFile (path, content) {
+		return new Promise(function (resolve) {
+			fs.stat(window.path.dirname(path), function (e, stats) {
+				if (stats) {
+					fs.writeFile(path, content, function (e) {
+						resolve();
+					});
+				}
+				else {
+					fs.mkdir(window.path.dirname(path), function () {
+						fs.writeFile(path, content, function (e) {
+							resolve();
+						});
+					});
+				}
+			})
+		})
+	}
+
+	function mkdir (path) {
+		return new Promise(function (resolve) {
+			fs.mkdir(path, function (e) {
+				resolve();
+			})
+		})
+	}
+
+	function stat (path) {
+		return new Promise(function (resolve) {
+			fs.stat(path, function (e, stats) {
+				if (stats) {
+					resolve(stats);
+				}
+				else {
+					resolve(false);
+				}
+			})
+		})
+	}
+
+	function unlink (path) {
+		return new Promise(async function (resolve) {
+			var stats = await stat(path);
+
+			if (
+				stats
+				&& stats.isDirectory()
+			) {
+				await deleteFolderRecursive(path);
+				resolve()
+			}
+			else {
+				fs.unlink(path, function (e) {
+					console.log('file deleted successfully');
+					resolve();
+				})
+			}
+		})
+	}
+
+	function rmdir (path) {
+		return new Promise(function (resolve) {
+			fs.rmdir(path, function () {
+				console.log('dir deleted successfully');
+				resolve();
+			});
+		})
+	}
+
+	function readdir (path) {
+		return new Promise(function (resolve) {
+			fs.readdir(path, function (e, contents) {
+				resolve(contents);
+			})
+		});
+	}
+
+	async function deleteFolderRecursive (path) {
+		var stats = await stat(path);
+
+		if (stats) {
+			var dirContent = await readdir(path);
+
+			await Promise.all(dirContent.map(async (file, index) => {
+				var curPath = window.path.join(path, file);
+				var stats = await stat(curPath);
+
+				if (
+					stats
+					&& stats.isDirectory()
+				) {
+					await deleteFolderRecursive(curPath);
+				} else {
+					await unlink(curPath);
+				}
+
+				return Promise.resolve();
+			}));
+
+			await rmdir(path);
+		}
+	};
+
+	// https://blog.logrocket.com/programmatically-downloading-files-browser/
+	function downloadBlob(blob, filename) {
+		// Create an object URL for the blob object
+		const url = URL.createObjectURL(blob);
+
+		// Create a new anchor element
+		const a = document.createElement('a');
+
+		// Set the href and download attributes for the anchor element
+		// You can optionally set other attributes like `title`, etc
+		// Especially, if the anchor element will be attached to the DOM
+		a.href = url;
+		a.download = filename || 'download';
+
+		// Click handler that releases the object URL after the element has been clicked
+		// This is required for one-off downloads of the blob content
+		const clickHandler = () => {
+			setTimeout(() => {
+			URL.revokeObjectURL(url);
+			removeEventListener('click', clickHandler);
+			a.remove();
+			}, 150);
+		};
+
+		// Add the click event listener on the anchor element
+		// Comment out this line if you don't want a one-off download of the blob content
+		a.addEventListener('click', clickHandler, false);
+
+		// Programmatically trigger a click on the anchor element
+		// Useful if you want the download to happen automatically
+		// Without attaching the anchor element to the DOM
+		// Comment out this line if you don't want an automatic download of the blob content
+		a.click();
+
+		// Return the anchor element
+		// Useful if you want a reference to the element
+		// in order to attach it to the DOM or use it in some other way
+		//   return a;
+	}
+
+	function blobToFile(theBlob, fileName){
+		return new File([theBlob], fileName, {
+			lastModified: new Date().getTime(),
+			type: theBlob.type
+		});
+	}
+
+	function fileToAB (file) {
+		return new Promise(function (resolve) {
+			var reader = new FileReader();
+
+			reader.onload = function () {
+				var ab = this.result;
+
+				resolve(ab);
+			}
+
+			reader.readAsArrayBuffer(file);
+		})
+	}
+}
+</script>
+</body>
+</html>

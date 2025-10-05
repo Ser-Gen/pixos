@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		html,
+		body {
+			margin: 0;
+		}
+		#for_viewer {
+			height: 100vh;
+			width: 100vw;
+		}
+	</style>
+</head>
+<body>
+<div id="for_viewer"></div>
+<script src="djvu.js"></script>
+<script src="djvu_viewer.js"></script>
+<script>
+window.onload = async function() {
+	window.openFile = async function (url, name) {
+			var buffer = await fetch(url).then(r=>r.arrayBuffer());
+
+			// save as a global value
+			window.ViewerInstance = new DjVu.Viewer();
+			// render into the element
+			window.ViewerInstance.render(
+				document.querySelector("#for_viewer")
+			);
+			window.ViewerInstance.loadDocument(buffer, name);
+
+	}
+};
+</script>
+</body>
+</html>

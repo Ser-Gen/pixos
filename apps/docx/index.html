@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		body {
+			margin: 0;
+		}
+		#container {
+			width: 100vw;
+			height: 100vh;
+		}
+	</style>
+
+<script src="../jszip.3.10.1.min.js"></script>
+	<script src="docx-preview.js"></script>
+</head>
+<body>
+<div id="container"></div>
+<div id="tmp" hidden></div>
+<script>
+function openFile (src) {
+	fetch(src).then(r=>r.blob()).then(file=>{
+		docx.renderAsync(file, tmp).then(function () {
+			container.innerHTML = tmp.innerHTML;
+		})
+	});
+}
+</script>
+</body>
+</html>
