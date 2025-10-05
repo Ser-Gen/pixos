@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+
+  <title></title>
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="resources/css/text_defaults.css">
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <!-- <reader-page src="1.epub"></reader-page> -->
+  <!-- <reader-page src="2.fb2.zip"></reader-page> -->
+  <!-- <reader-page src="1.fb2"></reader-page> -->
+
+  <script type="module" src="index.js"></script>
+
+  <script>
+    function openFile (src) {
+      var type = src.match(/fb2\.zip$/) ? 'fb2.zip' : src.split(/\//).slice(-1)[0].split(/\./).slice(-1)[0];
+      
+      document.querySelector('reader-page')?.remove();
+      document.body.insertAdjacentHTML('afterbegin', `<reader-page id="kek" src="${src}" type="${type}"></reader-page>`);
+    }
+  </script>
+</body>
+</html>
