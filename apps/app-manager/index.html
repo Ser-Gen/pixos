@@ -288,7 +288,7 @@ Object.keys(apps).forEach(app=>{
 			var appName = item.dataset.name;
 			
 			apps[appName].files.forEach(item=>{
-				return fetch(item +'?'+Math.random())
+				return fetch(parent.location.href + item +'?'+Math.random())
 					.then(r=>r.arrayBuffer())
 					.then(ab=> {
 						return new Promise(function (resolve, reject) {
