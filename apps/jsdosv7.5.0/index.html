@@ -15,6 +15,7 @@
 		}
 	</style>
 
+	<script src="../jszip.3.10.1.min.js"></script>
 	<script src="js-dos.js"></script>
 	<link href="js-dos.css" rel="stylesheet">
 </head>
@@ -22,7 +23,37 @@
 <div id="container"></div>
 <script>
 function openFile (src) {
-	// emulators.pathPrefix = "/apps/jsdosv7.5.0/";
+	if (src.match(/.jsdos$/)) {
+		start(src);
+	}
+	else if (src.match(/.zip$/)) {
+		var zip = new JSZip();
+		fetch('dosbox.conf').then(r=>r.text()).then(dosboxconf=>{
+			fetch(src).then(r=>r.arrayBuffer()).then(ab => {
+				processDosZip(ab, dosboxconf)
+			});
+		});
+
+		function processDosZip (zipFile, dosboxconf) {
+			zip.loadAsync(zipFile).then(zip => {
+				zip.file(".jsdos/dosbox.conf", dosboxconf);
+				zip.generateAsync({
+					type: "blob",
+					compression: "DEFLATE",
+					compressionOptions: {
+						level: 6
+					}
+				}).then(arch=>{
+					var src = URL.createObjectURL(arch);
+
+					start(src);
+				})
+			});
+		}
+	}
+}
+
+function start (src) {
 	var d = Dos(document.getElementById("container"));
 	d.run(src);
 }
