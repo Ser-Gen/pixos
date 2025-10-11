@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Monaco editor</title>
+<link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/editor/editor.main.min.css">
+	<style>
+		html,
+		body,
+		#container {
+			height: 100%;
+			overflow: hidden;
+		}
+		body {
+			margin: 0;
+		}
+		#container {
+			height: calc(100% - 22px);
+		}
+		#panel {
+			background-color: rgb(0, 122, 204);
+			color: #fff;
+			height: 22px;
+			padding-left: 10px;
+			padding-right: 10px;
+		}
+		#panel a {
+			color: #fff;
+			text-decoration: none;
+			font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+			margin-right: 1em;
+		}
+		#panel #right {
+			float: right;
+		}
+	</style>
+</head>
+<body>
+<div id="container"></div>
+	<div id="panel">
+		<a href="../">&larr; В список</a>
+		<div id="right">
+			<select id="modesPicker">
+				<option value="plaintext" selected>plaintext</option>
+			</select>
+		</div>
+	</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
+
+<script type="module">
+
+// require is provided by loader.min.js.
+require.config({
+	paths: {
+		'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs'
+	}
+});
+
+window.openFile = async function (src, name) {
+	var path = src;
+	var text = await fetch(path).then(r=>r.text());
+	var type;
+
+	require(["vs/editor/editor.main"], () => {
+		setModesOptions();
+
+		const onUpdateDebounced = debounce(onUpdate);
+		const mode = findLanguageByFile(name).id;
+
+		type = mode;
+
+		var editor = monaco.editor.create(document.getElementById('container'), {
+			language: "plaintext",
+			theme: "vs-dark",
+			wordWrap: 'on',
+			automaticLayout: true,
+			renderWhitespace: true,
+			insertSpaces: false,
+			tabSize: 4,
+
+			value: text,
+		});
+
+
+		monaco.editor.setModelLanguage(editor.getModel(), mode);
+		modesPicker.value = mode;
+
+		editor.onDidChangeModelContent(onUpdateDebounced);
+
+		modesPicker.onchange = function (e) {
+			monaco.editor.setModelLanguage(editor.getModel(), this.value);
+			onUpdateDebounced();
+		}
+
+		function findLanguageByFile (filename) {
+			var result = '';
+			var languages = monaco.languages.getLanguages();
+			var extension = '.'+ filename.split('.').pop();
+
+			for (var i = 0; i < languages.length; i++) {
+				if (
+					languages[i].extensions?.indexOf(extension) > -1
+				) {
+					return languages[i];
+				}
+			}
+
+			return result;
+		}
+
+		function onUpdate () {
+			const editorValue = editor.getModel().getValue();
+
+			parent.saveFileLocal(path, editorValue, name, type);
+		}
+
+		function setModesOptions () {
+			var MODES = (function() {
+				var modesIds = monaco.languages.getLanguages().map(function(lang) {
+					return lang.id;
+				});
+
+				modesIds.sort();
+
+				return modesIds.map(function(modeId) {
+					return {
+						modeId: modeId,
+					};
+				});
+			})();
+
+			for (var i = 0; i < MODES.length; i++) {
+				var o = document.createElement('option');
+
+				o.textContent = MODES[i].modeId;
+				modesPicker.appendChild(o);
+			}
+		}
+	});
+};
+
+// уменьшение количества вызовов
+function debounce (func, wait, immediate) {
+	var timeout;
+
+	return function() {
+		var context = this;
+		var later = function() {
+			timeout = null;
+			if (!immediate) func.apply(context, arguments);
+		}
+		var callNow = immediate && !timeout;
+		
+		clearTimeout(timeout);
+		timeout = setTimeout(later, wait || 500);
+		if (callNow) func.apply(context, arguments);
+	};
+};
+
+</script>
+</body>
+</html>

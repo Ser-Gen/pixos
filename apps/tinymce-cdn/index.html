@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Document</title>
+	<style>
+		html, body {
+			margin: 0;
+			height: 100%;
+			background: #222;
+		}
+	</style>
+</head>
+<body>
+	<form action="" id="kek">
+		<textarea id="default"></textarea>
+	</form>
+
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/8.1.2/tinymce.min.js"></script>
+	<script type="module">
+		window.openFile = async function (src, name) {
+			var path = src;
+			var text = await fetch(path).then(r=>r.text());
+			var type;
+
+			tinymce.init({
+				license_key: 'gpl',
+				height: '100vh',
+			selector: 'textarea#default',
+		plugins: [
+		'advlist', 'autosave', 'autolink', 'link', 'image', 'lists', 'charmap', 'preview', 'anchor', 'pagebreak',
+		'searchreplace', 'wordcount', 'visualblocks', 'visualchars', 'code', 'fullscreen', 'insertdatetime',
+		'media', 'table', 'emoticons', 'help', 'save'
+		],
+		toolbar: 'save restoredraft | undo redo | styles | bold italic | alignleft aligncenter alignright alignjustify | ' +
+		'bullist numlist outdent indent | link image | print preview media fullscreen | ' +
+		'forecolor backcolor emoticons | help',
+		// menu: {
+		//   favs: { title: 'My Favorites', items: 'code visualaid | searchreplace | emoticons' }
+		// },
+		menubar: 'favs file edit view insert format tools table help',
+			// toolbar: 'save | undo redo | blocks fontfamily fontsize | bold italic underline forecolor backcolor | link image | alignleft aligncenter alignright alignjustify lineheight | checklist bullist numlist indent outdent | removeformat',
+			skin: "oxide-dark",
+	content_css: "dark",
+	autosave_ask_before_unload: false,
+	autosave_restore_when_empty: true,
+	language: 'ru',
+    setup: function (editor) {
+      editor.on('init', function (e) {
+        editor.setContent(text || '');
+      });
+    },
+			});
+
+
+		kek.onsubmit = function (e) {
+			const editorValue = tinymce.activeEditor.getContent();
+
+			parent.saveFileLocal(path, editorValue, name, type);
+		}
+		}
+
+	</script>
+</body>
+</html>

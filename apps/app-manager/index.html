@@ -41,6 +41,30 @@ var apps = {
 			'/apps/app-manager/index.html',
 		],
 	},
+	terminal: {
+		name: 'terminal',
+		files: [
+			'/apps/terminal/index.html',
+			'/apps/terminal/autocomplete_menu.js',
+			'/apps/terminal/jquery.terminal.min.css',
+			'/apps/terminal/jquery.terminal.min.js',
+			'/apps/terminal/pipe.js',
+		],
+	},
+	monaco: {
+		name: 'monaco',
+		files: [
+			'/apps/monaco-cdn/index.html',
+			'/apps/monaco-cdn/pixos_supported',
+		]
+	},
+	tinymce: {
+		name: 'tinymce',
+		files: [
+			'/apps/tinymce-cdn/index.html',
+			'/apps/tinymce-cdn/pixos_supported',
+		]
+	},
 	ffmpeg: {
 		name: 'ffmpeg',
 		files: [
@@ -59,27 +83,17 @@ var apps = {
 			'/apps/mkv-player/pixos_supported',
 		],
 	},
-	pico8: {
-		name: 'pico-8',
+	image: {
+		name: 'image viewer',
 		files: [
-			"/apps/pico8/favicon.ico",
-			"/apps/pico8/index.html",
-			"/apps/pico8/pico8_edu_0206b.js",
-			"/apps/pico8/pixos_supported",
-			"/apps/pico8/zoot_idle.gif",
-			"/apps/pico8/zoot_talking.gif",
-		],
-	},
-	jsdos: {
-		name: 'JS-DOS',
-		files: [
-			'/apps/jsdosv7.5.0/emulators-ui-loader.png',
-			'/apps/jsdosv7.5.0/index.html',
-			'/apps/jsdosv7.5.0/js-dos.css',
-			'/apps/jsdosv7.5.0/js-dos.js',
-			'/apps/jsdosv7.5.0/wdosbox.js',
-			'/apps/jsdosv7.5.0/wdosbox.wasm',
-			'/apps/jsdosv7.5.0/pixos_supported',
+			'/apps/image/comparator.js',
+			'/apps/image/diff_match_patch_uncompressed.js',
+			'/apps/image/getDiffImgData.worker.js',
+			'/apps/image/getDiffInline.js',
+			'/apps/image/image-input.js',
+			'/apps/image/index.html',
+			'/apps/image/paste.js',
+			'/apps/image/pixos_supported',
 		],
 	},
 	ocr: {
@@ -96,41 +110,11 @@ var apps = {
 			'/apps/ocr/tesseract-core-simd-lstm.wasm.js',
 		],
 	},
-	emulatorjs: {
-		name: 'EmulatorJS',
-		files: [
-			'/apps/emulatorjs/index.html',
-			'/apps/emulatorjs/pixos_supported',
-		],
-	},
-	image: {
-		name: 'image viewer',
-		files: [
-			'/apps/image/comparator.js',
-			'/apps/image/diff_match_patch_uncompressed.js',
-			'/apps/image/getDiffImgData.worker.js',
-			'/apps/image/getDiffInline.js',
-			'/apps/image/image-input.js',
-			'/apps/image/index.html',
-			'/apps/image/paste.js',
-			'/apps/image/pixos_supported',
-		],
-	},
 	photopea: {
 		name: 'Photopea',
 		files: [
 			'/apps/photopea/index.html',
 			'/apps/photopea/pixos_supported',
-		],
-	},
-	terminal: {
-		name: 'terminal',
-		files: [
-			'/apps/terminal/index.html',
-			'/apps/terminal/autocomplete_menu.js',
-			'/apps/terminal/jquery.terminal.min.css',
-			'/apps/terminal/jquery.terminal.min.js',
-			'/apps/terminal/pipe.js',
 		],
 	},
 	yaReader: {
@@ -224,6 +208,13 @@ var apps = {
 			'/apps/djvujs/index.html',
 		]
 	},
+	emulatorjs: {
+		name: 'EmulatorJS',
+		files: [
+			'/apps/emulatorjs/index.html',
+			'/apps/emulatorjs/pixos_supported',
+		],
+	},
 	ruffle: {
 		name: 'ruffle',
 		files: [
@@ -249,6 +240,29 @@ var apps = {
 			'/apps/tic80-v1.1-html/tic80.wasm',
 			'/apps/tic80-v1.1-html/pixos_supported',
 		]
+	},
+	pico8: {
+		name: 'pico-8',
+		files: [
+			"/apps/pico8/favicon.ico",
+			"/apps/pico8/index.html",
+			"/apps/pico8/pico8_edu_0206b.js",
+			"/apps/pico8/pixos_supported",
+			"/apps/pico8/zoot_idle.gif",
+			"/apps/pico8/zoot_talking.gif",
+		],
+	},
+	jsdos: {
+		name: 'JS-DOS',
+		files: [
+			'/apps/jsdosv7.5.0/emulators-ui-loader.png',
+			'/apps/jsdosv7.5.0/index.html',
+			'/apps/jsdosv7.5.0/js-dos.css',
+			'/apps/jsdosv7.5.0/js-dos.js',
+			'/apps/jsdosv7.5.0/wdosbox.js',
+			'/apps/jsdosv7.5.0/wdosbox.wasm',
+			'/apps/jsdosv7.5.0/pixos_supported',
+		],
 	},
 };
 
