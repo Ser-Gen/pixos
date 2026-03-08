@@ -17,6 +17,8 @@
 <body>
 <script src="browserfs.js"></script>
 <script src="js/jquery-1.11.1.min.js"></script>
+<script src="apps/file-type.19.0.0.js"></script>
+<script src="apps/app-catalog.js"></script>
 
 <script src="js/goldenlayout/goldenlayout.min.js"></script>
 <link rel="stylesheet" href="js/goldenlayout/goldenlayout-base.css">
@@ -88,6 +90,7 @@ function fsOnInit () {
 	window.fs = BrowserFS.BFSRequire('fs');
 	window.path = BrowserFS.BFSRequire('path');
 	var {Buffer} = BrowserFS.BFSRequire('buffer');
+	window.Buffer = Buffer;
 	Promise.all([
 
 		// COMMON
@@ -109,6 +112,7 @@ function fsOnInit () {
 
 		// APP MANAGER
 		'/apps/app-manager/index.html',
+		'/apps/app-catalog.js',
 	]
 	.map(item=>{
 		fs.stat(item, function (e, stats) {
@@ -116,6 +120,7 @@ function fsOnInit () {
 				!stats
 				|| item.startsWith('/apps/explorer/')
 				|| item.startsWith('/apps/app-manager/')
+				|| item.startsWith('/apps/app-catalog.js')
 			) {
 				return fetch(path.join(scope, item) +'?'+Math.random())
 					.then(r=>r.arrayBuffer())
@@ -133,37 +138,15 @@ function fsOnInit () {
 		});
 	}))
 	.then(function () {
-		return new Promise(function (resolve) {
-			var appsDir = '/apps/';
-
-			fs.readdir('/apps/', function(e, contents) {
-				if (!contents) {
-					contents = []
-				}
-				Promise.all(contents.map(content=> {
-					return new Promise(function (resolve) {
-						fs.stat(path.join(appsDir, content), function (e, contents) {
-							fs.stat(path.join(appsDir, content, 'pixos_supported'), function (e, stat) {
-								if (stat) {
-									fs.readFile(path.join(appsDir, content, 'pixos_supported'), function (e, file) {
-										resolve([content, file.toString().trim().split(/\n/)])
-									})
-								}
-								else {
-									resolve([content, false])
-								}
-							})
-						})
-					})
-				})).then(function (stats) {
-					resolve(stats);
-				})
-			});
-		})
+		return hydrateAppCatalogFromSource();
 	})
-	.then(function (apps) {
-		window.apps = apps;
-
+	.then(function () {
+		return window.refreshInstalledAppsRegistry();
+	})
+	.then(function () {
+		return loadDefaultAppAssociations();
+	})
+	.then(function () {
 		winManager.openWindow({
 			title: 'PixOS',
 			content: `<iframe id="view" src="__browserfs__/apps/explorer"></iframe>`,
@@ -228,6 +211,367 @@ function fsOnInit () {
 		});
 	}
 
+	window.refreshInstalledAppsRegistry = async function () {
+		window.apps = await scanInstalledApps();
+		return window.apps;
+	};
+
+	window.installAppById = async function (appId) {
+		var app = getCatalogApp(appId);
+		if (!app) {
+			throw new Error('Unknown app: ' + appId);
+		}
+		if (!app.entryPath) {
+			throw new Error('App ' + appId + ' is not installable');
+		}
+
+		for (var i = 0; i < app.files.length; i++) {
+			var item = app.files[i];
+			var ab = await fetch(path.join(scope, item) + '?' + Math.random()).then(function (r) {
+				return r.arrayBuffer();
+			});
+			await new Promise(function (resolve) {
+				writeFile(item, Buffer.from(ab), function () {
+					resolve();
+				});
+			});
+		}
+
+		await window.refreshInstalledAppsRegistry();
+		return {
+			id: appId,
+			name: app.label
+		};
+	};
+
+	window.getInstallableApps = function () {
+		return getCatalogApps().filter(function (app) {
+			return !!app.entryPath;
+		});
+	};
+	window.getCatalogApp = getCatalogApp;
+
+	window.getFileCompatibilityProfile = getFileCompatibilityProfile;
+	window.getExtensionCompatibilityProfile = getExtensionCompatibilityProfile;
+	window.isAppCompatibleWithProfile = isAppCompatibleWithProfile;
+
+	window.getDefaultAppForExtension = function (ext) {
+		var normalizedExt = normalizeExtension(ext);
+		var appId = (window.defaultAppAssociations || {})[normalizedExt];
+		if (!appId || !isInstalledApp(appId)) {
+			return null;
+		}
+		return appId;
+	};
+
+	window.setDefaultAppForExtension = async function (ext, appId) {
+		var normalizedExt = normalizeExtension(ext);
+		if (!normalizedExt) {
+			throw new Error('Extension is required');
+		}
+		if (!appId || !isInstalledApp(appId)) {
+			throw new Error('Installed app is required');
+		}
+		window.defaultAppAssociations = window.defaultAppAssociations || {};
+		window.defaultAppAssociations[normalizedExt] = appId;
+		await persistDefaultAppAssociations();
+	};
+
+	window.clearDefaultAppForExtension = async function (ext) {
+		var normalizedExt = normalizeExtension(ext);
+		if (!normalizedExt) return;
+		window.defaultAppAssociations = window.defaultAppAssociations || {};
+		delete window.defaultAppAssociations[normalizedExt];
+		await persistDefaultAppAssociations();
+	};
+
+	window.getAllDefaultAppAssociations = function () {
+		var out = {};
+		Object.keys(window.defaultAppAssociations || {}).forEach(function (ext) {
+			out[ext] = window.defaultAppAssociations[ext];
+		});
+		return out;
+	};
+
+	function getCatalogApps () {
+		return Object.keys(window.PIXOS_APP_CATALOG || {}).map(function (id) {
+			return getCatalogApp(id);
+		});
+	}
+
+	function getCatalogApp (id) {
+		var raw = window.PIXOS_APP_CATALOG && window.PIXOS_APP_CATALOG[id];
+		if (!raw) return null;
+		return {
+			id: id,
+			label: raw.label || raw.name || id,
+			files: Array.isArray(raw.files) ? raw.files.slice() : [],
+			entryPath: resolveCatalogEntryPath(id, raw),
+			supportedFilePath: getCatalogSupportedFilePath(raw),
+			supportedExtensions: Array.isArray(raw.supportedExtensions) ? raw.supportedExtensions.slice() : [],
+			supportedMimeTypes: Array.isArray(raw.supportedMimeTypes) ? raw.supportedMimeTypes.slice() : [],
+			supportsText: !!raw.supportsText
+		};
+	}
+
+	function resolveCatalogEntryPath (id, raw) {
+		if (!raw || id === 'base') return null;
+		if (raw.entryPath) return raw.entryPath;
+		var files = Array.isArray(raw.files) ? raw.files : [];
+		var indexFile = files.find(function (item) {
+			return /\/index\.html$/.test(item);
+		});
+		return indexFile || null;
+	}
+
+	function getCatalogSupportedFilePath (raw) {
+		var files = raw && Array.isArray(raw.files) ? raw.files : [];
+		return files.find(function (item) {
+			return /\/pixos_supported$/.test(item);
+		}) || null;
+	}
+
+	async function hydrateAppCatalogFromSource () {
+		var ids = Object.keys(window.PIXOS_APP_CATALOG || {});
+		for (var i = 0; i < ids.length; i++) {
+			var app = window.PIXOS_APP_CATALOG[ids[i]];
+			if (app.label === undefined) {
+				app.label = app.name || ids[i];
+			}
+			if (!Array.isArray(app.supportedExtensions) || !app.supportedExtensions.length) {
+				app.supportedExtensions = await loadSupportedExtensionsFromSource(app.files || []);
+			}
+		}
+	}
+
+	async function loadSupportedExtensionsFromSource (files) {
+		var supportedFilePath = (files || []).find(function (item) {
+			return /\/pixos_supported$/.test(item);
+		});
+		if (!supportedFilePath) return [];
+		try {
+			var raw = await fetch(path.join(scope, supportedFilePath) + '?' + Math.random()).then(function (r) {
+				return r.text();
+			});
+			return raw.trim() ? raw.trim().split(/\n/).map(function (item) {
+				return item.trim().replace(/^\./, '').toLowerCase();
+			}).filter(Boolean) : [];
+		}
+		catch (err) {
+			console.error(err);
+			return [];
+		}
+	}
+
+	function scanInstalledApps () {
+		return Promise.all(getCatalogApps().map(async function (app) {
+			if (!app || !app.entryPath || !(await stat(app.entryPath))) {
+				return null;
+			}
+			var exts = app.supportedFilePath
+				? await readSupportedExtensionsFromFs(app.supportedFilePath)
+				: false;
+			return [app.id, exts];
+		})).then(function (apps) {
+			return apps.filter(Boolean);
+		});
+	}
+
+	function readSupportedExtensionsFromFs (filePath) {
+		return new Promise(function (resolve) {
+			fs.readFile(filePath, function (err, file) {
+				if (err || !file) {
+					resolve([]);
+					return;
+				}
+				resolve(normalizeSupportedExtensions(file.toString()));
+			});
+		});
+	}
+
+	function normalizeSupportedExtensions (raw) {
+		return String(raw || '').trim()
+			? String(raw).trim().split(/\n/).map(function (item) {
+				return item.trim().replace(/^\./, '').toLowerCase();
+			}).filter(Boolean)
+			: [];
+	}
+
+	async function loadDefaultAppAssociations () {
+		window.defaultAppAssociations = await readJsonFile('/settings/default-apps.json', {});
+		return window.defaultAppAssociations;
+	}
+
+	async function persistDefaultAppAssociations () {
+		var cleaned = {};
+		Object.keys(window.defaultAppAssociations || {}).forEach(function (ext) {
+			var appId = window.defaultAppAssociations[ext];
+			if (appId && isInstalledApp(appId)) {
+				cleaned[normalizeExtension(ext)] = appId;
+			}
+		});
+		window.defaultAppAssociations = cleaned;
+		await writeFile('/settings/default-apps.json', Buffer.from(JSON.stringify(cleaned, null, 2)));
+	}
+
+	function normalizeExtension (ext) {
+		return String(ext || '').trim().replace(/^\./, '').toLowerCase();
+	}
+
+	function normalizeMimeType (mimeType) {
+		return String(mimeType || '').trim().toLowerCase();
+	}
+
+	function isInstalledApp (appId) {
+		return (window.apps || []).some(function (entry) {
+			return entry[0] === appId;
+		});
+	}
+
+	function getFileCompatibilityProfile (filePath) {
+		return new Promise(async function (resolve) {
+			var extension = normalizeExtension(window.path.extname(filePath || ''));
+			var head = await readFileHead(filePath, 4096);
+			var mimeType = await detectMimeType(head);
+			var fallbackProfile = getExtensionCompatibilityProfile(extension);
+			resolve({
+				extension: extension,
+				mimeType: mimeType || fallbackProfile.mimeType || null,
+				isText: detectTextBytes(head, fallbackProfile.isText)
+			});
+		});
+	}
+
+	function getExtensionCompatibilityProfile (ext) {
+		var extension = normalizeExtension(ext);
+		var mimeType = guessMimeTypeFromExtension(extension);
+		return {
+			extension: extension,
+			mimeType: mimeType,
+			isText: isLikelyTextExtension(extension, mimeType)
+		};
+	}
+
+	function isAppCompatibleWithProfile (appId, profile) {
+		var app = getCatalogApp(appId);
+		if (!app || !profile) return false;
+		if (profile.extension && app.supportedExtensions.indexOf(profile.extension) > -1) {
+			return true;
+		}
+		if (profile.mimeType && app.supportedMimeTypes.indexOf(profile.mimeType) > -1) {
+			return true;
+		}
+		if (profile.isText && app.supportsText) {
+			return true;
+		}
+		return false;
+	}
+
+	function readJsonFile (filePath, fallbackValue) {
+		return new Promise(function (resolve) {
+			fs.readFile(filePath, function (err, content) {
+				if (err || !content) {
+					resolve(fallbackValue);
+					return;
+				}
+				try {
+					resolve(JSON.parse(content.toString()));
+				}
+				catch (parseErr) {
+					console.error(parseErr);
+					resolve(fallbackValue);
+				}
+			});
+		});
+	}
+
+	function readFileHead (filePath, size) {
+		return new Promise(function (resolve) {
+			fs.open(filePath, 'r', function (openErr, fd) {
+				if (openErr || fd === undefined || fd === null) {
+					resolve(new Uint8Array(0));
+					return;
+				}
+				var buffer = Buffer.alloc(size);
+				fs.read(fd, buffer, 0, size, 0, function (readErr, bytesRead) {
+					fs.close(fd, function () {});
+					if (readErr || !bytesRead) {
+						resolve(new Uint8Array(0));
+						return;
+					}
+					resolve(new Uint8Array(buffer.slice(0, bytesRead)));
+				});
+			});
+		});
+	}
+
+	async function detectMimeType (bytes) {
+		if (!bytes || !bytes.length || typeof window.fileTypeFromBuffer !== 'function') {
+			return null;
+		}
+		try {
+			var result = await window.fileTypeFromBuffer(bytes);
+			return result && result.mime ? normalizeMimeType(result.mime) : null;
+		}
+		catch (err) {
+			console.error(err);
+			return null;
+		}
+	}
+
+	function detectTextBytes (bytes, fallbackIsText) {
+		if (!bytes || !bytes.length) {
+			return true;
+		}
+		var nulBytes = 0;
+		for (var i = 0; i < bytes.length; i++) {
+			if (bytes[i] === 0) {
+				nulBytes++;
+			}
+		}
+		if (nulBytes > Math.max(1, Math.floor(bytes.length * 0.02))) {
+			return false;
+		}
+		try {
+			new TextDecoder('utf-8', {fatal: true}).decode(bytes);
+			return true;
+		}
+		catch (err) {
+			return !!fallbackIsText;
+		}
+	}
+
+	function guessMimeTypeFromExtension (extension) {
+		var map = {
+			txt: 'text/plain',
+			md: 'text/markdown',
+			log: 'text/plain',
+			csv: 'text/csv',
+			html: 'text/html',
+			htm: 'text/html',
+			css: 'text/css',
+			js: 'text/javascript',
+			mjs: 'text/javascript',
+			json: 'application/json',
+			xml: 'application/xml',
+			yml: 'application/yaml',
+			yaml: 'application/yaml',
+			svg: 'image/svg+xml'
+		};
+		return map[extension] || null;
+	}
+
+	function isLikelyTextExtension (extension, mimeType) {
+		if (!extension && !mimeType) return false;
+		if (mimeType && /^text\//.test(mimeType)) {
+			return true;
+		}
+		return [
+			'txt', 'md', 'log', 'csv', 'html', 'htm', 'css', 'js', 'mjs',
+			'json', 'xml', 'yml', 'yaml', 'svg'
+		].indexOf(extension) > -1;
+	}
+
 }
 
 window.openPath = openPath;
@@ -250,7 +594,19 @@ async function openPath (path, app) {
 }
 
 async function openFile (path, app) {
+	if (!app) {
+		var defaultApp = await getDefaultAppForPath(path);
+		if (defaultApp) {
+			app = defaultApp;
+		}
+	}
+
 	window.viewCounter++;
+	var appEntryPath = app ? getAppEntryPath(app) : path;
+
+	if (app && !appEntryPath) {
+		throw new Error('App ' + app + ' has no launch path');
+	}
 
 	if (
 		app
@@ -263,7 +619,7 @@ async function openFile (path, app) {
 
 		winManager.openWindow({
 			title: path,
-			content: `<iframe id="view${window.viewCounter}" src="__browserfs__${(app?`/apps/${app}`:path)}"></iframe>`,
+			content: `<iframe id="view${window.viewCounter}" src="__browserfs__${appEntryPath}"></iframe>`,
 		});
 
 		return;
@@ -271,7 +627,7 @@ async function openFile (path, app) {
 
 	winManager.openWindow({
 		title: path,
-		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${(app?`/apps/${app}`:path)}"></iframe>`,
+		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${appEntryPath}"></iframe>`,
 	});
 
 	if (app) {
@@ -285,6 +641,27 @@ async function openFile (path, app) {
 			this.contentWindow.openFile(`/__browserfs__${path}`, window.path.basename(path));
 		}
 	}
+}
+
+async function getDefaultAppForPath (path) {
+	var ext = window.path.extname(path || '').replace(/^\./, '').toLowerCase();
+	if (!ext || typeof window.getDefaultAppForExtension !== 'function') {
+		return null;
+	}
+	var appId = window.getDefaultAppForExtension(ext);
+	if (!appId) {
+		return null;
+	}
+	if (typeof window.getFileCompatibilityProfile === 'function' && typeof window.isAppCompatibleWithProfile === 'function') {
+		var profile = await window.getFileCompatibilityProfile(path);
+		return window.isAppCompatibleWithProfile(appId, profile) ? appId : null;
+	}
+	return appId;
+}
+
+function getAppEntryPath (appId) {
+	var app = typeof window.getCatalogApp === 'function' ? window.getCatalogApp(appId) : null;
+	return app ? app.entryPath : null;
 }
 
 function blobToBase64(blob) {
