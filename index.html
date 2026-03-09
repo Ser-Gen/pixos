@@ -115,31 +115,37 @@ function fsOnInit () {
 		'/apps/app-catalog.js',
 	]
 	.map(item=>{
-		fs.stat(item, function (e, stats) {
-			if (
-				!stats
-				|| item.startsWith('/apps/explorer/')
-				|| item.startsWith('/apps/app-manager/')
-				|| item.startsWith('/apps/app-catalog.js')
-			) {
-				return fetch(path.join(scope, item) +'?'+Math.random())
-					.then(r=>r.arrayBuffer())
-					.then(ab=> {
-						return new Promise(function (resolve, reject) {
-							writeFile(item, Buffer.from(ab), function (e) {
-								resolve(item);
-							})
+		return new Promise(function (resolve) {
+			fs.stat(item, function (e, stats) {
+				if (
+					!stats
+					|| item.startsWith('/apps/explorer/')
+					|| item.startsWith('/apps/app-manager/')
+					|| item.startsWith('/apps/app-catalog.js')
+				) {
+					fetch(path.join(scope, item) +'?'+Math.random())
+						.then(function (r) { return r.arrayBuffer(); })
+						.then(function (ab) {
+							return new Promise(function (writeResolve) {
+								writeFile(item, Buffer.from(ab), function () {
+									writeResolve(item);
+								});
+							});
 						})
-					})
-			}
-			else {
-				return Promise.resolve();
-			}
+						.then(function () {
+							resolve(item);
+						})
+						.catch(function (err) {
+							console.error(err);
+							resolve(item);
+						});
+				}
+				else {
+					resolve(item);
+				}
+			});
 		});
 	}))
-	.then(function () {
-		return hydrateAppCatalogFromSource();
-	})
 	.then(function () {
 		return window.refreshInstalledAppsRegistry();
 	})
@@ -151,6 +157,7 @@ function fsOnInit () {
 			title: 'PixOS',
 			content: `<iframe id="view" src="__browserfs__/apps/explorer"></iframe>`,
 		});
+		scheduleInstalledAppSupportHydration();
 	})
 
 	function writeFile(filePath, contents, cb) {
@@ -213,6 +220,7 @@ function fsOnInit () {
 
 	window.refreshInstalledAppsRegistry = async function () {
 		window.apps = await scanInstalledApps();
+		notifyAppsRegistryChanged();
 		return window.apps;
 	};
 
@@ -238,6 +246,7 @@ function fsOnInit () {
 		}
 
 		await window.refreshInstalledAppsRegistry();
+		scheduleInstalledAppSupportHydration([appId]);
 		return {
 			id: appId,
 			name: app.label
@@ -250,6 +259,10 @@ function fsOnInit () {
 		});
 	};
 	window.getCatalogApp = getCatalogApp;
+	window.getInstalledAppRecord = getInstalledAppRecord;
+	window.ensureAppSupportedExtensions = ensureAppSupportedExtensions;
+	window.ensureInstalledAppsSupportHydrated = ensureInstalledAppsSupportHydrated;
+	window.ensureCatalogAppsSupportHydrated = ensureCatalogAppsSupportHydrated;
 
 	window.getFileCompatibilityProfile = getFileCompatibilityProfile;
 	window.getExtensionCompatibilityProfile = getExtensionCompatibilityProfile;
@@ -302,6 +315,7 @@ function fsOnInit () {
 	function getCatalogApp (id) {
 		var raw = window.PIXOS_APP_CATALOG && window.PIXOS_APP_CATALOG[id];
 		if (!raw) return null;
+		var installedRecord = getInstalledAppRecord(id);
 		return {
 			id: id,
 			label: raw.label || raw.name || id,
@@ -310,7 +324,8 @@ function fsOnInit () {
 			supportedFilePath: getCatalogSupportedFilePath(raw),
 			supportedExtensions: Array.isArray(raw.supportedExtensions) ? raw.supportedExtensions.slice() : [],
 			supportedMimeTypes: Array.isArray(raw.supportedMimeTypes) ? raw.supportedMimeTypes.slice() : [],
-			supportsText: !!raw.supportsText
+			supportsText: !!raw.supportsText,
+			supportStatus: installedRecord ? installedRecord.supportStatus : (Array.isArray(raw.supportedExtensions) && raw.supportedExtensions.length ? 'ready' : 'idle')
 		};
 	}
 
@@ -329,19 +344,6 @@ function fsOnInit () {
 		return files.find(function (item) {
 			return /\/pixos_supported$/.test(item);
 		}) || null;
-	}
-
-	async function hydrateAppCatalogFromSource () {
-		var ids = Object.keys(window.PIXOS_APP_CATALOG || {});
-		for (var i = 0; i < ids.length; i++) {
-			var app = window.PIXOS_APP_CATALOG[ids[i]];
-			if (app.label === undefined) {
-				app.label = app.name || ids[i];
-			}
-			if (!Array.isArray(app.supportedExtensions) || !app.supportedExtensions.length) {
-				app.supportedExtensions = await loadSupportedExtensionsFromSource(app.files || []);
-			}
-		}
 	}
 
 	async function loadSupportedExtensionsFromSource (files) {
@@ -368,13 +370,121 @@ function fsOnInit () {
 			if (!app || !app.entryPath || !(await stat(app.entryPath))) {
 				return null;
 			}
-			var exts = app.supportedFilePath
-				? await readSupportedExtensionsFromFs(app.supportedFilePath)
-				: false;
-			return [app.id, exts];
+			var seededExtensions = Array.isArray(app.supportedExtensions) ? app.supportedExtensions.slice() : [];
+			var hasSupportFile = !!app.supportedFilePath;
+			return {
+				id: app.id,
+				installed: true,
+				supportedExtensions: seededExtensions.length ? seededExtensions : null,
+				supportStatus: seededExtensions.length || !hasSupportFile ? 'ready' : 'idle'
+			};
 		})).then(function (apps) {
 			return apps.filter(Boolean);
 		});
+	}
+
+	function getInstalledAppRecord (appId) {
+		return (window.apps || []).find(function (entry) {
+			return entry.id === appId;
+		}) || null;
+	}
+
+	function ensureAppSupportedExtensions (appId) {
+		window.__pixosAppSupportLoads = window.__pixosAppSupportLoads || {};
+		var app = getCatalogApp(appId);
+		if (!app) {
+			return Promise.resolve([]);
+		}
+
+		var installedRecord = getInstalledAppRecord(appId);
+		if (installedRecord && Array.isArray(installedRecord.supportedExtensions)) {
+			return Promise.resolve(installedRecord.supportedExtensions.slice());
+		}
+		if (Array.isArray(app.supportedExtensions) && app.supportedExtensions.length) {
+			if (installedRecord) {
+				installedRecord.supportedExtensions = app.supportedExtensions.slice();
+				installedRecord.supportStatus = 'ready';
+				notifyAppsRegistryChanged();
+			}
+			return Promise.resolve(app.supportedExtensions.slice());
+		}
+		if (window.__pixosAppSupportLoads[appId]) {
+			return window.__pixosAppSupportLoads[appId];
+		}
+
+		if (installedRecord) {
+			installedRecord.supportStatus = 'loading';
+			notifyAppsRegistryChanged();
+		}
+
+		var loadPromise = (installedRecord && app.supportedFilePath
+			? readSupportedExtensionsFromFs(app.supportedFilePath)
+			: loadSupportedExtensionsFromSource(app.files || [])
+		).then(function (extensions) {
+			var normalized = Array.isArray(extensions) ? extensions.slice() : [];
+			var raw = window.PIXOS_APP_CATALOG && window.PIXOS_APP_CATALOG[appId];
+			if (raw) {
+				raw.supportedExtensions = normalized.slice();
+			}
+			var currentRecord = getInstalledAppRecord(appId);
+			if (currentRecord) {
+				currentRecord.supportedExtensions = normalized.slice();
+				currentRecord.supportStatus = 'ready';
+				notifyAppsRegistryChanged();
+			}
+			return normalized;
+		}).catch(function (err) {
+			var currentRecord = getInstalledAppRecord(appId);
+			if (currentRecord) {
+				currentRecord.supportedExtensions = [];
+				currentRecord.supportStatus = 'error';
+				notifyAppsRegistryChanged();
+			}
+			console.error(err);
+			return [];
+		}).finally(function () {
+			delete window.__pixosAppSupportLoads[appId];
+		});
+
+		window.__pixosAppSupportLoads[appId] = loadPromise;
+		return loadPromise;
+	}
+
+	function scheduleInstalledAppSupportHydration (appIds) {
+		var ids = Array.isArray(appIds) && appIds.length
+			? appIds.slice()
+			: (window.apps || []).map(function (entry) { return entry.id; });
+		setTimeout(function () {
+			ids.forEach(function (appId) {
+				var record = getInstalledAppRecord(appId);
+				if (!record || record.supportStatus === 'ready' || record.supportStatus === 'loading') {
+					return;
+				}
+				ensureAppSupportedExtensions(appId);
+			});
+		}, 0);
+	}
+
+	async function ensureInstalledAppsSupportHydrated () {
+		var ids = (window.apps || []).map(function (entry) {
+			return entry.id;
+		});
+		return Promise.all(ids.map(function (appId) {
+			return ensureAppSupportedExtensions(appId);
+		}));
+	}
+
+	async function ensureCatalogAppsSupportHydrated () {
+		var ids = getCatalogApps()
+			.filter(function (app) {
+				return !!app.entryPath;
+			})
+			.map(function (app) {
+				return app.id;
+			});
+		return Promise.all(ids.map(function (appId) {
+			return ensureAppSupportedExtensions(appId);
+		}));
 	}
 
 	function readSupportedExtensionsFromFs (filePath) {
@@ -424,7 +534,7 @@ function fsOnInit () {
 
 	function isInstalledApp (appId) {
 		return (window.apps || []).some(function (entry) {
-			return entry[0] === appId;
+			return entry.id === appId;
 		});
 	}
 
@@ -452,10 +562,11 @@ function fsOnInit () {
 		};
 	}
 
-	function isAppCompatibleWithProfile (appId, profile) {
+	async function isAppCompatibleWithProfile (appId, profile) {
 		var app = getCatalogApp(appId);
 		if (!app || !profile) return false;
-		if (profile.extension && app.supportedExtensions.indexOf(profile.extension) > -1) {
+		var supportedExtensions = profile.extension ? await ensureAppSupportedExtensions(appId) : (app.supportedExtensions || []);
+		if (profile.extension && supportedExtensions.indexOf(profile.extension) > -1) {
 			return true;
 		}
 		if (profile.mimeType && app.supportedMimeTypes.indexOf(profile.mimeType) > -1) {
@@ -465,6 +576,21 @@ function fsOnInit () {
 			return true;
 		}
 		return false;
+	}
+
+	function notifyAppsRegistryChanged () {
+		window.dispatchEvent(new CustomEvent('pixos:apps-registry-updated', {
+			detail: {
+				apps: (window.apps || []).map(function (entry) {
+					return {
+						id: entry.id,
+						installed: entry.installed,
+						supportedExtensions: Array.isArray(entry.supportedExtensions) ? entry.supportedExtensions.slice() : null,
+						supportStatus: entry.supportStatus
+					};
+				})
+			}
+		}));
 	}
 
 	function readJsonFile (filePath, fallbackValue) {
@@ -654,7 +780,7 @@ async function getDefaultAppForPath (path) {
 	}
 	if (typeof window.getFileCompatibilityProfile === 'function' && typeof window.isAppCompatibleWithProfile === 'function') {
 		var profile = await window.getFileCompatibilityProfile(path);
-		return window.isAppCompatibleWithProfile(appId, profile) ? appId : null;
+		return await window.isAppCompatibleWithProfile(appId, profile) ? appId : null;
 	}
 	return appId;
 }

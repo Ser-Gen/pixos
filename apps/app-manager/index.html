@@ -63,16 +63,33 @@
 var itemsNode = document.querySelector('#items');
 
 render();
+hydrateCatalogSupportData();
 
 async function render () {
 	var catalog = typeof parent.getInstallableApps === 'function' ? parent.getInstallableApps() : [];
-	var installedSet = new Set((parent.apps || []).map(function (entry) {
-		return entry[0];
+	var installedRecords = parent.apps || [];
+	var installedSet = new Set(installedRecords.map(function (entry) {
+		return entry.id;
 	}));
 
 	itemsNode.innerHTML = catalog.map(function (app) {
 		var isInstalled = installedSet.has(app.id);
-		var exts = app.supportedExtensions && app.supportedExtensions.length ? app.supportedExtensions.join(', ') : 'no file associations';
+		var installedRecord = typeof parent.getInstalledAppRecord === 'function'
+			? parent.getInstalledAppRecord(app.id)
+			: null;
+		var supportStatus = installedRecord ? installedRecord.supportStatus : app.supportStatus;
+		var supportedExtensions = installedRecord && Array.isArray(installedRecord.supportedExtensions)
+			? installedRecord.supportedExtensions
+			: (Array.isArray(app.supportedExtensions) ? app.supportedExtensions : []);
+		var exts = supportedExtensions.length
+			? supportedExtensions.join(', ')
+			: (app.supportsText
+				? 'text files'
+				: (app.supportedMimeTypes && app.supportedMimeTypes.length
+					? app.supportedMimeTypes.join(', ')
+					: (isInstalled && supportStatus !== 'ready'
+						? 'loading file associations...'
+						: 'file associations will load on demand')));
 		return `
 			<div class="AppCard" data-app-id="${escapeHtml(app.id)}">
 				<div class="AppCard__meta">
@@ -104,6 +121,25 @@ document.addEventListener('click', async function (e) {
 		button.textContent = 'install';
 	}
 });
+
+if (parent && typeof parent.addEventListener === 'function') {
+	parent.addEventListener('pixos:apps-registry-updated', function () {
+		render();
+	});
+}
+
+async function hydrateCatalogSupportData () {
+	if (typeof parent.ensureCatalogAppsSupportHydrated !== 'function') {
+		return;
+	}
+	try {
+		await parent.ensureCatalogAppsSupportHydrated();
+		await render();
+	}
+	catch (err) {
+		console.error(err);
+	}
+}
 
 function escapeHtml (value) {
 	return String(value)

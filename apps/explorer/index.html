@@ -1526,25 +1526,25 @@ async function openExplorer () {
 		openDialog({type: 'info', title: title, message: message});
 	}
 
-	function buildDefaultAppsManagerDialog (prefillExtension) {
+	async function buildDefaultAppsManagerDialog (prefillExtension) {
 		return {
 			type: 'defaultAppsManager',
-			rows: getDefaultAppRows(),
+			rows: await getDefaultAppRows(),
 			addableApps: getInstalledAppsForPicker(),
 			prefillExtension: prefillExtension || '',
 			onSave: async function (extension, appId) {
 				if (await saveDefaultAppAssociation(extension, appId)) {
-					openDialog(buildDefaultAppsManagerDialog(extension));
+					openDialog(await buildDefaultAppsManagerDialog(extension));
 				}
 			},
 			onClear: async function (extension) {
 				if (await clearDefaultAppAssociation(extension)) {
-					openDialog(buildDefaultAppsManagerDialog(''));
+					openDialog(await buildDefaultAppsManagerDialog(''));
 				}
 			},
 			onAdd: async function (extension, appId) {
 				if (await saveDefaultAppAssociation(extension, appId)) {
-					openDialog(buildDefaultAppsManagerDialog(extension));
+					openDialog(await buildDefaultAppsManagerDialog(extension));
 				}
 			}
 		};
@@ -1560,7 +1560,7 @@ async function openExplorer () {
 			openInfoDialog('Default apps', 'Application is required');
 			return false;
 		}
-		if (!isAppCompatibleWithExtension(appId, normalizedExt)) {
+		if (!await isAppCompatibleWithExtension(appId, normalizedExt)) {
 			openInfoDialog('Default apps', 'Selected app does not support .' + normalizedExt);
 			return false;
 		}
@@ -2087,8 +2087,8 @@ async function openExplorer () {
 			});
 		},
 
-		manageDefaultApps: function (prefillExtension) {
-			openDialog(buildDefaultAppsManagerDialog(prefillExtension));
+		manageDefaultApps: async function (prefillExtension) {
+			openDialog(await buildDefaultAppsManagerDialog(prefillExtension));
 		},
 
 		createFile: function () {
@@ -2543,27 +2543,29 @@ async function openExplorer () {
 		var profile = await getCompatibilityProfileForItem(item.path);
 		var installedApps = [];
 		var installedIds = new Set();
-		(parent.apps || []).forEach(function (app) {
-			if (isAppCompatibleWithProfile(app[0], profile)) {
-				installedIds.add(app[0]);
+		for (var i = 0; i < (parent.apps || []).length; i++) {
+			var app = parent.apps[i];
+			if (await isAppCompatibleWithProfile(app.id, profile)) {
+				installedIds.add(app.id);
 				installedApps.push({
-					id: app[0],
-					label: getCatalogLabel(app[0]) || app[0],
+					id: app.id,
+					label: getCatalogLabel(app.id) || app.id,
 					installed: true
 				});
 			}
-		});
-		var installableApps = (typeof parent.getInstallableApps === 'function' ? parent.getInstallableApps() : [])
-			.filter(function (app) {
-				return !installedIds.has(app.id) && isAppCompatibleWithProfile(app.id, profile);
-			})
-			.map(function (app) {
-				return {
-					id: app.id,
-					label: app.label,
-					installed: false
-				};
+		}
+		var installableApps = [];
+		var catalogApps = typeof parent.getInstallableApps === 'function' ? parent.getInstallableApps() : [];
+		for (var j = 0; j < catalogApps.length; j++) {
+			var catalogApp = catalogApps[j];
+			if (installedIds.has(catalogApp.id)) continue;
+			if (!await isAppCompatibleWithProfile(catalogApp.id, profile)) continue;
+			installableApps.push({
+				id: catalogApp.id,
+				label: catalogApp.label,
+				installed: false
 			});
+		}
 		return installedApps.concat(installableApps);
 	}
 
@@ -2580,13 +2582,16 @@ async function openExplorer () {
 		return app ? app.label : '';
 	}
 
-	function getDefaultAppRows () {
+	async function getDefaultAppRows () {
 		var associations = typeof parent.getAllDefaultAppAssociations === 'function'
 			? parent.getAllDefaultAppAssociations()
 			: {};
-		return Object.keys(associations).sort().map(function (extension) {
+		var rows = [];
+		var extensions = Object.keys(associations).sort();
+		for (var i = 0; i < extensions.length; i++) {
+			var extension = extensions[i];
 			var appId = associations[extension];
-			var apps = getInstalledCompatibleAppsForExtension(extension);
+			var apps = await getInstalledCompatibleAppsForExtension(extension);
 			if (appId && !apps.some(function (app) { return app.id === appId; })) {
 				apps = [{
 					id: appId,
@@ -2594,39 +2599,37 @@ async function openExplorer () {
 					invalid: true
 				}].concat(apps);
 			}
-			return {
+			rows.push({
 				extension: extension,
 				appId: appId,
 				apps: apps
-			};
-		});
+			});
+		}
+		return rows;
 	}
 
 	function getInstalledAppsForPicker () {
 		return (parent.apps || [])
-			.filter(function (entry) {
-				return Array.isArray(entry[1]) && entry[1].length;
-			})
 			.map(function (entry) {
 				return {
-					id: entry[0],
-					label: getCatalogLabel(entry[0]) || entry[0]
+					id: entry.id,
+					label: getCatalogLabel(entry.id) || entry.id
 				};
 			});
 	}
 
-	function getInstalledCompatibleAppsForExtension (extension) {
+	async function getInstalledCompatibleAppsForExtension (extension) {
 		var profile = getCompatibilityProfileForExtension(extension);
-		return (parent.apps || [])
-			.filter(function (entry) {
-				return isAppCompatibleWithProfile(entry[0], profile);
-			})
-			.map(function (entry) {
-				return {
-					id: entry[0],
-					label: getCatalogLabel(entry[0]) || entry[0]
-				};
+		var apps = [];
+		for (var i = 0; i < (parent.apps || []).length; i++) {
+			var entry = parent.apps[i];
+			if (!await isAppCompatibleWithProfile(entry.id, profile)) continue;
+			apps.push({
+				id: entry.id,
+				label: getCatalogLabel(entry.id) || entry.id
 			});
+		}
+		return apps;
 	}
 
 	function getDefaultAppIdForExtension (extension) {
@@ -2644,8 +2647,8 @@ async function openExplorer () {
 		return normalizeExtensionInput(path.extname(filePath));
 	}
 
-	function isAppCompatibleWithExtension (appId, extension) {
-		return isAppCompatibleWithProfile(appId, getCompatibilityProfileForExtension(extension));
+	async function isAppCompatibleWithExtension (appId, extension) {
+		return await isAppCompatibleWithProfile(appId, getCompatibilityProfileForExtension(extension));
 	}
 
 	async function getCompatibilityProfileForItem (itemPath) {
@@ -2666,9 +2669,9 @@ async function openExplorer () {
 		};
 	}
 
-	function isAppCompatibleWithProfile (appId, profile) {
+	async function isAppCompatibleWithProfile (appId, profile) {
 		if (typeof parent.isAppCompatibleWithProfile === 'function') {
-			return parent.isAppCompatibleWithProfile(appId, profile);
+			return await parent.isAppCompatibleWithProfile(appId, profile);
 		}
 		return false;
 	}
