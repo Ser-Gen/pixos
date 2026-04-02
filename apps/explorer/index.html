@@ -485,34 +485,24 @@ import wasm7z from "../7z/main.js";
 
 window.BrowserFS = parent.BrowserFS;
 
-BrowserFS.configure({
-	fs: "IndexedDB",
-	options: {
-		storeName: 'lol'
+window.fs = parent.fs;
+window.path = parent.path;
+var Buffer = parent.Buffer;
+window.mountManager = parent.mountManager;
+
+openExplorer();
+
+fs.stat('/apps/ffmpeg.0.12.10/ffmpeg.js', function (err, stats) {
+	if (stats) {
+		var s = document.createElement('script');
+		s.type = 'text/javascript';
+		s.src = '../ffmpeg.0.12.10/ffmpeg.js';
+		s.onload = function () {
+			window.FFmpeg = FFmpegWASM.FFmpeg;
+		};
+		document.body.append(s);
 	}
-}, fsOnInit);
-
-window.fs = BrowserFS.BFSRequire('fs');
-window.path = BrowserFS.BFSRequire('path');
-var {Buffer} = BrowserFS.BFSRequire('buffer');
-
-function fsOnInit (e) {
-	if (e) throw e;
-
-	openExplorer();
-
-	fs.stat('/apps/ffmpeg.0.12.10/ffmpeg.js', function (err, stats) {
-		if (stats) {
-			var s = document.createElement('script');
-			s.type = 'text/javascript';
-			s.src = '../ffmpeg.0.12.10/ffmpeg.js';
-			s.onload = function () {
-				window.FFmpeg = FFmpegWASM.FFmpeg;
-			};
-			document.body.append(s);
-		}
-	});
-}
+});
 
 async function openExplorer () {
 	var rootElem = document.querySelector('#explorer');
@@ -1059,6 +1049,59 @@ async function openExplorer () {
 			node.textContent = item.path === '/' ? '📁 ' + item.label : '📂 ' + item.label + ' (' + item.path + ')';
 			ui.sidebar.append(node);
 		});
+
+		// Mounts section
+		if (mountManager) {
+			var mounts = mountManager.listMounts();
+			if (mounts.length > 0) {
+				var mountTitle = document.createElement('div');
+				mountTitle.className = 'Explorer__sidebarTitle';
+				mountTitle.textContent = 'Mounts';
+				ui.sidebar.append(mountTitle);
+
+				mounts.forEach(function (m) {
+					var typeIcon = m.type === 'native' ? '💻' : (m.type === 'iso' ? '💿' : '📦');
+					var roLabel = m.readOnly ? ' [ro]' : '';
+					var row = document.createElement('div');
+					row.className = 'Explorer__sidebarItem' + (m.mountPoint === state.cwd ? ' Explorer__sidebarItem--active' : '');
+					row.style.display = 'flex';
+					row.style.justifyContent = 'space-between';
+					row.style.alignItems = 'center';
+
+					var label = document.createElement('span');
+					label.dataset.path = m.mountPoint;
+					label.style.cursor = 'pointer';
+					label.textContent = typeIcon + ' ' + m.name + ' (' + m.mountPoint + ')' + roLabel;
+					label.style.flex = '1';
+					label.style.overflow = 'hidden';
+					label.style.textOverflow = 'ellipsis';
+					label.onclick = function () { navigateTo(m.mountPoint); };
+
+					var umountBtn = document.createElement('button');
+					umountBtn.textContent = '⏏';
+					umountBtn.title = 'Unmount';
+					umountBtn.style.cssText = 'background:none;border:none;color:inherit;cursor:pointer;padding:2px 4px;font-size:14px;flex-shrink:0;';
+					umountBtn.onclick = function (e) {
+						e.stopPropagation();
+						actions.umount(m.mountPoint);
+					};
+
+					row.append(label);
+					row.append(umountBtn);
+					ui.sidebar.append(row);
+				});
+			}
+
+			// Mount local folder button
+			if (typeof window.showDirectoryPicker === 'function') {
+				var mountLocalBtn = document.createElement('div');
+				mountLocalBtn.className = 'Explorer__sidebarItem';
+				mountLocalBtn.style.cursor = 'pointer';
+				mountLocalBtn.textContent = '📂 Mount local folder...';
+				mountLocalBtn.onclick = function () { actions.mountNativeDir(); };
+				ui.sidebar.append(mountLocalBtn);
+			}
+		}
 	}
 
 	function renderRows () {
@@ -1443,6 +1486,17 @@ async function openExplorer () {
 			`;
 			wireSimpleDialog(panel, function () {
 				dialog.onSubmit(panel.querySelector('.Dialog__args').value.trim());
+			});
+		}
+		else if (dialog.type === 'prompt') {
+			panel.innerHTML = `
+				<div class="Modal__title">${escapeHtml(dialog.title)}</div>
+				<div class="Modal__list">${escapeHtml(dialog.message)}</div>
+				<div class="Modal__field"><input class="Dialog__input" value="${escapeAttr(dialog.defaultValue || '')}"></div>
+				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">OK</button></div>
+			`;
+			wireSimpleDialog(panel, function () {
+				dialog.onSubmit(panel.querySelector('.Dialog__input').value.trim());
 			});
 		}
 		else if (dialog.type === 'info') {
@@ -1930,7 +1984,8 @@ async function openExplorer () {
 		if (!item) return getEmptyAreaMenuItems();
 
 		if (item.isDirectory) {
-			return [
+			var dirIsMountPoint = mountManager && mountManager.isMountPoint(item.path);
+			var dirMenuItems = [
 				{label: 'Open', action: function () { actions.open(item.path); }},
 				{label: 'Open in New Explorer', action: function () { actions.open(item.path, 'new explorer'); }},
 				{label: 'Open with...', action: function () { actions.openWith(item.path); }},
@@ -1948,7 +2003,17 @@ async function openExplorer () {
 					{label: 'Add Online File', action: actions.addOnlineFile}
 				]}
 			];
+			if (dirIsMountPoint) {
+				dirMenuItems.push({separator: true});
+				dirMenuItems.push({label: 'Unmount', action: function () { actions.umount(item.path); }});
+			}
+			return dirMenuItems;
 		}
+
+		var ext = getNormalizedExtension(item.path);
+		var mountableExts = ['zip', 'iso'];
+		var isMountable = mountableExts.indexOf(ext) !== -1;
+		var isMountPoint = mountManager && mountManager.isMountPoint(item.path);
 
 		return [
 			{label: 'Open', action: function () { actions.open(item.path); }},
@@ -1964,6 +2029,7 @@ async function openExplorer () {
 				{label: 'Get SHA1', action: actions.getHashSHA1},
 				{label: 'Extract', action: actions.extract},
 				{label: 'Extract 7z', action: actions.extract7z},
+				{label: 'Mount as filesystem', action: function () { actions.mountArchive(item.path); }, disabled: !isMountable},
 				{label: 'FFmpeg', action: actions.ffmpeg}
 			]}
 		];
@@ -2266,6 +2332,102 @@ async function openExplorer () {
 					await refreshCurrentDir(false);
 				}
 			});
+		},
+
+		mountArchive: async function (itemPath) {
+			if (!mountManager) {
+				openInfoDialog('Mount', 'Mount manager is not available');
+				return;
+			}
+			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
+			if (!item || item.isDirectory) return;
+			var ext = getNormalizedExtension(item.path);
+			var defaultMp = mountManager.suggestMountPoint(path.basename(item.path));
+			openDialog({
+				type: 'prompt',
+				title: 'Mount ' + ext.toUpperCase(),
+				message: 'Mount point path:',
+				defaultValue: defaultMp,
+				onSubmit: async function (mountPoint) {
+					state.dialog = null;
+					renderOverlays();
+					if (!mountPoint) return;
+					try {
+						var buf = await readFile(item.path);
+						var cb = function (err) {
+							if (err) {
+								openInfoDialog('Mount', 'Failed to mount: ' + err.message);
+							} else {
+								renderSidebar();
+								navigateTo(mountPoint);
+							}
+						};
+						if (ext === 'zip') {
+							mountManager.mountZip(buf, mountPoint, path.basename(item.path), cb);
+						} else if (ext === 'iso') {
+							mountManager.mountIso(buf, mountPoint, path.basename(item.path), cb);
+						} else {
+							openInfoDialog('Mount', 'Unsupported format: ' + ext);
+						}
+					} catch (e) {
+						openInfoDialog('Mount', 'Error: ' + e.message);
+					}
+				}
+			});
+		},
+
+		mountNativeDir: async function () {
+			if (!mountManager) {
+				openInfoDialog('Mount', 'Mount manager is not available');
+				return;
+			}
+			if (typeof window.showDirectoryPicker !== 'function') {
+				openInfoDialog('Mount', 'File System Access API is not supported in this browser');
+				return;
+			}
+			try {
+				var handle = await window.showDirectoryPicker();
+				var name = handle.name || 'local';
+				var defaultMp = mountManager.suggestMountPoint(name);
+				openDialog({
+					type: 'prompt',
+					title: 'Mount Local Folder',
+					message: 'Mount point path:',
+					defaultValue: defaultMp,
+					onSubmit: function (mountPoint) {
+						state.dialog = null;
+						renderOverlays();
+						if (!mountPoint) return;
+						mountManager.mountNativeDir(handle, mountPoint, name, function (err) {
+							if (err) {
+								openInfoDialog('Mount', 'Failed to mount: ' + err.message);
+							} else {
+								renderSidebar();
+								navigateTo(mountPoint);
+							}
+						});
+					}
+				});
+			} catch (e) {
+				if (e.name !== 'AbortError') {
+					openInfoDialog('Mount', 'Error: ' + e.message);
+				}
+			}
+		},
+
+		umount: function (mountPoint) {
+			if (!mountManager) return;
+			try {
+				mountManager.umount(mountPoint);
+				renderSidebar();
+				if (state.cwd.indexOf(mountPoint) === 0) {
+					navigateTo('/');
+				} else {
+					refreshCurrentDir(false);
+				}
+			} catch (e) {
+				openInfoDialog('Unmount', 'Error: ' + e.message);
+			}
 		},
 
 		copySelected: function () {

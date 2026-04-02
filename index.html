@@ -29,6 +29,7 @@
 </head>
 <body>
 <script src="browserfs.js"></script>
+<script src="js/mount-manager.js"></script>
 <script src="js/jquery-1.11.1.min.js"></script>
 <script src="apps/file-type.19.0.0.js"></script>
 <script src="apps/app-catalog.js"></script>
@@ -86,9 +87,14 @@ if ('serviceWorker' in navigator) {
 				console.log('Registration succeeded. Scope is ' + reg.scope);
 
 				BrowserFS.configure({
-					fs: "IndexedDB",
+					fs: "MountableFileSystem",
 					options: {
-						storeName: 'lol'
+						"/": {
+							fs: "IndexedDB",
+							options: {
+								storeName: 'lol'
+							}
+						}
 					}
 				}, fsOnInit);
 			}).catch(function(error) {
@@ -104,6 +110,47 @@ function fsOnInit () {
 	window.path = BrowserFS.BFSRequire('path');
 	var {Buffer} = BrowserFS.BFSRequire('buffer');
 	window.Buffer = Buffer;
+	window.mountManager = new MountManager(BrowserFS, window.fs);
+
+	// Listen for file read requests from the Service Worker.
+	// When SW can't find a file in IndexedDB (e.g. it's on a mounted FS),
+	// it asks the main thread to read it via MessageChannel.
+	if (navigator.serviceWorker) {
+		navigator.serviceWorker.addEventListener('message', function (event) {
+			if (!event.data || !event.ports || !event.ports.length) return;
+			var port = event.ports[0];
+
+			if (event.data.type === 'readFile') {
+				window.fs.readFile(event.data.path, function (err, buf) {
+					if (err) {
+						port.postMessage({error: err.message || String(err)});
+					} else {
+						port.postMessage({buffer: buf.buffer || buf});
+					}
+				});
+			} else if (event.data.type === 'stat') {
+				window.fs.stat(event.data.path, function (err, stat) {
+					if (err) {
+						port.postMessage({error: err.message || String(err)});
+					} else {
+						port.postMessage({
+							isFile: stat.isFile(),
+							isDirectory: stat.isDirectory()
+						});
+					}
+				});
+			} else if (event.data.type === 'readdir') {
+				window.fs.readdir(event.data.path, function (err, list) {
+					if (err) {
+						port.postMessage({error: err.message || String(err)});
+					} else {
+						port.postMessage({list: list});
+					}
+				});
+			}
+		});
+	}
+
 	Promise.all([
 
 		// COMMON

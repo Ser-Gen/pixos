@@ -15,9 +15,32 @@
 // self.importScripts('browserfs.1.4.3.js');
 self.importScripts('browserfs.js');
 
-self.addEventListener('install', self.skipWaiting);
+// Mount points known to the SW — paths that should bypass local IndexedDB
+// and go directly to the main thread via MessageChannel.
+var mountPoints = [];
 
-self.addEventListener('activate', self.skipWaiting);
+self.addEventListener('message', function(event) {
+	if (event.data && event.data.type === 'mountPoints') {
+		mountPoints = event.data.list || [];
+	}
+});
+
+function isOnMount(path) {
+	for (var i = 0; i < mountPoints.length; i++) {
+		if (path === mountPoints[i] || path.indexOf(mountPoints[i] + '/') === 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+self.addEventListener('install', function(event) {
+	self.skipWaiting();
+});
+
+self.addEventListener('activate', function(event) {
+	event.waitUntil(self.clients.claim());
+});
 
 self.addEventListener('fetch', function (event) {
     let path = BrowserFS.BFSRequire('path');
@@ -34,13 +57,35 @@ self.addEventListener('fetch', function (event) {
     });
     event.respondWith(fs.then(function(fs) {
         return new Promise(function(resolve, reject) {
-            function sendFile(path) {
-                fs.readFile(decodeURIComponent(path), function(err, buffer) {
-                    if (err) {
-                        err.fn = 'readFile(' + path + ')';
-                        return reject(err);
+            // Ask the main thread to perform a FS operation via MessageChannel.
+            // Used as fallback when the SW's own IndexedDB doesn't have the file
+            // (e.g. the file is on a mounted ZipFS/IsoFS/FileSystemAccess).
+            function askClient(msg) {
+                return self.clients.matchAll({type: 'window'}).then(function(clients) {
+                    if (!clients.length) {
+                        return Promise.reject(new Error('No client available'));
                     }
-                    var ext = path.replace(/.*\./, '');
+                    var target = clients.find(function(c) { return c.frameType === 'top-level'; }) || clients[0];
+                    return new Promise(function(resolve, reject) {
+                        var timeout = setTimeout(function() {
+                            reject(new Error('askClient timeout'));
+                        }, 5000);
+                        var ch = new MessageChannel();
+                        ch.port1.onmessage = function(e) {
+                            clearTimeout(timeout);
+                            if (e.data.error) {
+                                reject(new Error(e.data.error));
+                            } else {
+                                resolve(e.data);
+                            }
+                        };
+                        target.postMessage(msg, [ch.port2]);
+                    });
+                });
+            }
+
+            function makeFileResponse(buffer, filePath) {
+                    var ext = filePath.replace(/.*\./, '');
                     var mime = {
                         'html': 'text/html',
                         'json': 'application/json',
@@ -214,21 +259,98 @@ self.addEventListener('fetch', function (event) {
                         'xul' : 'text/xul',
                     };
                     var headers = new Headers({
-                        'Content-Type': mime[ext],
+                        'Content-Type': mime[ext] || 'application/octet-stream',
                         'Cross-Origin-Embedder-Policy': 'require-corp',
                         'Cross-Origin-Opener-Policy': 'same-origin',
                     });
-                    resolve(new Response(buffer, {headers}));
+                    return new Response(buffer, {headers});
+            }
+
+            function sendFileFromClient(path) {
+                var decodedPath = decodeURIComponent(path);
+                askClient({type: 'readFile', path: decodedPath}).then(function(data) {
+                    resolve(makeFileResponse(new Uint8Array(data.buffer), path));
+                }).catch(function() {
+                    resolve(textResponse(error404Page(path)));
+                });
+            }
+            function sendFile(path) {
+                var decodedPath = decodeURIComponent(path);
+                if (isOnMount(decodedPath)) {
+                    return sendFileFromClient(path);
+                }
+                fs.readFile(decodedPath, function(err, buffer) {
+                    if (err) {
+                        // Fallback: ask main thread (file may be on a mounted FS)
+                        sendFileFromClient(path);
+                        return;
+                    }
+                    resolve(makeFileResponse(buffer, path));
                 });
             }
             var url = event.request.url;
             function redirect_dir() {
                 return resolve(Response.redirect(url + '/', 301));
             }
+            function serveFromClient(path) {
+                var decodedPath = decodeURIComponent(path);
+                askClient({type: 'stat', path: decodedPath}).then(function(data) {
+                    if (data.isFile) {
+                        askClient({type: 'readFile', path: decodedPath}).then(function(d) {
+                            resolve(makeFileResponse(new Uint8Array(d.buffer), path));
+                        }).catch(function() {
+                            resolve(textResponse(error404Page(path)));
+                        });
+                    } else if (data.isDirectory) {
+                        if (path.substr(-1, 1) !== '/') {
+                            return redirect_dir();
+                        }
+                        askClient({type: 'readdir', path: decodedPath}).then(function(d) {
+                            if (d.list.includes('index.html')) {
+                                serveFromClient(path + 'index.html');
+                            } else {
+                                resolve(textResponse(fileListingPage(path, d.list)));
+                            }
+                        }).catch(function() {
+                            resolve(textResponse(error404Page(path)));
+                        });
+                    }
+                }).catch(function() {
+                    resolve(textResponse(error404Page(path)));
+                });
+            }
             function serve(path) {
-                fs.stat(decodeURIComponent(path), function(err, stat) {
+                var decodedPath = decodeURIComponent(path);
+                // If path is under a known mount point, skip local IndexedDB entirely
+                if (isOnMount(decodedPath)) {
+                    return serveFromClient(path);
+                }
+                fs.stat(decodedPath, function(err, stat) {
                     if (err) {
-                        return resolve(textResponse(error404Page(path)));
+                        // Fallback: ask main thread for stat (file may be on a mounted FS)
+                        askClient({type: 'stat', path: decodedPath}).then(function(data) {
+                            if (data.isFile) {
+                                sendFile(path);
+                            } else if (data.isDirectory) {
+                                if (path.substr(-1, 1) !== '/') {
+                                    return redirect_dir();
+                                }
+                                // Ask main thread for readdir too
+                                askClient({type: 'readdir', path: decodedPath}).then(function(data) {
+                                    if (data.list.includes('index.html')) {
+                                        sendFile(path + '/index.html');
+                                    } else {
+                                        // For directory listings on mounted FS, provide a simple listing
+                                        resolve(textResponse(fileListingPage(path, data.list)));
+                                    }
+                                }).catch(function() {
+                                    resolve(textResponse(error404Page(path)));
+                                });
+                            }
+                        }).catch(function() {
+                            resolve(textResponse(error404Page(path)));
+                        });
+                        return;
                     }
                     if (stat.isFile()) {
                         sendFile(path);

@@ -32,22 +32,12 @@
 
 window.BrowserFS = parent.BrowserFS;
 
-BrowserFS.configure({
-	fs: "IndexedDB",
-	options: {
-		storeName: 'lol'
-	}
-}, fsOnInit);
+window.fs = parent.fs;
+window.path = parent.path;
+var Buffer = parent.Buffer;
+window.mountManager = parent.mountManager;
 
-window.fs = BrowserFS.BFSRequire('fs');
-window.path = BrowserFS.BFSRequire('path');
-var {Buffer} = BrowserFS.BFSRequire('buffer');
-
-function fsOnInit (e) {
-	if (e) throw e;
-
-	openTerminal();
-}
+openTerminal();
 
 
 // https://github.com/DustinBrett/daedalOS/blob/eb35a5425accb8508d942d01e003fc0842b60cc3/utils/functions.ts#L675
@@ -102,6 +92,61 @@ function openTerminal () {
 		// touch — поменять дату модификации файла
 
 		// mount — монтировать диск в нужном месте
+		mount: function (arg1, arg2) {
+			if (!mountManager) return Promise.resolve('Mount manager is not available');
+			if (!arg1) {
+				var mounts = mountManager.listMounts();
+				if (!mounts.length) return Promise.resolve('No active mounts');
+				return Promise.resolve(mounts.map(function (m) {
+					return m.mountPoint + '  type=' + m.type + '  name=' + m.name + (m.readOnly ? '  [ro]' : '  [rw]');
+				}).join('\n'));
+			}
+			if (arg1 === '--native') {
+				if (typeof window.showDirectoryPicker !== 'function') {
+					return Promise.resolve('File System Access API is not supported in this browser');
+				}
+				return window.showDirectoryPicker().then(function (handle) {
+					var name = handle.name || 'local';
+					var mp = arg2 || mountManager.suggestMountPoint(name);
+					return new Promise(function (resolve) {
+						mountManager.mountNativeDir(handle, mp, name, function (err) {
+							resolve(err ? 'Error: ' + err.message : 'Mounted native directory at ' + mp);
+						});
+					});
+				}).catch(function (e) {
+					return e.name === 'AbortError' ? 'Cancelled' : 'Error: ' + e.message;
+				});
+			}
+			var filePath = path.resolve(currentPath, arg1);
+			var mp = arg2 || mountManager.suggestMountPoint(path.basename(filePath));
+			var ext = filePath.replace(/.*\./, '').toLowerCase();
+			return new Promise(function (resolve) {
+				fs.readFile(filePath, function (err, buf) {
+					if (err) return resolve('Error reading file: ' + err.message);
+					var cb = function (mountErr) {
+						resolve(mountErr ? 'Error: ' + mountErr.message : 'Mounted at ' + mp);
+					};
+					if (ext === 'zip') {
+						mountManager.mountZip(buf, mp, path.basename(filePath), cb);
+					} else if (ext === 'iso') {
+						mountManager.mountIso(buf, mp, path.basename(filePath), cb);
+					} else {
+						resolve('Unsupported format: ' + ext + '. Supported: zip, iso. Use --native for local folders.');
+					}
+				});
+			});
+		},
+		umount: function (mountPoint) {
+			if (!mountManager) return Promise.resolve('Mount manager is not available');
+			if (!mountPoint) return Promise.resolve('Usage: umount <mountpoint>');
+			var mp = path.resolve(currentPath, mountPoint);
+			try {
+				mountManager.umount(mp);
+				return Promise.resolve('Unmounted ' + mp);
+			} catch (e) {
+				return Promise.resolve('Error: ' + e.message);
+			}
+		},
 		// file — тип файла
 		// mediainfo — инфо о файле
 		// color
@@ -240,6 +285,8 @@ help имяКоманды`)
 			if (
 				this.get_command().match(/^cat /)
 				|| this.get_command().match(/^cd /)
+				|| this.get_command().match(/^mount /)
+				|| this.get_command().match(/^umount /)
 			) {
 				return new Promise(function (resolve) {
 				fs.readdir(currentPath, function(e, contents) {
