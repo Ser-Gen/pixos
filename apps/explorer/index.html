@@ -480,6 +480,7 @@
 
 <script src="../jszip.3.10.1.min.js"></script>
 <script src="../file-type.19.0.0.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script type="module">
 import wasm7z from "../7z/main.js";
 
@@ -528,7 +529,9 @@ async function openExplorer () {
 			dragDropHandled: false,
 			dragCommitInProgress: false,
 			dragOverCommitTimer: null,
-			selectionBox: null
+			selectionBox: null,
+			shares: {},
+			hostName: 'Host'
 		};
 
 	var ui = {};
@@ -553,6 +556,7 @@ async function openExplorer () {
 					<button class="Explorer__cut">Cut</button>
 					<button class="Explorer__paste">Paste</button>
 					<button class="Explorer__defaults">Default Apps</button>
+					<button class="Explorer__share">Share</button>
 					<label class="Explorer__toolbarLabel" title="Select all items in current folder">
 						<input class="Explorer__selectAllToolbar Explorer__check" type="checkbox">
 						<span>All</span>
@@ -622,6 +626,7 @@ async function openExplorer () {
 		ui.table = rootElem.querySelector('.Explorer__table');
 		ui.empty = rootElem.querySelector('.Explorer__empty');
 		ui.selectionBox = rootElem.querySelector('.Explorer__selectionBox');
+		ui.share = rootElem.querySelector('.Explorer__share');
 		ui.status = rootElem.querySelector('.Explorer__status');
 		ui.overlays = rootElem.querySelector('.Explorer__overlays');
 	}
@@ -672,6 +677,10 @@ async function openExplorer () {
 
 		ui.defaults.onclick = function () {
 			actions.manageDefaultApps();
+		};
+
+		ui.share.onclick = function () {
+			actions.shareFiles();
 		};
 
 		ui.selectAll.onchange = function () {
@@ -1049,6 +1058,46 @@ async function openExplorer () {
 			node.textContent = item.path === '/' ? '📁 ' + item.label : '📂 ' + item.label + ' (' + item.path + ')';
 			ui.sidebar.append(node);
 		});
+
+		// Shared paths section
+		var sharedPaths = Object.keys(state.shares);
+		if (sharedPaths.length) {
+			var shareTitle = document.createElement('div');
+			shareTitle.className = 'Explorer__sidebarTitle';
+			shareTitle.textContent = 'Shared';
+			ui.sidebar.append(shareTitle);
+
+			sharedPaths.forEach(function (sp) {
+				var share = state.shares[sp];
+				var connCount = share.connections ? share.connections.length : 0;
+				var row = document.createElement('div');
+				row.className = 'Explorer__sidebarItem';
+				row.style.display = 'flex';
+				row.style.justifyContent = 'space-between';
+				row.style.alignItems = 'center';
+
+				var label = document.createElement('span');
+				label.style.cursor = 'pointer';
+				label.style.flex = '1';
+				label.style.overflow = 'hidden';
+				label.style.textOverflow = 'ellipsis';
+				label.textContent = '📡 ' + sp + (connCount ? ' (' + connCount + ')' : '');
+				label.onclick = function () { actions.showShareDialog(sp); };
+
+				var stopBtn = document.createElement('button');
+				stopBtn.textContent = '✕';
+				stopBtn.title = 'Stop sharing';
+				stopBtn.style.cssText = 'background:none;border:none;color:inherit;cursor:pointer;padding:2px 4px;font-size:14px;flex-shrink:0;';
+				stopBtn.onclick = function (e) {
+					e.stopPropagation();
+					actions.stopSharing(sp);
+				};
+
+				row.append(label);
+				row.append(stopBtn);
+				ui.sidebar.append(row);
+			});
+		}
 
 		// Mounts section
 		if (mountManager) {
@@ -1508,6 +1557,105 @@ async function openExplorer () {
 			panel.querySelector('.Dialog__submit').onclick = function () {
 				state.dialog = null;
 				renderOverlays();
+			};
+		}
+		else if (dialog.type === 'share') {
+			var shareInfo = state.shares[dialog.sharePath] || {};
+			var connCount = shareInfo.connections ? shareInfo.connections.length : 0;
+			panel.innerHTML = `
+				<div class="Modal__title">Share Files — ${escapeHtml(dialog.sharePath)}</div>
+				<div class="Modal__field">
+					<label>Your name:</label>
+					<input class="Dialog__hostName" value="${escapeAttr(state.hostName)}" style="width:100%" placeholder="Host">
+				</div>
+				<div class="Modal__field" style="text-align:center">
+					${dialog.peerId ? '<div class="Dialog__qrContainer" style="display:inline-block;padding:10px;background:#fff"></div>' : '<div>Creating peer connection...</div>'}
+				</div>
+				<div class="Modal__field">
+					<label>Link for client:</label>
+					<input class="Dialog__shareUrl" value="${escapeAttr(dialog.dataUrl || '')}" readonly style="width:100%;font-size:12px">
+				</div>
+				<div class="Modal__field" style="font-size:12px;color:#888">
+					Connections: <span class="Dialog__connCount">${connCount}</span>
+				</div>
+				<div class="Modal__field" style="border:1px solid #444;border-radius:4px;padding:8px;max-height:200px;display:flex;flex-direction:column">
+					<div style="font-size:12px;color:#888;margin-bottom:4px">Chat</div>
+					<div class="Dialog__chatMessages" style="flex:1;overflow-y:auto;min-height:80px;max-height:140px;font-size:13px;margin-bottom:6px"></div>
+					<div style="display:flex;gap:4px">
+						<input class="Dialog__chatInput" placeholder="Type a message..." style="flex:1;font-size:13px">
+						<button class="Dialog__chatSend">Send</button>
+					</div>
+				</div>
+				<div class="Modal__buttons">
+					<button class="Dialog__copyUrl">Copy Link</button>
+					<button class="Dialog__cancel">Close</button>
+					<button class="Dialog__submit Explorer__danger">Stop Sharing</button>
+				</div>
+			`;
+			if (dialog.peerId) {
+				var qrContainer = panel.querySelector('.Dialog__qrContainer');
+				if (qrContainer) {
+					(function (container, url) {
+						function renderQR () {
+							try {
+								new QRCode(container, {text: url, width: 300, height: 300, colorDark: '#000000', colorLight: '#ffffff', correctLevel: QRCode.CorrectLevel.L});
+							} catch (e) {
+								container.style.display = 'none';
+							}
+						}
+						if (typeof QRCode !== 'undefined') { renderQR(); }
+						else {
+							var s = document.createElement('script');
+							s.src = '../qrcode.js';
+							s.onload = renderQR;
+							s.onerror = function () { container.style.display = 'none'; };
+							document.body.appendChild(s);
+						}
+					})(qrContainer, dialog.dataUrl);
+				}
+			}
+			panel.querySelector('.Dialog__hostName').onchange = function () {
+				state.hostName = this.value.trim() || 'Host';
+			};
+			var urlInput = panel.querySelector('.Dialog__shareUrl');
+			urlInput.onclick = function () { this.select(); };
+			panel.querySelector('.Dialog__copyUrl').onclick = function () {
+				urlInput.select();
+				navigator.clipboard.writeText(urlInput.value);
+			};
+			var chatMessages = panel.querySelector('.Dialog__chatMessages');
+			var chatInput = panel.querySelector('.Dialog__chatInput');
+			if (shareInfo.chatLog) {
+				chatMessages.innerHTML = shareInfo.chatLog.map(function (m) {
+					return '<div><span style="color:' + m.color + ';font-weight:bold">' + escapeHtml(m.name) + ':</span> ' + escapeHtml(m.text) + '</div>';
+				}).join('');
+				chatMessages.scrollTop = chatMessages.scrollHeight;
+			}
+			function sendHostChat () {
+				var text = chatInput.value.trim();
+				if (!text) return;
+				chatInput.value = '';
+				var share = state.shares[dialog.sharePath];
+				if (!share) return;
+				var msg = {type: 'chat', text: text, name: state.hostName, peerId: share.peerId};
+				share.connections.forEach(function (c) { try { c.send(msg); } catch (e) {} });
+				if (!share.chatLog) share.chatLog = [];
+				var entry = {name: state.hostName, text: text, color: peerIdToColor(share.peerId)};
+				share.chatLog.push(entry);
+				chatMessages.innerHTML += '<div><span style="color:' + entry.color + ';font-weight:bold">' + escapeHtml(entry.name) + ':</span> ' + escapeHtml(entry.text) + '</div>';
+				chatMessages.scrollTop = chatMessages.scrollHeight;
+			}
+			panel.querySelector('.Dialog__chatSend').onclick = sendHostChat;
+			chatInput.onkeydown = function (e) { if (e.key === 'Enter') sendHostChat(); };
+			panel.querySelector('.Dialog__cancel').onclick = function () {
+				state.dialog = null;
+				renderOverlays();
+			};
+			panel.querySelector('.Dialog__submit').onclick = function () {
+				actions.stopSharing(dialog.sharePath);
+				state.dialog = null;
+				renderOverlays();
+				renderSidebar();
 			};
 		}
 		else if (dialog.type === 'pasteConflict') {
@@ -2060,7 +2208,9 @@ async function openExplorer () {
 			{separator: true},
 			{label: 'Upload', action: function () { ui.fileInput.click(); }},
 			{label: 'Paste', action: actions.pasteClipboard, disabled: !hasInternalClipboard()},
-			{label: 'Refresh', action: function () { refreshCurrentDir(false); }}
+			{label: 'Refresh', action: function () { refreshCurrentDir(false); }},
+			{separator: true},
+			{label: 'Share', action: actions.shareFiles}
 		];
 	}
 
@@ -2450,6 +2600,132 @@ async function openExplorer () {
 			renderToolbarState();
 		},
 
+		shareFiles: async function () {
+			if (typeof Peer === 'undefined') {
+				openInfoDialog('Share', 'PeerJS library is not loaded');
+				return;
+			}
+			var sharePath = normalizePath(state.cwd);
+			if (state.shares[sharePath]) {
+				var existing = state.shares[sharePath];
+				openDialog({type: 'share', sharePath: sharePath, peerId: existing.peerId, dataUrl: existing.dataUrl});
+				return;
+			}
+			var peer = new Peer();
+			state.shares[sharePath] = {peer: peer, peerId: null, dataUrl: '', connections: []};
+			openDialog({type: 'share', sharePath: sharePath, peerId: null, dataUrl: ''});
+			renderSidebar();
+
+			peer.on('open', function (id) {
+				var share = state.shares[sharePath];
+				if (!share) return;
+				share.peerId = id;
+				share.dataUrl = buildShareDataUrl(id);
+				openDialog({type: 'share', sharePath: sharePath, peerId: id, dataUrl: share.dataUrl});
+			});
+
+			peer.on('connection', function (conn) {
+				var share = state.shares[sharePath];
+				if (!share) return;
+				share.connections.push(conn);
+				updateShareConnCount();
+
+				conn.on('open', function () {
+					updateShareConnCount();
+				});
+
+				conn.on('data', async function (msg) {
+					if (!msg || typeof msg !== 'object') return;
+
+					if (msg.type === 'hello') {
+						var clientUI = buildClientUI();
+						conn.send({type: 'ui', html: clientUI.html, js: clientUI.js});
+						var files = await getShareFileList(sharePath);
+						conn.send({type: 'fileList', files: files});
+						if (msg.name) conn._peerName = msg.name;
+					}
+					else if (msg.type === 'refreshFileList') {
+						var freshFiles = await getShareFileList(sharePath);
+						conn.send({type: 'fileList', files: freshFiles});
+					}
+					else if (msg.type === 'requestFile') {
+						var fileName = String(msg.name || '');
+						var filePath = path.join(sharePath, fileName);
+						if (path.dirname(filePath) !== normalizePath(sharePath)) return;
+						try {
+							var content = await readFile(filePath);
+							var isText = isTextExtension(fileName);
+							if (isText) {
+								conn.send({type: 'fileContent', name: fileName, data: new TextDecoder().decode(content), isText: true, isImage: false});
+							} else {
+								var ab = content.buffer ? content.buffer.slice(content.byteOffset, content.byteOffset + content.byteLength) : content;
+								conn.send({type: 'fileMeta', name: fileName, size: ab.byteLength, isText: false, isImage: isImageExtension(fileName), isVideo: isVideoExtension(fileName)});
+								conn.send(new Blob([ab]));
+							}
+						} catch (err) {
+							console.error('Share file read error:', err);
+							conn.send({type: 'error', message: 'Failed to read file: ' + fileName});
+						}
+					}
+					else if (msg.type === 'chat') {
+						var chatText = String(msg.text || '').substring(0, 2000);
+						var chatName = String(msg.name || 'Guest').substring(0, 50);
+						var chatPeerId = String(msg.peerId || conn.peer);
+						var share = state.shares[sharePath];
+						if (!share) return;
+						if (!share.chatLog) share.chatLog = [];
+						var entry = {name: chatName, text: chatText, color: peerIdToColor(chatPeerId)};
+						share.chatLog.push(entry);
+						var broadcast = {type: 'chat', text: chatText, name: chatName, peerId: chatPeerId};
+						share.connections.forEach(function (c) { if (c !== conn) try { c.send(broadcast); } catch (e) {} });
+						var chatEl = document.querySelector('.Dialog__chatMessages');
+						if (chatEl) {
+							chatEl.innerHTML += '<div><span style="color:' + entry.color + ';font-weight:bold">' + escapeHtml(entry.name) + ':</span> ' + escapeHtml(entry.text) + '</div>';
+							chatEl.scrollTop = chatEl.scrollHeight;
+						}
+					}
+					else if (msg.type === 'uploadFile') {
+						var upName = String(msg.name || '');
+						if (!upName || upName.indexOf('/') !== -1 || upName.indexOf('\\') !== -1) return;
+						var upPath = path.join(sharePath, upName);
+						try {
+							var buf = msg.data instanceof ArrayBuffer ? Buffer.from(msg.data) : Buffer.from(msg.data);
+							await writeFile(upPath, buf);
+							if (normalizePath(state.cwd) === sharePath) await refreshCurrentDir(true);
+							conn.send({type: 'uploadOk', name: upName});
+						} catch (err) {
+							conn.send({type: 'error', message: 'Failed to save file: ' + upName});
+						}
+					}
+				});
+
+				conn.on('close', function () {
+					var share = state.shares[sharePath];
+					if (share) share.connections = share.connections.filter(function (c) { return c !== conn; });
+					updateShareConnCount();
+				});
+			});
+
+			peer.on('error', function (err) {
+				console.error('PeerJS error:', err);
+			});
+		},
+
+		stopSharing: function (sharePath) {
+			var share = state.shares[sharePath];
+			if (share) {
+				share.peer.destroy();
+				delete state.shares[sharePath];
+				renderSidebar();
+			}
+		},
+
+		showShareDialog: function (sharePath) {
+			var share = state.shares[sharePath];
+			if (!share) return;
+			openDialog({type: 'share', sharePath: sharePath, peerId: share.peerId, dataUrl: share.dataUrl});
+		},
+
 		pasteClipboard: async function (targetFolderPath) {
 			if (!hasInternalClipboard()) return;
 			var destination = normalizePath(targetFolderPath || state.cwd);
@@ -2471,6 +2747,161 @@ async function openExplorer () {
 			}
 		}
 	};
+
+	function peerIdToColor (id) {
+		var hash = 0;
+		for (var i = 0; i < id.length; i++) { hash = id.charCodeAt(i) + ((hash << 5) - hash); }
+		var hue = ((hash % 360) + 360) % 360;
+		return 'hsl(' + hue + ', 70%, 65%)';
+	}
+
+	function isTextExtension (fileName) {
+		var textExts = ['txt', 'md', 'json', 'js', 'mjs', 'ts', 'css', 'html', 'htm', 'xml', 'csv', 'log', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'sh', 'bat', 'cmd', 'py', 'rb', 'java', 'c', 'h', 'cpp', 'hpp', 'rs', 'go', 'toml', 'env', 'svg', 'sql', 'php', 'pl', 'lua', 'r', 'jsx', 'tsx', 'vue', 'svelte', 'less', 'scss', 'sass', 'styl', 'coffee', 'diff', 'patch', 'gitignore', 'editorconfig', 'htaccess', 'properties', 'gradle', 'makefile', 'dockerfile'];
+		var ext = (fileName.split('.').pop() || '').toLowerCase();
+		return textExts.indexOf(ext) !== -1;
+	}
+
+	function isImageExtension (fileName) {
+		var imgExts = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg', 'avif', 'tiff', 'tif'];
+		var ext = (fileName.split('.').pop() || '').toLowerCase();
+		return imgExts.indexOf(ext) !== -1;
+	}
+
+	function isVideoExtension (fileName) {
+		var vidExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'm4v', '3gp'];
+		var ext = (fileName.split('.').pop() || '').toLowerCase();
+		return vidExts.indexOf(ext) !== -1;
+	}
+
+	async function getShareFileList (sharePath) {
+		var items = await listDirectory(sharePath);
+		return items.filter(function (item) { return !item.isDirectory; }).map(function (item) {
+			return {name: item.name, size: item.size, isText: isTextExtension(item.name), isImage: isImageExtension(item.name), isVideo: isVideoExtension(item.name)};
+		});
+	}
+
+	function updateShareConnCount () {
+		var el = document.querySelector('.Dialog__connCount');
+		if (!el) return;
+		var dialog = state.dialog;
+		if (!dialog || dialog.type !== 'share') return;
+		var share = state.shares[dialog.sharePath];
+		el.textContent = share ? share.connections.length : 0;
+	}
+
+	function buildShareDataUrl (peerId) {
+		var clientHtml = '<body id=b style="background:#111;color:#ccc">' +
+			'<input id=nm placeholder="Your name"><p><button id=c>Connect</button>' +
+			'<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"><\/script>' +
+			'<script>' +
+			'c.onclick=function(){c.disabled=1;c.textContent="Connecting...";' +
+			'window._myName=nm.value.trim()||"Guest";' +
+			'var p=new Peer();window.MY_PEER=p;p.on("open",function(){' +
+			'window.MY_PEER_ID=p.id;' +
+			'var cn=p.connect("' + peerId + '");' +
+			'cn.on("open",function(){' +
+			'window.CN=cn;' +
+			'cn.on("data",function(d){' +
+			'if(d instanceof Blob||d instanceof ArrayBuffer||d instanceof Uint8Array){if(window.onBinaryData)onBinaryData(d);return}' +
+			'if(d.type==="ui"){b.innerHTML=d.html;if(d.js)new Function(d.js)();if(window.onPeerUI)onPeerUI()}' +
+			'else if(window.onPeerData)onPeerData(d)' +
+			'});' +
+			'cn.send({type:"hello",name:window._myName})' +
+			'})' +
+			'})}<\/script>';
+		return 'data:text/html,' + encodeURIComponent(clientHtml);
+	}
+
+	function buildClientUI () {
+		var html = '<style>*{box-sizing:border-box}body{background:#1e1e1e;color:#ccc;font-family:sans-serif;margin:20px}' +
+			'table{border-collapse:collapse;width:100%}th,td{border:1px solid #444;padding:6px 10px;text-align:left}' +
+			'th{background:#2a2a2a}tr:hover{background:#2a2a2a}' +
+			'button{background:#333;color:#ccc;border:1px solid #555;padding:4px 10px;cursor:pointer;border-radius:3px}button:hover{background:#444}' +
+			'textarea{background:#2a2a2a;color:#ccc;border:1px solid #444;border-radius:3px}' +
+			'input[type=file]{color:#ccc}input[type=text]{background:#2a2a2a;color:#ccc;border:1px solid #444;border-radius:3px;padding:4px}' +
+			'hr{border:none;border-top:1px solid #444;margin:16px 0}' +
+			'#us{margin-top:6px;color:#7c7}' +
+			'#chatBox{border:1px solid #444;border-radius:4px;padding:8px;margin-top:8px}' +
+			'#chatMsgs{max-height:150px;overflow-y:auto;font-size:13px;margin-bottom:6px;min-height:60px}</style>' +
+			'<h3 style="margin-top:0">Shared Files <button id="rfBtn" style="font-size:13px">Refresh</button></h3>' +
+			'<div id="flist">Loading...</div>' +
+			'<hr>' +
+			'<div><strong>View:</strong></div>' +
+			'<textarea id="tv" rows="12" style="width:100%;font-family:monospace;font-size:13px;padding:8px" readonly></textarea>' +
+			'<div id="iv" style="margin-top:8px"></div>' +
+			'<hr>' +
+			'<div><strong>Upload file to host:</strong></div>' +
+			'<div style="margin-top:6px"><input type="file" id="uf"> ' +
+			'<button id="ubBtn">Upload</button></div>' +
+			'<div id="us"></div>' +
+			'<hr>' +
+			'<div id="chatBox"><div style="font-size:12px;color:#888;margin-bottom:4px">Chat</div>' +
+			'<div id="chatMsgs"></div>' +
+			'<div style="display:flex;gap:4px"><input type="text" id="chatIn" placeholder="Type a message..." style="flex:1;font-size:13px">' +
+			'<button id="chatSend">Send</button></div></div>';
+
+		var js = 'window._pendingMeta=null;' +
+			'window.onBinaryData=function(d){' +
+			'console.log("[share] onBinaryData",typeof d,d instanceof Blob?"Blob size="+d.size:d instanceof ArrayBuffer?"AB len="+d.byteLength:d);' +
+			'var meta=window._pendingMeta;if(!meta){console.warn("[share] no pending meta");return}window._pendingMeta=null;' +
+			'var blob=d instanceof Blob?d:new Blob([d]);' +
+			'if(meta.isImage){var u=URL.createObjectURL(blob);document.getElementById("iv").innerHTML="<img src=\'"+u+"\' style=\'max-width:100%;max-height:500px\'>";document.getElementById("tv").style.display="none"}' +
+			'else if(meta.isVideo){var u=URL.createObjectURL(blob);document.getElementById("iv").innerHTML="<video src=\'"+u+"\' controls style=\'max-width:100%;max-height:500px\'>\</video>";document.getElementById("tv").style.display="none"}' +
+			'else{var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=meta.name;a.click()}' +
+			'};' +
+			'window.onPeerData=function(d){' +
+			'console.log("[share] onPeerData",d.type,d);' +
+			'if(d.type==="fileList"){renderFiles(d.files)}' +
+			'else if(d.type==="fileMeta"){console.log("[share] fileMeta set",d);window._pendingMeta=d}' +
+			'else if(d.type==="fileContent"){' +
+			'if(d.isText){document.getElementById("tv").value=d.data;document.getElementById("tv").style.display="";document.getElementById("iv").innerHTML=""}' +
+			'}' +
+			'else if(d.type==="uploadOk"){document.getElementById("us").textContent="Uploaded: "+d.name}' +
+			'else if(d.type==="error"){alert(d.message)}' +
+			'else if(d.type==="chat"){appendChat(d.name,d.text,d.peerId)}' +
+			'};' +
+			'function pidColor(id){var h=0;for(var i=0;i<id.length;i++){h=id.charCodeAt(i)+((h<<5)-h)}h=((h%360)+360)%360;return"hsl("+h+",70%,65%)"}' +
+			'function appendChat(name,text,pid){' +
+			'var el=document.getElementById("chatMsgs");' +
+			'var d=document.createElement("div");' +
+			'd.innerHTML="<span style=\\"color:"+pidColor(pid)+";font-weight:bold\\">"+esc(name)+":</span> "+esc(text);' +
+			'el.appendChild(d);el.scrollTop=el.scrollHeight}' +
+			'window.renderFiles=function(files){' +
+			'var h="<table><tr><th>Name</th><th>Size</th><th>Actions</th></tr>";' +
+			'files.forEach(function(f){' +
+			'h+="<tr><td>"+esc(f.name)+"</td><td>"+fmtSz(f.size)+"</td><td>";' +
+			'if(f.isText)h+="<button onclick=\'reqFile(\\""+esc(f.name)+"\\")\'>View</button> ";' +
+			'if(f.isImage)h+="<button onclick=\'viewImg(\\""+esc(f.name)+"\\")\'>View</button> ";' +
+			'if(f.isVideo)h+="<button onclick=\'viewImg(\\""+esc(f.name)+"\\")\'>View</button> ";' +
+			'h+="<button onclick=\'dlFile(\\""+esc(f.name)+"\\")\'>Download</button></td></tr>"' +
+			'});' +
+			'h+="</table>";' +
+			'document.getElementById("flist").innerHTML=h' +
+			'};' +
+			'window.reqFile=function(n){CN.send({type:"requestFile",name:n})};' +
+			'window.viewImg=function(n){CN.send({type:"requestFile",name:n})};' +
+			'window.dlFile=function(n){CN.send({type:"requestFile",name:n})};' +
+			'document.getElementById("rfBtn").onclick=function(){CN.send({type:"refreshFileList"})};' +
+			'document.getElementById("ubBtn").onclick=function(){' +
+			'var fi=document.getElementById("uf");' +
+			'if(!fi.files.length)return;' +
+			'var f=fi.files[0];' +
+			'var r=new FileReader();' +
+			'r.onload=function(){CN.send({type:"uploadFile",name:f.name,data:r.result})};' +
+			'r.readAsArrayBuffer(f)' +
+			'};' +
+			'document.getElementById("chatSend").onclick=function(){sendChat()};' +
+			'document.getElementById("chatIn").onkeydown=function(e){if(e.key==="Enter")sendChat()};' +
+			'function sendChat(){' +
+			'var inp=document.getElementById("chatIn");var t=inp.value.trim();if(!t)return;inp.value="";' +
+			'var pid=window.MY_PEER_ID||"guest";' +
+			'CN.send({type:"chat",text:t,name:window._myName||"Guest",peerId:pid});' +
+			'appendChat(window._myName||"Guest",t,pid)}' +
+			'function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}' +
+			'function fmtSz(b){if(b<1024)return b+" B";if(b<1048576)return(b/1024).toFixed(1)+" KB";return(b/1048576).toFixed(1)+" MB"}';
+
+		return {html: html, js: js};
+	}
 
 	async function ensureFfmpegLoaded () {
 		if (!window.FFmpeg) {
