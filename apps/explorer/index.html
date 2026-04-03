@@ -538,6 +538,13 @@ window.mountManager = parent.mountManager;
 
 openExplorer();
 
+(function () {
+	var s = document.createElement('script');
+	s.type = 'text/javascript';
+	s.src = '../fix-webm-duration.js';
+	document.body.append(s);
+})();
+
 fs.stat('/apps/ffmpeg.0.12.10/ffmpeg.js', function (err, stats) {
 	if (stats) {
 		var s = document.createElement('script');
@@ -2374,8 +2381,12 @@ async function openExplorer () {
 				if (e.data && e.data.size > 0) chunks.push(e.data);
 			};
 
-			mediaRecorder.onstop = function () {
+			mediaRecorder.onstop = async function () {
 				var blob = new Blob(chunks, {type: chunks[0] ? chunks[0].type : 'video/webm'});
+				var duration = state.recording ? Date.now() - state.recording.startTime : 0;
+				if (duration > 0 && typeof window.ysFixWebmDuration === 'function') {
+					try { blob = await window.ysFixWebmDuration(blob, duration); } catch (e) { /* use original blob */ }
+				}
 				var now = new Date();
 				var pad = function (n) { return String(n).padStart(2, '0'); };
 				var name = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '-' + pad(now.getHours()) + '-' + pad(now.getMinutes()) + '.webm';
