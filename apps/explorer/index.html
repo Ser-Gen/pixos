@@ -336,6 +336,50 @@
 			color: #d2d2d2;
 		}
 
+		.Explorer__recordingIndicator {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			margin-left: 6px;
+			color: #ff4d4d;
+			font-size: 13px;
+		}
+
+		.Explorer__recordingDot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+			background: #ff4d4d;
+			animation: Explorer__recordingPulse 1s infinite;
+			flex-shrink: 0;
+		}
+
+		@keyframes Explorer__recordingPulse {
+			0%, 100% { opacity: 1; }
+			50% { opacity: 0.3; }
+		}
+
+		.Explorer__recordingBtn {
+			background: none;
+			border: none;
+			cursor: pointer;
+			color: #ff4d4d;
+			padding: 2px 4px;
+			border-radius: 3px;
+			line-height: 1;
+			display: inline-flex;
+			align-items: center;
+			transition: color 0.15s, background 0.15s;
+		}
+
+		.Explorer__recordingBtn:hover {
+			background: rgba(255, 255, 255, 0.1);
+		}
+
+		.Explorer__recordingBtn--muted {
+			color: #666;
+		}
+
 		.ContextMenu {
 			position: fixed;
 			z-index: 1000;
@@ -459,7 +503,8 @@
 
 		.Explorer__table[hidden],
 		.Explorer__grid[hidden],
-		.Explorer__empty[hidden] {
+		.Explorer__empty[hidden],
+		.Explorer__recordingIndicator[hidden] {
 			display: none !important;
 		}
 
@@ -531,7 +576,8 @@ async function openExplorer () {
 			dragOverCommitTimer: null,
 			selectionBox: null,
 			shares: {},
-			hostName: 'Host'
+			hostName: 'Host',
+			recording: null
 		};
 
 	var ui = {};
@@ -574,6 +620,13 @@ async function openExplorer () {
 						<option value="size">Sort: Size</option>
 					</select>
 					<button class="Explorer__refresh">Refresh</button>
+					<span class="Explorer__recordingIndicator" hidden>
+						<span class="Explorer__recordingDot"></span>
+						<span class="Explorer__recordingTime">00:00:00</span>
+						<button class="Explorer__recordingBtn Explorer__recordingMicBtn" title="Mute microphone"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V20H9v2h6v-2h-2v-2.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
+						<button class="Explorer__recordingBtn Explorer__recordingSysBtn" title="Mute system audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
+						<button class="Explorer__recordingBtn Explorer__recordingStop" title="Stop recording"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg></button>
+					</span>
 				</div>
 				<input class="Explorer__fileInput" type="file" multiple hidden>
 			</div>
@@ -618,6 +671,11 @@ async function openExplorer () {
 		ui.viewMode = rootElem.querySelector('.Explorer__viewMode');
 		ui.sortKey = rootElem.querySelector('.Explorer__sortKey');
 		ui.refresh = rootElem.querySelector('.Explorer__refresh');
+		ui.recordingIndicator = rootElem.querySelector('.Explorer__recordingIndicator');
+		ui.recordingTime = rootElem.querySelector('.Explorer__recordingTime');
+		ui.recordingMicBtn = rootElem.querySelector('.Explorer__recordingMicBtn');
+		ui.recordingSysBtn = rootElem.querySelector('.Explorer__recordingSysBtn');
+		ui.recordingStop = rootElem.querySelector('.Explorer__recordingStop');
 		ui.breadcrumbs = rootElem.querySelector('.Explorer__breadcrumbs');
 		ui.sidebar = rootElem.querySelector('.Explorer__sidebar');
 		ui.main = rootElem.querySelector('.Explorer__main');
@@ -681,6 +739,18 @@ async function openExplorer () {
 
 		ui.share.onclick = function () {
 			actions.shareFiles();
+		};
+
+		ui.recordingStop.onclick = function () {
+			actions.stopScreenRecording();
+		};
+
+		ui.recordingMicBtn.onclick = function () {
+			actions.toggleMicMute();
+		};
+
+		ui.recordingSysBtn.onclick = function () {
+			actions.toggleSysMute();
 		};
 
 		ui.selectAll.onchange = function () {
@@ -2178,7 +2248,8 @@ async function openExplorer () {
 				{label: 'Extract', action: actions.extract},
 				{label: 'Extract 7z', action: actions.extract7z},
 				{label: 'Mount as filesystem', action: function () { actions.mountArchive(item.path); }, disabled: !isMountable},
-				{label: 'FFmpeg', action: actions.ffmpeg}
+				{label: 'FFmpeg', action: actions.ffmpeg},
+				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
 			]}
 		];
 	}
@@ -2195,7 +2266,8 @@ async function openExplorer () {
 				{label: 'Get SHA1', action: actions.getHashSHA1},
 				{label: 'Extract', action: actions.extract},
 				{label: 'Extract 7z', action: actions.extract7z},
-				{label: 'FFmpeg', action: actions.ffmpeg}
+				{label: 'FFmpeg', action: actions.ffmpeg},
+				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
 			]}
 		];
 	}
@@ -2210,11 +2282,181 @@ async function openExplorer () {
 			{label: 'Paste', action: actions.pasteClipboard, disabled: !hasInternalClipboard()},
 			{label: 'Refresh', action: function () { refreshCurrentDir(false); }},
 			{separator: true},
-			{label: 'Share', action: actions.shareFiles}
+			{label: 'Tools', submenu: [
+				{label: 'Share', action: actions.shareFiles},
+				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
+			]}
 		];
 	}
 
+	function updateRecordingTimer () {
+		if (!state.recording) return;
+		var elapsed = Date.now() - state.recording.startTime;
+		var totalSec = Math.floor(elapsed / 1000);
+		var h = Math.floor(totalSec / 3600);
+		var m = Math.floor((totalSec % 3600) / 60);
+		var s = totalSec % 60;
+		var pad = function (n) { return String(n).padStart(2, '0'); };
+		ui.recordingTime.textContent = pad(h) + ':' + pad(m) + ':' + pad(s);
+	}
+
 	var actions = {
+		startScreenRecording: async function () {
+			if (state.recording) {
+				openInfoDialog('Screen Recording', 'Recording is already in progress.');
+				return;
+			}
+
+			var screenStream;
+			try {
+				screenStream = await navigator.mediaDevices.getDisplayMedia({
+					video: true,
+					audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false},
+					selfBrowserSurface: 'include'
+				});
+			}
+			catch (err) {
+				openInfoDialog('Screen Recording', 'Could not start screen capture: ' + err.message);
+				return;
+			}
+
+			var micStream = null;
+			try {
+				micStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
+			}
+			catch (err) {
+				// Mic is optional — continue without it
+			}
+
+			var composedStream = new MediaStream();
+			screenStream.getVideoTracks().forEach(function (track) {
+				composedStream.addTrack(track);
+			});
+
+			var audioContext, audioDestination, mediaRecorder;
+			try {
+				audioContext = new AudioContext();
+				await audioContext.resume();
+				audioDestination = audioContext.createMediaStreamDestination();
+
+				if (screenStream.getAudioTracks().length > 0) {
+					var systemSource = audioContext.createMediaStreamSource(screenStream);
+					var systemGain = audioContext.createGain();
+					systemGain.gain.value = 1.0;
+					systemSource.connect(systemGain).connect(audioDestination);
+				}
+
+				if (micStream && micStream.getAudioTracks().length > 0) {
+					var micSource = audioContext.createMediaStreamSource(micStream);
+					var micGain = audioContext.createGain();
+					micGain.gain.value = 1.0;
+					micSource.connect(micGain).connect(audioDestination);
+				}
+
+				audioDestination.stream.getAudioTracks().forEach(function (track) {
+					composedStream.addTrack(track);
+				});
+
+				var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+					? 'video/webm;codecs=vp9,opus' : 'video/webm';
+				mediaRecorder = new MediaRecorder(composedStream, {mimeType: mimeType});
+			}
+			catch (err) {
+				screenStream.getTracks().forEach(function (t) { t.stop(); });
+				if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+				openInfoDialog('Screen Recording', 'Could not initialize recording: ' + err.message);
+				return;
+			}
+
+			var chunks = [];
+
+			mediaRecorder.ondataavailable = function (e) {
+				if (e.data && e.data.size > 0) chunks.push(e.data);
+			};
+
+			mediaRecorder.onstop = function () {
+				var blob = new Blob(chunks, {type: chunks[0] ? chunks[0].type : 'video/webm'});
+				var now = new Date();
+				var pad = function (n) { return String(n).padStart(2, '0'); };
+				var name = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '-' + pad(now.getHours()) + '-' + pad(now.getMinutes()) + '.webm';
+				onFileHandler(blobToFile(blob, name));
+				actions.stopScreenRecording(true);
+			};
+
+			// Auto-stop when user closes browser's "Stop sharing" dialog
+			screenStream.getVideoTracks().forEach(function (track) {
+				track.onended = function () {
+					if (state.recording && state.recording.mediaRecorder.state !== 'inactive') {
+						state.recording.mediaRecorder.stop();
+					}
+				};
+			});
+
+			try {
+				mediaRecorder.start(1000);
+			}
+			catch (err) {
+				screenStream.getTracks().forEach(function (t) { t.stop(); });
+				if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+				openInfoDialog('Screen Recording', 'Could not start MediaRecorder: ' + err.message);
+				return;
+			}
+
+			state.recording = {
+				mediaRecorder: mediaRecorder,
+				chunks: chunks,
+				startTime: Date.now(),
+				timerInterval: setInterval(updateRecordingTimer, 1000),
+				screenStream: screenStream,
+				micStream: micStream,
+				micMuted: false,
+				sysMuted: false
+			};
+
+			ui.recordingTime.textContent = '00:00:00';
+			ui.recordingMicBtn.classList.remove('Explorer__recordingBtn--muted');
+			ui.recordingMicBtn.title = 'Mute microphone';
+			ui.recordingSysBtn.classList.remove('Explorer__recordingBtn--muted');
+			ui.recordingSysBtn.title = 'Mute system audio';
+			ui.recordingIndicator.hidden = false;
+		},
+
+		stopScreenRecording: function (fromOnstop) {
+			if (!state.recording) return;
+			if (!fromOnstop && state.recording.mediaRecorder.state !== 'inactive') {
+				state.recording.mediaRecorder.stop();
+				// onstop will call stopScreenRecording(true) to finish cleanup
+				return;
+			}
+			clearInterval(state.recording.timerInterval);
+			ui.recordingIndicator.hidden = true;
+			state.recording = null;
+		},
+
+		toggleMicMute: function () {
+			if (!state.recording) return;
+			state.recording.micMuted = !state.recording.micMuted;
+			if (state.recording.micStream) {
+				state.recording.micStream.getAudioTracks().forEach(function (t) {
+					t.enabled = !state.recording.micMuted;
+				});
+			}
+			ui.recordingMicBtn.classList.toggle('Explorer__recordingBtn--muted', state.recording.micMuted);
+			ui.recordingMicBtn.title = state.recording.micMuted ? 'Unmute microphone' : 'Mute microphone';
+		},
+
+		toggleSysMute: function () {
+			if (!state.recording) return;
+			state.recording.sysMuted = !state.recording.sysMuted;
+			if (state.recording.screenStream) {
+				state.recording.screenStream.getAudioTracks().forEach(function (t) {
+					t.enabled = !state.recording.sysMuted;
+				});
+			}
+			ui.recordingSysBtn.classList.toggle('Explorer__recordingBtn--muted', state.recording.sysMuted);
+			ui.recordingSysBtn.title = state.recording.sysMuted ? 'Unmute system audio' : 'Mute system audio';
+		},
+
 		open: function (itemPath, forcedApp) {
 			var item = getItemByPath(itemPath);
 			if (!item) return;
