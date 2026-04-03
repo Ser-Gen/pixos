@@ -2440,6 +2440,12 @@ async function openExplorer () {
 				return;
 			}
 			clearInterval(state.recording.timerInterval);
+			if (state.recording.screenStream) {
+				state.recording.screenStream.getTracks().forEach(function (t) { t.stop(); });
+			}
+			if (state.recording.micStream) {
+				state.recording.micStream.getTracks().forEach(function (t) { t.stop(); });
+			}
 			ui.recordingIndicator.hidden = true;
 			state.recording = null;
 		},
