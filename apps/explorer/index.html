@@ -1735,6 +1735,47 @@ async function openExplorer () {
 				renderSidebar();
 			};
 		}
+		else if (dialog.type === 'screenRecordingOptions') {
+			var recFormats = [
+				{mime: 'video/mp4;codecs=avc1,mp4a.40.2', label: 'MP4 (H.264 + AAC)'},
+				{mime: 'video/webm;codecs=vp9,opus',      label: 'WebM VP9 + Opus'},
+				{mime: 'video/webm;codecs=vp8,opus',      label: 'WebM VP8 + Opus'},
+				{mime: 'video/webm',                      label: 'WebM'}
+			].filter(function (f) { return MediaRecorder.isTypeSupported(f.mime); });
+			if (!recFormats.length) recFormats = [{mime: 'video/webm', label: 'WebM'}];
+			var recFormatOptions = recFormats.map(function (f) {
+				return '<option value="' + escapeAttr(f.mime) + '">' + escapeHtml(f.label) + '</option>';
+			}).join('');
+			panel.innerHTML = `
+				<div class="Modal__title">Screen Recording</div>
+				<div class="Modal__field"><label>Format</label><select class="Dialog__recFormat">${recFormatOptions}</select></div>
+				<div class="Modal__field"><label>Resolution</label><select class="Dialog__recResolution">
+					<option value="">Native (full screen)</option>
+					<option value="1080">1080p (1920×1080)</option>
+					<option value="720">720p (1280×720)</option>
+					<option value="480">480p (854×480)</option>
+				</select></div>
+				<div class="Modal__field"><label>Quality</label><select class="Dialog__recQuality">
+					<option value="">Auto (browser default)</option>
+					<option value="8000000">High (8 Mbps)</option>
+					<option value="2500000">Medium (2.5 Mbps)</option>
+					<option value="1000000">Low (1 Mbps)</option>
+				</select></div>
+				<div class="Modal__field"><label><input type="checkbox" class="Dialog__recVideo" checked> Record screen video</label></div>
+				<div class="Modal__field"><label><input type="checkbox" class="Dialog__recSysAudio" checked> Record system audio</label></div>
+				<div class="Modal__field"><label><input type="checkbox" class="Dialog__recMicAudio" checked> Record microphone</label></div>
+				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Start Recording</button></div>
+			`;
+			wireSimpleDialog(panel, function () {
+				var mimeType = panel.querySelector('.Dialog__recFormat').value;
+				var resolution = panel.querySelector('.Dialog__recResolution').value;
+				var videoBitrate = panel.querySelector('.Dialog__recQuality').value;
+				var recordVideo = panel.querySelector('.Dialog__recVideo').checked;
+				var recordSysAudio = panel.querySelector('.Dialog__recSysAudio').checked;
+				var recordMic = panel.querySelector('.Dialog__recMicAudio').checked;
+				dialog.onSubmit({mimeType: mimeType, resolution: resolution, videoBitrate: videoBitrate, recordVideo: recordVideo, recordSysAudio: recordSysAudio, recordMic: recordMic});
+			});
+		}
 		else if (dialog.type === 'pasteConflict') {
 			panel.innerHTML = `
 				<div class="Modal__title">File already exists</div>
@@ -2307,46 +2348,69 @@ async function openExplorer () {
 		ui.recordingTime.textContent = pad(h) + ':' + pad(m) + ':' + pad(s);
 	}
 
-	var actions = {
-		startScreenRecording: async function () {
-			if (state.recording) {
-				openInfoDialog('Screen Recording', 'Recording is already in progress.');
-				return;
-			}
+	var resolutionMap = {
+		'1080': {width: 1920, height: 1080},
+		'720':  {width: 1280, height: 720},
+		'480':  {width: 854,  height: 480}
+	};
 
-			var screenStream;
-			try {
-				screenStream = await navigator.mediaDevices.getDisplayMedia({
-					video: true,
-					audio: {echoCancellation: false, noiseSuppression: false, autoGainControl: false},
-					selfBrowserSurface: 'include'
-				});
-			}
-			catch (err) {
-				openInfoDialog('Screen Recording', 'Could not start screen capture: ' + err.message);
-				return;
-			}
+	async function doStartScreenRecording (settings) {
+		state.dialog = null;
+		renderOverlays();
 
-			var micStream = null;
+		var videoConstraint;
+		if (!settings.recordVideo) {
+			videoConstraint = false;
+		} else if (settings.resolution && resolutionMap[settings.resolution]) {
+			var res = resolutionMap[settings.resolution];
+			videoConstraint = {width: {ideal: res.width}, height: {ideal: res.height}};
+		} else {
+			videoConstraint = true;
+		}
+
+		var sysAudioConstraint = settings.recordSysAudio
+			? {echoCancellation: false, noiseSuppression: false, autoGainControl: false}
+			: false;
+
+		var screenStream;
+		try {
+			screenStream = await navigator.mediaDevices.getDisplayMedia({
+				video: videoConstraint,
+				audio: sysAudioConstraint,
+				selfBrowserSurface: 'include'
+			});
+		}
+		catch (err) {
+			openInfoDialog('Screen Recording', 'Could not start screen capture: ' + err.message);
+			return;
+		}
+
+		var micStream = null;
+		if (settings.recordMic) {
 			try {
 				micStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
 			}
 			catch (err) {
 				// Mic is optional — continue without it
 			}
+		}
 
-			var composedStream = new MediaStream();
-			screenStream.getVideoTracks().forEach(function (track) {
-				composedStream.addTrack(track);
-			});
+		var composedStream = new MediaStream();
+		screenStream.getVideoTracks().forEach(function (track) {
+			composedStream.addTrack(track);
+		});
 
-			var audioContext, audioDestination, mediaRecorder;
-			try {
+		var audioContext, audioDestination, mediaRecorder;
+		try {
+			var hasAudio = (settings.recordSysAudio && screenStream.getAudioTracks().length > 0) ||
+				(micStream && micStream.getAudioTracks().length > 0);
+
+			if (hasAudio) {
 				audioContext = new AudioContext();
 				await audioContext.resume();
 				audioDestination = audioContext.createMediaStreamDestination();
 
-				if (screenStream.getAudioTracks().length > 0) {
+				if (settings.recordSysAudio && screenStream.getAudioTracks().length > 0) {
 					var systemSource = audioContext.createMediaStreamSource(screenStream);
 					var systemGain = audioContext.createGain();
 					systemGain.gain.value = 1.0;
@@ -2363,73 +2427,85 @@ async function openExplorer () {
 				audioDestination.stream.getAudioTracks().forEach(function (track) {
 					composedStream.addTrack(track);
 				});
-
-				var mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-					? 'video/webm;codecs=vp9,opus' : 'video/webm';
-				mediaRecorder = new MediaRecorder(composedStream, {mimeType: mimeType});
-			}
-			catch (err) {
-				screenStream.getTracks().forEach(function (t) { t.stop(); });
-				if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
-				openInfoDialog('Screen Recording', 'Could not initialize recording: ' + err.message);
-				return;
 			}
 
-			var chunks = [];
+			var recorderOptions = {mimeType: settings.mimeType};
+			if (settings.videoBitrate) recorderOptions.videoBitsPerSecond = parseInt(settings.videoBitrate, 10);
+			mediaRecorder = new MediaRecorder(composedStream, recorderOptions);
+		}
+		catch (err) {
+			screenStream.getTracks().forEach(function (t) { t.stop(); });
+			if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+			openInfoDialog('Screen Recording', 'Could not initialize recording: ' + err.message);
+			return;
+		}
 
-			mediaRecorder.ondataavailable = function (e) {
-				if (e.data && e.data.size > 0) chunks.push(e.data);
-			};
+		var isWebm = settings.mimeType.startsWith('video/webm');
+		var ext = isWebm ? '.webm' : '.mp4';
+		var chunks = [];
 
-			mediaRecorder.onstop = async function () {
-				var blob = new Blob(chunks, {type: chunks[0] ? chunks[0].type : 'video/webm'});
-				var duration = state.recording ? Date.now() - state.recording.startTime : 0;
-				if (duration > 0 && typeof window.ysFixWebmDuration === 'function') {
-					try { blob = await window.ysFixWebmDuration(blob, duration); } catch (e) { /* use original blob */ }
+		mediaRecorder.ondataavailable = function (e) {
+			if (e.data && e.data.size > 0) chunks.push(e.data);
+		};
+
+		mediaRecorder.onstop = async function () {
+			var blob = new Blob(chunks, {type: chunks[0] ? chunks[0].type : settings.mimeType});
+			var duration = state.recording ? Date.now() - state.recording.startTime : 0;
+			if (isWebm && duration > 0 && typeof window.ysFixWebmDuration === 'function') {
+				try { blob = await window.ysFixWebmDuration(blob, duration); } catch (e) { /* use original blob */ }
+			}
+			var now = new Date();
+			var pad = function (n) { return String(n).padStart(2, '0'); };
+			var name = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '-' + pad(now.getHours()) + '-' + pad(now.getMinutes()) + ext;
+			onFileHandler(blobToFile(blob, name));
+			actions.stopScreenRecording(true);
+		};
+
+		// Auto-stop when user closes browser's "Stop sharing" dialog
+		screenStream.getVideoTracks().forEach(function (track) {
+			track.onended = function () {
+				if (state.recording && state.recording.mediaRecorder.state !== 'inactive') {
+					state.recording.mediaRecorder.stop();
 				}
-				var now = new Date();
-				var pad = function (n) { return String(n).padStart(2, '0'); };
-				var name = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '-' + pad(now.getHours()) + '-' + pad(now.getMinutes()) + '.webm';
-				onFileHandler(blobToFile(blob, name));
-				actions.stopScreenRecording(true);
 			};
+		});
 
-			// Auto-stop when user closes browser's "Stop sharing" dialog
-			screenStream.getVideoTracks().forEach(function (track) {
-				track.onended = function () {
-					if (state.recording && state.recording.mediaRecorder.state !== 'inactive') {
-						state.recording.mediaRecorder.stop();
-					}
-				};
-			});
+		try {
+			mediaRecorder.start(1000);
+		}
+		catch (err) {
+			screenStream.getTracks().forEach(function (t) { t.stop(); });
+			if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+			openInfoDialog('Screen Recording', 'Could not start MediaRecorder: ' + err.message);
+			return;
+		}
 
-			try {
-				mediaRecorder.start(1000);
-			}
-			catch (err) {
-				screenStream.getTracks().forEach(function (t) { t.stop(); });
-				if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
-				openInfoDialog('Screen Recording', 'Could not start MediaRecorder: ' + err.message);
+		state.recording = {
+			mediaRecorder: mediaRecorder,
+			chunks: chunks,
+			startTime: Date.now(),
+			timerInterval: setInterval(updateRecordingTimer, 1000),
+			screenStream: screenStream,
+			micStream: micStream,
+			micMuted: false,
+			sysMuted: false
+		};
+
+		ui.recordingTime.textContent = '00:00:00';
+		ui.recordingMicBtn.classList.remove('Explorer__recordingBtn--muted');
+		ui.recordingMicBtn.title = 'Mute microphone';
+		ui.recordingSysBtn.classList.remove('Explorer__recordingBtn--muted');
+		ui.recordingSysBtn.title = 'Mute system audio';
+		ui.recordingIndicator.hidden = false;
+	}
+
+	var actions = {
+		startScreenRecording: function () {
+			if (state.recording) {
+				openInfoDialog('Screen Recording', 'Recording is already in progress.');
 				return;
 			}
-
-			state.recording = {
-				mediaRecorder: mediaRecorder,
-				chunks: chunks,
-				startTime: Date.now(),
-				timerInterval: setInterval(updateRecordingTimer, 1000),
-				screenStream: screenStream,
-				micStream: micStream,
-				micMuted: false,
-				sysMuted: false
-			};
-
-			ui.recordingTime.textContent = '00:00:00';
-			ui.recordingMicBtn.classList.remove('Explorer__recordingBtn--muted');
-			ui.recordingMicBtn.title = 'Mute microphone';
-			ui.recordingSysBtn.classList.remove('Explorer__recordingBtn--muted');
-			ui.recordingSysBtn.title = 'Mute system audio';
-			ui.recordingIndicator.hidden = false;
+			openDialog({type: 'screenRecordingOptions', onSubmit: doStartScreenRecording});
 		},
 
 		stopScreenRecording: function (fromOnstop) {
