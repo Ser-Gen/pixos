@@ -1,0 +1,65 @@
+{
+  "id": "media-player",
+  "name": "Media Player",
+  "version": "1.0.0",
+  "entryPath": "/apps/media-player/index.html",
+  "files": [
+    {
+      "path": "/apps/media-player/assets/butterchurn.js",
+      "hash": "sha256:2632a5e827e010d099a5b597fb3c55bb87aaa5c593f4f5bc14084c0ea53286a4"
+    },
+    {
+      "path": "/apps/media-player/assets/butterchurnPresets.min.js",
+      "hash": "sha256:d3c26688eae69d9c9f64aca3ccf3c4eff04c9ad6b831534645e371a4aee5a7f7"
+    },
+    {
+      "path": "/apps/media-player/assets/commonjsHelpers.js",
+      "hash": "sha256:4c81dcd54e7e877a79145c4c6fde30ac0e8d857f412b73f48f6970e5d7eab938"
+    },
+    {
+      "path": "/apps/media-player/assets/index.css",
+      "hash": "sha256:58ae5df3faa23de31920974bbcf3093b8aa44a851f2990123b68626ba3f64e60"
+    },
+    {
+      "path": "/apps/media-player/assets/index.js",
+      "hash": "sha256:7db2dc0df36a5d11bbdb017e3ced8cac41b1de3f83d7d8a8b00f7a286bff39a1"
+    },
+    {
+      "path": "/apps/media-player/assets/worker.js",
+      "hash": "sha256:242931933b757920171cbdfd4ad7a082cfaa6537a0110e707d80d1555eaa0890"
+    },
+    {
+      "path": "/apps/media-player/index.html",
+      "hash": "sha256:26b49891151b58ecfef7cd2b57e5ee6289f9cde7d136c4a2900c9dc3173b882f"
+    },
+    {
+      "path": "/apps/media-player/pixos_supported",
+      "hash": "sha256:ee5d42d340ef1a2c269c08c6be4f30dde62fd87df5afbfe90896d0a6e7f32070"
+    },
+    {
+      "path": "/apps/media-player/pixos.app.json",
+      "hash": "sha256:240f9a6b3f7f3301bfb9a4c0d947219869efb0fa261abe0f8008a6faaed680cc"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "mp4",
+      "webm",
+      "mkv",
+      "avi",
+      "mov",
+      "mp3",
+      "m4a",
+      "aac",
+      "flac",
+      "ogg",
+      "opus",
+      "wav",
+      "wma",
+      "ts",
+      "m2ts",
+      "m3u",
+      "m3u8"
+    ]
+  }
+}
