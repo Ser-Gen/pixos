@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+	<script>
+		(function () {
+			if (!window.opener) return;
+			var token = new URLSearchParams(location.search).get('token');
+			if (!token) return;
+			window.opener.postMessage({ type: 'files3-token', token: token }, location.origin);
+			window.close();
+		})();
+	</script>
 	<meta charset="UTF-8">
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -573,6 +582,7 @@ async function openExplorer () {
 		contextMenu: null,
 		dialog: null,
 		busy: false,
+			pendingRefresh: null,
 			historyBack: [],
 			historyForward: [],
 			dragPaths: [],
@@ -1020,12 +1030,26 @@ async function openExplorer () {
 		refreshCurrentDir(false);
 	}
 
+	function withFsTimeout (promise, ms, label) {
+		return Promise.race([
+			promise,
+			new Promise(function (_, reject) {
+				setTimeout(function () {
+					reject(new Error((label || 'Filesystem operation') + ' timed out after ' + ms + 'ms'));
+				}, ms);
+			})
+		]);
+	}
+
 	async function refreshCurrentDir (keepSelection) {
-		if (state.busy) return;
+		if (state.busy) {
+			state.pendingRefresh = keepSelection;
+			return;
+		}
 		state.busy = true;
 		try {
 			var previousSelection = keepSelection ? new Set(state.selectedPaths) : new Set();
-			state.items = await listDirectory(state.cwd);
+			state.items = await withFsTimeout(listDirectory(state.cwd), 20000, 'Directory listing');
 			sortItems();
 			state.selectedPaths = new Set();
 			state.lastSelectedPath = null;
@@ -1051,6 +1075,11 @@ async function openExplorer () {
 		}
 		finally {
 			state.busy = false;
+			if (state.pendingRefresh !== null) {
+				var pending = state.pendingRefresh;
+				state.pendingRefresh = null;
+				refreshCurrentDir(pending);
+			}
 		}
 	}
 
@@ -1186,7 +1215,7 @@ async function openExplorer () {
 				ui.sidebar.append(mountTitle);
 
 				mounts.forEach(function (m) {
-					var typeIcon = m.type === 'native' ? '💻' : (m.type === 'iso' ? '💿' : '📦');
+					var typeIcon = m.type === 'native' ? '💻' : (m.type === 'iso' ? '💿' : (m.type === 'files3' ? '☁️' : '📦'));
 					var roLabel = m.readOnly ? ' [ro]' : '';
 					var row = document.createElement('div');
 					row.className = 'Explorer__sidebarItem' + (m.mountPoint === state.cwd ? ' Explorer__sidebarItem--active' : '');
@@ -1227,6 +1256,13 @@ async function openExplorer () {
 				mountLocalBtn.onclick = function () { actions.mountNativeDir(); };
 				ui.sidebar.append(mountLocalBtn);
 			}
+
+			var mountFiles3Btn = document.createElement('div');
+			mountFiles3Btn.className = 'Explorer__sidebarItem';
+			mountFiles3Btn.style.cursor = 'pointer';
+			mountFiles3Btn.textContent = '☁️ Mount Files3 storage...';
+			mountFiles3Btn.onclick = function () { actions.mountFiles3(); };
+			ui.sidebar.append(mountFiles3Btn);
 		}
 	}
 
@@ -1614,6 +1650,37 @@ async function openExplorer () {
 				dialog.onSubmit(panel.querySelector('.Dialog__args').value.trim());
 			});
 		}
+		else if (dialog.type === 'files3Mount') {
+			panel.innerHTML = `
+				<div class="Modal__title">Mount Files3 Storage</div>
+				<div class="Modal__list">If no token is saved, an authorization window will open on the storage server.</div>
+				<div class="Modal__field">
+					<label>Base URL API</label>
+					<input class="Dialog__files3BaseUrl" type="url" value="${escapeAttr(dialog.baseUrl || '')}" placeholder="https://storage.example.com/api" style="width:100%">
+				</div>
+				<div class="Modal__field">
+					<label>Root Folder ID</label>
+					<input class="Dialog__files3RootFolderId" type="number" min="1" value="${escapeAttr(String(dialog.rootFolderId || ''))}" placeholder="42" style="width:100%">
+				</div>
+				<div class="Modal__field">
+					<label>localStorage ID (token key)</label>
+					<input class="Dialog__files3LocalStorageId" type="text" value="${escapeAttr(dialog.localStorageId || '')}" placeholder="files3_token_demo" style="width:100%">
+				</div>
+				<div class="Modal__field">
+					<label>Mount point</label>
+					<input class="Dialog__files3MountPoint" type="text" value="${escapeAttr(dialog.mountPoint || '')}" placeholder="/mnt/files3" style="width:100%">
+				</div>
+				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Connect</button></div>
+			`;
+			wireSimpleDialog(panel, function () {
+				dialog.onSubmit({
+					baseUrl: panel.querySelector('.Dialog__files3BaseUrl').value.trim(),
+					rootFolderId: panel.querySelector('.Dialog__files3RootFolderId').value.trim(),
+					localStorageId: panel.querySelector('.Dialog__files3LocalStorageId').value.trim(),
+					mountPoint: panel.querySelector('.Dialog__files3MountPoint').value.trim()
+				});
+			});
+		}
 		else if (dialog.type === 'prompt') {
 			panel.innerHTML = `
 				<div class="Modal__title">${escapeHtml(dialog.title)}</div>
@@ -1804,6 +1871,12 @@ async function openExplorer () {
 	}
 
 	function wireSimpleDialog (panel, onSubmit) {
+		var submitted = false;
+		function submitOnce () {
+			if (submitted) return;
+			submitted = true;
+			onSubmit();
+		}
 		var cancel = panel.querySelector('.Dialog__cancel');
 		if (cancel) {
 			cancel.onclick = function () {
@@ -1813,16 +1886,14 @@ async function openExplorer () {
 		}
 		var submit = panel.querySelector('.Dialog__submit');
 		if (submit) {
-			submit.onclick = function () {
-				onSubmit();
-			};
+			submit.onclick = submitOnce;
 		}
 		var firstInput = panel.querySelector('input, textarea, select');
 		if (firstInput) firstInput.focus();
 		panel.onkeydown = function (e) {
 			if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
 				e.preventDefault();
-				onSubmit();
+				submitOnce();
 			}
 		};
 	}
@@ -2866,12 +2937,15 @@ async function openExplorer () {
 				openInfoDialog('Mount', 'Mount manager is not available');
 				return;
 			}
-			if (typeof window.showDirectoryPicker !== 'function') {
+			var pickDir = (parent && typeof parent.pickNativeDirectory === 'function')
+				? parent.pickNativeDirectory.bind(parent)
+				: (typeof window.showDirectoryPicker === 'function' ? function () { return window.showDirectoryPicker(); } : null);
+			if (!pickDir) {
 				openInfoDialog('Mount', 'File System Access API is not supported in this browser');
 				return;
 			}
 			try {
-				var handle = await window.showDirectoryPicker();
+				var handle = await pickDir();
 				var name = handle.name || 'local';
 				var defaultMp = mountManager.suggestMountPoint(name);
 				openDialog({
@@ -2883,13 +2957,29 @@ async function openExplorer () {
 						state.dialog = null;
 						renderOverlays();
 						if (!mountPoint) return;
+						mountPoint = normalizePath(mountPoint);
 						mountManager.mountNativeDir(handle, mountPoint, name, function (err) {
 							if (err) {
 								openInfoDialog('Mount', 'Failed to mount: ' + err.message);
-							} else {
-								renderSidebar();
-								navigateTo(mountPoint);
+								return;
 							}
+							renderSidebar();
+							var readDone = false;
+							var readTimer = setTimeout(function () {
+								if (readDone) return;
+								readDone = true;
+								openInfoDialog('Mount', 'Mounted at ' + mountPoint + ' but reading timed out. Open it from the Mounts sidebar.');
+							}, 10000);
+							fs.readdir(mountPoint, function (readErr) {
+								if (readDone) return;
+								readDone = true;
+								clearTimeout(readTimer);
+								if (readErr) {
+									openInfoDialog('Mount', 'Mounted at ' + mountPoint + ' but cannot read contents: ' + readErr.message);
+									return;
+								}
+								navigateTo(mountPoint);
+							});
 						});
 					}
 				});
@@ -2898,6 +2988,87 @@ async function openExplorer () {
 					openInfoDialog('Mount', 'Error: ' + e.message);
 				}
 			}
+		},
+
+		mountFiles3: function () {
+			if (!mountManager) {
+				openInfoDialog('Mount Files3', 'Mount manager is not available');
+				return;
+			}
+			var saved = loadFiles3Config();
+			var defaultBaseUrl = saved ? saved.baseUrl : '';
+			var defaultRootFolderId = saved ? saved.rootFolderId : '';
+			var defaultLocalStorageId = saved ? saved.localStorageId : defaultFiles3LocalStorageId(defaultBaseUrl);
+			var defaultMountPoint = mountManager.suggestMountPoint('files3_' + (defaultRootFolderId || 'storage'));
+			openDialog({
+				type: 'files3Mount',
+				baseUrl: defaultBaseUrl,
+				rootFolderId: defaultRootFolderId,
+				localStorageId: defaultLocalStorageId,
+				mountPoint: defaultMountPoint,
+				onSubmit: function (fields) {
+					state.dialog = null;
+					renderOverlays();
+
+					var baseUrl = fields.baseUrl;
+					var rootFolderId = parseInt(fields.rootFolderId, 10);
+					var localStorageId = fields.localStorageId;
+					var mountPoint = fields.mountPoint;
+
+					if (!baseUrl) {
+						openInfoDialog('Mount Files3', 'Base URL API is required');
+						return;
+					}
+					if (!rootFolderId || rootFolderId < 1) {
+						openInfoDialog('Mount Files3', 'Root Folder ID must be a positive number');
+						return;
+					}
+					if (!localStorageId) {
+						openInfoDialog('Mount Files3', 'localStorage ID is required');
+						return;
+					}
+					if (!mountPoint || mountPoint.charAt(0) !== '/') {
+						openInfoDialog('Mount Files3', 'Mount point must start with /');
+						return;
+					}
+
+					saveFiles3Config({
+						baseUrl: baseUrl,
+						rootFolderId: rootFolderId,
+						localStorageId: localStorageId
+					});
+
+					var callbackUrl = location.origin + location.pathname;
+					var displayName = 'Files3';
+					try {
+						displayName = new URL(baseUrl).hostname || displayName;
+					} catch (e) { /* ignore */ }
+
+					mountManager.mountFiles3({
+						baseUrl: baseUrl,
+						rootFolderId: rootFolderId,
+						localStorageId: localStorageId,
+						callbackUrl: callbackUrl,
+						onUnauthorized: function (mp) {
+							openInfoDialog('Mount Files3', 'Session expired for ' + mp + '. Please mount again.');
+						}
+					}, mountPoint, displayName, function (err) {
+						if (err) {
+							var msg = err.message || String(err);
+							if (msg === 'Auth window closed without token.') {
+								openInfoDialog('Mount Files3', 'Authorization window was closed without completing login.');
+							} else if (msg.indexOf('Popup blocked') === 0) {
+								openInfoDialog('Mount Files3', msg + ' Allow popups for this site and try again.');
+							} else {
+								openInfoDialog('Mount Files3', 'Failed to mount: ' + msg);
+							}
+						} else {
+							renderSidebar();
+							navigateTo(mountPoint);
+						}
+					});
+				}
+			});
 		},
 
 		umount: function (mountPoint) {
@@ -3637,6 +3808,31 @@ async function openExplorer () {
 			'Size: ' + (item.isDirectory ? '-' : formatSize(item.size)),
 			'Modified: ' + item.mtime
 		].join('\n');
+	}
+
+	var FILES3_CONFIG_KEY = 'pixos_files3_config';
+
+	function loadFiles3Config () {
+		try {
+			var raw = localStorage.getItem(FILES3_CONFIG_KEY);
+			if (raw) {
+				return JSON.parse(raw);
+			}
+		} catch (e) { /* ignore */ }
+		return null;
+	}
+
+	function saveFiles3Config (cfg) {
+		localStorage.setItem(FILES3_CONFIG_KEY, JSON.stringify(cfg));
+	}
+
+	function defaultFiles3LocalStorageId (baseUrl) {
+		try {
+			var host = new URL(baseUrl).hostname.replace(/[^a-zA-Z0-9_\-]/g, '_');
+			return 'files3_token_' + (host || 'storage');
+		} catch (e) {
+			return 'files3_token_storage';
+		}
 	}
 
 	function escapeHtml (v) {

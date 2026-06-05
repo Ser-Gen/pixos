@@ -112,6 +112,24 @@ function fsOnInit () {
 	window.Buffer = Buffer;
 	window.mountManager = new MountManager(BrowserFS, window.fs);
 
+	// File System Access API must run in the same window as window.fs / MountManager.
+	window.pickNativeDirectory = async function () {
+		if (typeof showDirectoryPicker !== 'function') {
+			throw new Error('File System Access API is not supported in this browser');
+		}
+		var handle = await showDirectoryPicker();
+		if (handle.requestPermission) {
+			var perm = await handle.queryPermission({ mode: 'readwrite' });
+			if (perm !== 'granted') {
+				perm = await handle.requestPermission({ mode: 'readwrite' });
+			}
+			if (perm !== 'granted') {
+				throw new Error('Permission denied for local folder');
+			}
+		}
+		return handle;
+	};
+
 	// Listen for file read requests from the Service Worker.
 	// When SW can't find a file in IndexedDB (e.g. it's on a mounted FS),
 	// it asks the main thread to read it via MessageChannel.
@@ -217,7 +235,7 @@ function fsOnInit () {
 	.then(function () {
 		winManager.openWindow({
 			title: 'PixOS',
-			content: `<iframe id="view" src="__browserfs__/apps/explorer"></iframe>`,
+			content: `<iframe id="view" allow="file-system-access" src="__browserfs__/apps/explorer"></iframe>`,
 		});
 		scheduleInstalledAppSupportHydration();
 	})
@@ -773,7 +791,7 @@ async function openPath (path, app) {
 	if (app === 'new explorer') {
 		winManager.openWindow({
 			title: 'PixOS',
-			content: `<iframe id="view${window.viewCounter}" src="__browserfs__/apps/explorer"></iframe>`,
+			content: `<iframe id="view${window.viewCounter}" allow="file-system-access" src="__browserfs__/apps/explorer"></iframe>`,
 		});
 		window['view'+ window.viewCounter].onload = function () {
 			this.contentWindow.cwd = path;

@@ -102,10 +102,13 @@ function openTerminal () {
 				}).join('\n'));
 			}
 			if (arg1 === '--native') {
-				if (typeof window.showDirectoryPicker !== 'function') {
+				var pickDir = (parent && typeof parent.pickNativeDirectory === 'function')
+					? parent.pickNativeDirectory.bind(parent)
+					: (typeof window.showDirectoryPicker === 'function' ? function () { return window.showDirectoryPicker(); } : null);
+				if (!pickDir) {
 					return Promise.resolve('File System Access API is not supported in this browser');
 				}
-				return window.showDirectoryPicker().then(function (handle) {
+				return pickDir().then(function (handle) {
 					var name = handle.name || 'local';
 					var mp = arg2 || mountManager.suggestMountPoint(name);
 					return new Promise(function (resolve) {

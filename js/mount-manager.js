@@ -7,6 +7,7 @@
  *   mm.mountZip(buffer, '/mnt/archive', 'myfile.zip', cb);
  *   mm.mountIso(buffer, '/mnt/disc', 'image.iso', cb);
  *   mm.mountNativeDir(handle, '/mnt/local', 'Projects', cb);
+ *   mm.mountFiles3(config, '/mnt/files3', 'Storage', cb);
  *   mm.umount('/mnt/archive');
  *   mm.listMounts(); // [{mountPoint, type, name, readOnly}]
  */
@@ -18,6 +19,7 @@
 		this._BrowserFS = BrowserFS;
 		this._fs = fs;
 		this._mounts = {}; // mountPoint -> {type, name, readOnly}
+		this._pendingMounts = {}; // mountPoint -> true while mount in progress
 	}
 
 	MountManager.prototype._getRootFS = function () {
@@ -59,63 +61,196 @@
 		next();
 	};
 
-	MountManager.prototype.mountZip = function (zipBuffer, mountPoint, name, cb) {
-		var self = this;
-		if (self._mounts[mountPoint]) {
+	MountManager.prototype._beginMount = function (mountPoint, cb) {
+		if (this._mounts[mountPoint]) {
 			return cb(new Error('Mount point ' + mountPoint + ' is already in use'));
 		}
+		if (this._pendingMounts[mountPoint]) {
+			return cb(new Error('Mount point ' + mountPoint + ' is already being mounted'));
+		}
+		this._pendingMounts[mountPoint] = true;
+		return null;
+	};
+
+	MountManager.prototype._finishMount = function (mountPoint) {
+		delete this._pendingMounts[mountPoint];
+	};
+
+	MountManager.prototype.mountZip = function (zipBuffer, mountPoint, name, cb) {
+		var self = this;
+		var beginErr = self._beginMount(mountPoint, cb);
+		if (beginErr !== null) return;
 		var BFS = self._BrowserFS;
-		BFS.FileSystem.ZipFS.Create({zipData: zipBuffer}, function (err, zipFs) {
-			if (err) return cb(err);
-			try {
-				self._getRootFS().mount(mountPoint, zipFs);
-				self._mounts[mountPoint] = {type: 'zip', name: name || 'zip', readOnly: true};
-				self._notifySW();
-				cb(null);
-			} catch (e) {
-				cb(e);
+		self._ensureMntDir(mountPoint, function (dirErr) {
+			if (dirErr) {
+				self._finishMount(mountPoint);
+				return cb(dirErr);
 			}
+			BFS.FileSystem.ZipFS.Create({zipData: zipBuffer}, function (err, zipFs) {
+				if (err) {
+					self._finishMount(mountPoint);
+					return cb(err);
+				}
+				try {
+					self._getRootFS().mount(mountPoint, zipFs);
+					self._mounts[mountPoint] = {type: 'zip', name: name || 'zip', readOnly: true};
+					self._notifySW();
+					self._finishMount(mountPoint);
+					cb(null);
+				} catch (e) {
+					self._finishMount(mountPoint);
+					cb(e);
+				}
+			});
 		});
 	};
 
 	MountManager.prototype.mountIso = function (isoBuffer, mountPoint, name, cb) {
 		var self = this;
-		if (self._mounts[mountPoint]) {
-			return cb(new Error('Mount point ' + mountPoint + ' is already in use'));
-		}
+		var beginErr = self._beginMount(mountPoint, cb);
+		if (beginErr !== null) return;
 		var BFS = self._BrowserFS;
-		BFS.FileSystem.IsoFS.Create({data: isoBuffer}, function (err, isoFs) {
-			if (err) return cb(err);
-			try {
-				self._getRootFS().mount(mountPoint, isoFs);
-				self._mounts[mountPoint] = {type: 'iso', name: name || 'iso', readOnly: true};
-				self._notifySW();
-				cb(null);
-			} catch (e) {
-				cb(e);
+		self._ensureMntDir(mountPoint, function (dirErr) {
+			if (dirErr) {
+				self._finishMount(mountPoint);
+				return cb(dirErr);
 			}
+			BFS.FileSystem.IsoFS.Create({data: isoBuffer}, function (err, isoFs) {
+				if (err) {
+					self._finishMount(mountPoint);
+					return cb(err);
+				}
+				try {
+					self._getRootFS().mount(mountPoint, isoFs);
+					self._mounts[mountPoint] = {type: 'iso', name: name || 'iso', readOnly: true};
+					self._notifySW();
+					self._finishMount(mountPoint);
+					cb(null);
+				} catch (e) {
+					self._finishMount(mountPoint);
+					cb(e);
+				}
+			});
+		});
+	};
+
+	MountManager.prototype.mountFiles3 = function (config, mountPoint, name, cb) {
+		var self = this;
+		var beginErr = self._beginMount(mountPoint, cb);
+		if (beginErr !== null) return;
+		var BFS = self._BrowserFS;
+		if (!BFS.FileSystem.Files3) {
+			self._finishMount(mountPoint);
+			return cb(new Error('Files3 backend is not available'));
+		}
+		var baseUrl = (config.baseUrl || '').replace(/\/+$/, '');
+		var rootFolderId = Number(config.rootFolderId);
+		var localStorageId = config.localStorageId;
+		var callbackUrl = config.callbackUrl;
+		var onUnauthorized = config.onUnauthorized;
+
+		if (!baseUrl) {
+			self._finishMount(mountPoint);
+			return cb(new Error('baseUrl is required'));
+		}
+		if (!rootFolderId || rootFolderId < 1) {
+			self._finishMount(mountPoint);
+			return cb(new Error('rootFolderId must be a positive number'));
+		}
+		if (!localStorageId) {
+			self._finishMount(mountPoint);
+			return cb(new Error('localStorageId is required'));
+		}
+		if (!callbackUrl) {
+			self._finishMount(mountPoint);
+			return cb(new Error('callbackUrl is required'));
+		}
+
+		var auth = new BFS.FileSystem.Files3.Auth({
+			baseUrl: baseUrl,
+			localStorageId: localStorageId
+		});
+
+		self._ensureMntDir(mountPoint, function (dirErr) {
+			if (dirErr) {
+				self._finishMount(mountPoint);
+				return cb(dirErr);
+			}
+
+			auth.ensureToken({
+				usePopup: true,
+				callbackUrl: callbackUrl
+			}).then(function () {
+				BFS.FileSystem.Files3.Create({
+					baseUrl: baseUrl,
+					rootFolderId: rootFolderId,
+					getToken: function () { return auth.getToken() || ''; },
+					verifyToken: true,
+					onUnauthorized: function () {
+						auth.clearToken();
+						if (typeof onUnauthorized === 'function') {
+							onUnauthorized(mountPoint);
+						}
+					}
+				}, function (err, files3Fs) {
+					if (err) {
+						self._finishMount(mountPoint);
+						return cb(err);
+					}
+					try {
+						self._getRootFS().mount(mountPoint, files3Fs);
+						self._mounts[mountPoint] = {
+							type: 'files3',
+							name: name || 'Files3',
+							readOnly: false,
+							auth: auth,
+							config: config
+						};
+						self._notifySW();
+						self._finishMount(mountPoint);
+						cb(null);
+					} catch (e) {
+						self._finishMount(mountPoint);
+						cb(e);
+					}
+				});
+			}).catch(function (err) {
+				self._finishMount(mountPoint);
+				cb(err instanceof Error ? err : new Error(String(err)));
+			});
 		});
 	};
 
 	MountManager.prototype.mountNativeDir = function (handle, mountPoint, name, cb) {
 		var self = this;
-		if (self._mounts[mountPoint]) {
-			return cb(new Error('Mount point ' + mountPoint + ' is already in use'));
-		}
+		var beginErr = self._beginMount(mountPoint, cb);
+		if (beginErr !== null) return;
 		var BFS = self._BrowserFS;
 		if (!BFS.FileSystem.FileSystemAccess) {
+			self._finishMount(mountPoint);
 			return cb(new Error('FileSystemAccess backend is not available'));
 		}
-		BFS.FileSystem.FileSystemAccess.Create({handle: handle}, function (err, nativeFs) {
-			if (err) return cb(err);
-			try {
-				self._getRootFS().mount(mountPoint, nativeFs);
-				self._mounts[mountPoint] = {type: 'native', name: name || 'local', readOnly: false};
-				self._notifySW();
-				cb(null);
-			} catch (e) {
-				cb(e);
+		self._ensureMntDir(mountPoint, function (dirErr) {
+			if (dirErr) {
+				self._finishMount(mountPoint);
+				return cb(dirErr);
 			}
+			BFS.FileSystem.FileSystemAccess.Create({handle: handle}, function (err, nativeFs) {
+				if (err) {
+					self._finishMount(mountPoint);
+					return cb(err);
+				}
+				try {
+					self._getRootFS().mount(mountPoint, nativeFs);
+					self._mounts[mountPoint] = {type: 'native', name: name || 'local', readOnly: false};
+					self._notifySW();
+					self._finishMount(mountPoint);
+					cb(null);
+				} catch (e) {
+					self._finishMount(mountPoint);
+					cb(e);
+				}
+			});
 		});
 	};
 
