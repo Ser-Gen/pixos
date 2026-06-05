@@ -1538,8 +1538,12 @@ async function openExplorer () {
 				<div class="Modal__list">${defaultInfo}</div>
 			` : '';
 
+			var openWithTitle = dialog.multiFileCount > 1
+				? 'Open ' + dialog.multiFileCount + ' files with...'
+				: 'Open with...';
+
 			panel.innerHTML = `
-				<div class="Modal__title">Open with...</div>
+				<div class="Modal__title">${openWithTitle}</div>
 				<div class="Modal__field"><label>Application</label><select class="Dialog__app">${appOptions}</select></div>
 				${defaultControls}
 				<div class="Modal__buttons">
@@ -2374,7 +2378,18 @@ async function openExplorer () {
 	}
 
 	function getMultiMenuItems () {
-		return [
+		var selected = getSelectedItems();
+		var allFiles = selected.length > 0 && selected.every(function (item) {
+			return !item.isDirectory;
+		});
+		var items = [];
+		if (allFiles) {
+			items.push(
+				{label: 'Open with...', action: function () { actions.openWith(); }},
+				{separator: true}
+			);
+		}
+		items.push(
 			{label: 'Copy selected', action: actions.copySelected},
 			{label: 'Cut selected', action: actions.cutSelected},
 			{separator: true},
@@ -2388,7 +2403,8 @@ async function openExplorer () {
 				{label: 'FFmpeg', action: actions.ffmpeg},
 				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
 			]}
-		];
+		);
+		return items;
 	}
 
 	function getEmptyAreaMenuItems () {
@@ -2637,20 +2653,42 @@ async function openExplorer () {
 		},
 
 		openWith: async function (itemPath) {
-			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
-			if (!item) return;
+			var selectedFiles = getSelectedItems().filter(function (entry) {
+				return !entry.isDirectory;
+			});
+			var items;
+			if (selectedFiles.length > 1) {
+				items = selectedFiles;
+			}
+			else {
+				var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
+				if (!item) {
+					return;
+				}
+				items = [item];
+			}
 
-			var apps = await getOpenWithApps(item);
+			var apps = await getOpenWithAppsForItems(items);
 			var hasApps = apps.length > 0;
-			var extension = item.isDirectory ? '' : getNormalizedExtension(item.path);
+			var extensions = items.filter(function (entry) {
+				return !entry.isDirectory;
+			}).map(function (entry) {
+				return getNormalizedExtension(entry.path);
+			}).filter(Boolean);
+			var uniqueExtensions = extensions.filter(function (ext, index) {
+				return extensions.indexOf(ext) === index;
+			});
+			var extension = uniqueExtensions.length === 1 ? uniqueExtensions[0] : '';
 			var currentDefaultAppId = extension ? getDefaultAppIdForExtension(extension) : null;
 			var currentDefaultAppLabel = currentDefaultAppId ? getCatalogLabel(currentDefaultAppId) || currentDefaultAppId : '';
+			var multiFileCount = items.filter(function (entry) { return !entry.isDirectory; }).length;
 
 			openDialog({
 				type: 'openWith',
 				apps: apps,
 				hasApps: hasApps,
 				extension: extension,
+				multiFileCount: multiFileCount,
 				currentDefaultAppId: currentDefaultAppId,
 				currentDefaultAppLabel: currentDefaultAppLabel,
 				selectedIsDefault: !!(hasApps && apps[0] && currentDefaultAppId && apps[0].id === currentDefaultAppId),
@@ -2666,7 +2704,8 @@ async function openExplorer () {
 					}
 					state.dialog = null;
 					renderOverlays();
-					if (!app.installed && !item.isDirectory && typeof parent.installAppById === 'function') {
+					var fileItems = items.filter(function (entry) { return !entry.isDirectory; });
+					if (!app.installed && fileItems.length && typeof parent.installAppById === 'function') {
 						try {
 							await parent.installAppById(app.id);
 						}
@@ -2676,7 +2715,7 @@ async function openExplorer () {
 							return;
 						}
 					}
-					if (!item.isDirectory && extension && payload.setAsDefault && typeof parent.setDefaultAppForExtension === 'function') {
+					if (fileItems.length === 1 && extension && payload.setAsDefault && typeof parent.setDefaultAppForExtension === 'function') {
 						try {
 							await parent.setDefaultAppForExtension(extension, app.id);
 						}
@@ -2686,16 +2725,21 @@ async function openExplorer () {
 							return;
 						}
 					}
-					if (item.isDirectory) {
+					if (items[0].isDirectory && items.length === 1) {
 						if (app.id === 'explorer') {
-							navigateTo(item.path);
+							navigateTo(items[0].path);
 						}
 						else {
-							parent.openPath(item.path, app.id);
+							parent.openPath(items[0].path, app.id);
 						}
 					}
-					else {
-						parent.openFile(item.path, app.id);
+					else if (fileItems.length > 1 && typeof parent.openFiles === 'function') {
+						parent.openFiles(fileItems.map(function (entry) {
+							return entry.path;
+						}), app.id);
+					}
+					else if (fileItems.length === 1) {
+						parent.openFile(fileItems[0].path, app.id);
 					}
 				},
 				onOpenManager: function () {
@@ -3666,6 +3710,41 @@ async function openExplorer () {
 			});
 		}
 		return installedApps.concat(installableApps);
+	}
+
+	async function getOpenWithAppsForItems (items) {
+		if (!items || !items.length) {
+			return [];
+		}
+		if (items.length === 1) {
+			return getOpenWithApps(items[0]);
+		}
+		if (items.some(function (item) { return item.isDirectory; })) {
+			return [];
+		}
+		var appsPerItem = await Promise.all(items.map(function (item) {
+			return getOpenWithApps(item);
+		}));
+		var commonIds = null;
+		appsPerItem.forEach(function (apps) {
+			var ids = new Set(apps.map(function (app) { return app.id; }));
+			if (commonIds === null) {
+				commonIds = ids;
+			}
+			else {
+				commonIds.forEach(function (id) {
+					if (!ids.has(id)) {
+						commonIds.delete(id);
+					}
+				});
+			}
+		});
+		if (!commonIds || !commonIds.size) {
+			return [];
+		}
+		return appsPerItem[0].filter(function (app) {
+			return commonIds.has(app.id);
+		});
 	}
 
 	function findOpenWithApp (apps, appId) {
