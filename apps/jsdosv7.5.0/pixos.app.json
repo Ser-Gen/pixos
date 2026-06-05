@@ -1,0 +1,198 @@
+{
+  "id": "jsdos",
+  "name": "JS-DOS",
+  "version": "1.0.0",
+  "entryPath": "/apps/jsdosv7.5.0/index.html",
+  "files": [
+    {
+      "path": "/apps/jsdosv7.5.0/.DS_Store",
+      "hash": "sha256:a23d0adb7ae888e6780970a4a523ff29c4b235cab7f0d1d6fbf5eca759fa232a"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/dosbox.conf",
+      "hash": "sha256:cba76f52a1131a369d86c1a8705c84c522a0596741123020eefc7a3dea1d0add"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/emulators-ui-loader.png",
+      "hash": "sha256:f3ca1f50f92c12b8f22427d312f4ef78a177d367e806000984397b68560db8f3"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/index.html",
+      "hash": "sha256:087b0d72d311e7b9eeb70cf29979f7b56a5622e9423ddaa04c5c50c13edcadef"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/js-dos.css",
+      "hash": "sha256:38badc9115872ec723c6e2d04e057d661f5a76990b9c5c5075b6dd63ff58089c"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/js-dos.js",
+      "hash": "sha256:806d74c34fdb16bf9a873c76f8693dfe25dd982e0519437a73bec3b5ff9727a0"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/js-dos.js.map",
+      "hash": "sha256:c07ce9a3c9dafdf64d6fb6e9c087d8dcfb1dcfc71c35f490f102cbb75afd51bb"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/pixos_supported",
+      "hash": "sha256:808b0bbd3c76ff533d47ab9646e71280ab70f192b186138ecd9b5b8b3ce34f4a"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/pixos.app.json",
+      "hash": "sha256:e902de2139232fc45f38ac841a25a9dd57777d04c88f163afbe132375d1b9637"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/.DS_Store",
+      "hash": "sha256:5b7c6baa9fe16f64d62b403689734e1c565ba6c6d842c0f9ca33825eba2de737"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/.DS_Store",
+      "hash": "sha256:71243d856be92483e19dc35cc545e24f9cd1cece0393fc920cde56b92ead9e02"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/backend/v7/latency.d.ts",
+      "hash": "sha256:76b83d4a3e8c030ffafe299164822ef6fc4eb1fd2863512a2250bbe6c28aa309"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/backend/v7/personal.d.ts",
+      "hash": "sha256:98f5e81d5b0f0b982455f29184fe995d9549526ba022752f56890a9c4a11a578"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/backend/v7/v7-config.d.ts",
+      "hash": "sha256:d3bd3b91d018040c603e1fe277afae1976e88009378529b246621cdce2da05c9"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/action-bar.d.ts",
+      "hash": "sha256:b8c3a2cf5e7975b611a79aacc7f62ef4dcdcaa87b48f62da1eaafae441bf1899"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/action-hide.d.ts",
+      "hash": "sha256:da8ee502108a9e623780a104fd4b931f4f93ad985a004f6b6aad29f939592eed"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/action-save-or-exit.d.ts",
+      "hash": "sha256:f92aa7e7e84d4e08f97173d3c29a636fa7aed2569c19759fb4ce68fa5fac0098"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/client.d.ts",
+      "hash": "sha256:18f0cca9efc11f04feafe939da83960bd4582da2e50010b8453d767da32f0874"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/controls.d.ts",
+      "hash": "sha256:0e92b881fbff4942e2bc517ffb8009427936f7223616d4baeed240b89e7adef5"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/cpu-control.d.ts",
+      "hash": "sha256:2741e2302c7942c354ff26a12cdcbabd7ebe6a2d6b3ae6baad97e0b190c3a2cf"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/horizontal-slider.d.ts",
+      "hash": "sha256:2bf3f9f7372894dcbf6292cd9ef4df0a51aa4cceea1b8c1d22acc0cd15b4ec2e"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/region.d.ts",
+      "hash": "sha256:54bc5a7327063068f1510acb5b0612557ae7024ae14db6a9a646c1c5427a0132"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/scale-control.d.ts",
+      "hash": "sha256:36539fbe36a5eb6865df8b57f46ef00be9a6a3d40f5f07b837a296014694ab1d"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sensitivity-control.d.ts",
+      "hash": "sha256:04b4c28cdbffad1c6390eea60c17ab4a21ae9c4adc577023fd2d3ee7891763f9"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sidebar.d.ts",
+      "hash": "sha256:40bec86686ab8b1fc9642747a8f505d610bd4c89b4eaed4acb4c8a612e69f1c7"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sidebar/latency-info.d.ts",
+      "hash": "sha256:9f8ac5285a7881af54ab2278c3c389fb4a6b21385a161a17a1da420b2f158f60"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sidebar/main.d.ts",
+      "hash": "sha256:c8eda60df6c48590696ff2ea4a798e8fad36b5056e5420cb3fa6b776b2055b3f"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sidebar/networking.d.ts",
+      "hash": "sha256:4507775da18eb46b358e0da58059bed6c3342c6eaba8f602076a5714cd25b024"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sidebar/token/token-add-time.d.ts",
+      "hash": "sha256:4eb045901632d6072605d1b2117daf8ac67ca08a3e139e1b2a8bd95f6829d094"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sidebar/token/token-select.d.ts",
+      "hash": "sha256:e7689bc90c9b61a62e83b2f58ee986253dd89ccf773cd3e04d2a7d2061248491"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sidebar/token/token.d.ts",
+      "hash": "sha256:85c2e06825a8027eb935b1bc7aa632a6ed3619a5c48f10a13aef36ea3bb1b9ca"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/sync-control.d.ts",
+      "hash": "sha256:6b230afe51f9c4af764c487c0b7791e4984b617d3d6e2886b4d91d56b79865ab"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/tip.d.ts",
+      "hash": "sha256:ab19394e66fcc1633664a5331666ce89c391484091e424f2ac4dec567bbd017b"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/vertical-slider.d.ts",
+      "hash": "sha256:468c449bc7e9bdde1c7f7e9484d6b36eb1cb4a85786c5e6ce194f4e91d461745"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/components/volume-control.d.ts",
+      "hash": "sha256:de1f295aae1e5b23ca257d6bb84772afc4dfd1978fc151fabedf0bdc3dfd2f40"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/dom.d.ts",
+      "hash": "sha256:e406ec0baddafcbe79bccf17e9d8b3bb0cfe00a51f64dc34c08497ab5f05a453"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/hardware-transport-layer.d.ts",
+      "hash": "sha256:7a6a39a63084cca04ba3d377444829572ff9f977a121f48f261c8a425391abea"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/icons.d.ts",
+      "hash": "sha256:3a7c23ab97e6c3c9f312ca2fe6da079abf98460d3da923c0a89b0d0def95280f"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/player-app.d.ts",
+      "hash": "sha256:d20ac8aeebfd50a006566622bcad9cb8a9f34c8ecd73b2fc051f0933167583ae"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/player.d.ts",
+      "hash": "sha256:32ed8f45f56a2dcc2d1865a42bb46930fb85ca542a9f688af10b5a3380b8af9a"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/request.d.ts",
+      "hash": "sha256:2a1e21e5bbdd04e91d848cc60a0ee7183fb42f3e38ce4bb8b3c97ba40a6f3996"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/src/xhr.d.ts",
+      "hash": "sha256:556c2ec07b9652e27f5ce50558b24257338f76fa6a9a899f082b053a16ee1949"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/types/v7-services/src/personal.d.ts",
+      "hash": "sha256:0a33b02ddd3c89ff5775fa35027e3cc775fcf9e3ae197ecd520ff837154b63e4"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/wdosbox.js",
+      "hash": "sha256:80c871923d6265625a4ca3ee9799c2a856eeae6a88fc535a100fd5d98c004abc"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/wdosbox.js.symbols",
+      "hash": "sha256:8e026e8603c3bec4935d7f85c415db961a936e2c0b6b43e5d8f9666b7bede64f"
+    },
+    {
+      "path": "/apps/jsdosv7.5.0/wdosbox.wasm",
+      "hash": "sha256:5a932a483cc366ce581ff3bee46a2e775fa315a8fb492dffb3029594ea2472bf"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "jsdos",
+      "zip"
+    ]
+  }
+}

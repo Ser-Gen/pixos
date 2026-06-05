@@ -1,0 +1,41 @@
+{
+  "id": "pico8",
+  "name": "pico-8",
+  "version": "1.0.0",
+  "entryPath": "/apps/pico8/index.html",
+  "files": [
+    {
+      "path": "/apps/pico8/favicon.ico",
+      "hash": "sha256:b0d5c561868a54db7147618a69e589174fb3f2ade9648673c3f86ec91159ee75"
+    },
+    {
+      "path": "/apps/pico8/index.html",
+      "hash": "sha256:279b59c05a7597018f85a77cccb11d00bce9dce3b9a51e978752a268ef8a9f55"
+    },
+    {
+      "path": "/apps/pico8/pico8_edu_0206b.js",
+      "hash": "sha256:c0c97757eedb2a178e86fd0e89e93363740d7b4c5032aafc97af03cb98e1d588"
+    },
+    {
+      "path": "/apps/pico8/pixos_supported",
+      "hash": "sha256:33d8344a7135c42aa3876706b908f95b702d83ff53e05e4aaff17c07bf67a98e"
+    },
+    {
+      "path": "/apps/pico8/pixos.app.json",
+      "hash": "sha256:f993f7cd45d7dd24e97a4fc2e205e479d685bd55a0ba9c6c563541cf58e0807e"
+    },
+    {
+      "path": "/apps/pico8/zoot_idle.gif",
+      "hash": "sha256:80e56570685cb2a8cd875bda3ac38346d777b9d08b6543e04487252473a06438"
+    },
+    {
+      "path": "/apps/pico8/zoot_talking.gif",
+      "hash": "sha256:ee985ee7fbf3f7a00c4d8ae1ffca160b48a8122fba3bb487468c60e117118d63"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "png"
+    ]
+  }
+}

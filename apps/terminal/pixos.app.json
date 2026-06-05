@@ -1,0 +1,32 @@
+{
+  "id": "terminal",
+  "name": "terminal",
+  "version": "1.0.0",
+  "entryPath": "/apps/terminal/index.html",
+  "files": [
+    {
+      "path": "/apps/terminal/autocomplete_menu.js",
+      "hash": "sha256:129401c0eda06dabd14de1991ad5e743381e1e95ddfdb25f2a26a086082df744"
+    },
+    {
+      "path": "/apps/terminal/index.html",
+      "hash": "sha256:879ae51c2310fad90f150e8005d0dd698081250aae6bf2a270ddd3706a3b5891"
+    },
+    {
+      "path": "/apps/terminal/jquery.terminal.min.css",
+      "hash": "sha256:0b59901af07b7619d0b3ab8675ca5fc9d6751552dd9dd90cb3859a709949e61b"
+    },
+    {
+      "path": "/apps/terminal/jquery.terminal.min.js",
+      "hash": "sha256:e66b7f76bf5aa94736a4164588bc11eb8c3ee512dc76c154658b8965dea8a4c9"
+    },
+    {
+      "path": "/apps/terminal/pipe.js",
+      "hash": "sha256:141b1971f9c3046d22f38a292839bbe6ffe5ee06951638b9a71332be7ab234f9"
+    },
+    {
+      "path": "/apps/terminal/pixos.app.json",
+      "hash": "sha256:0dd9fd4a4f1bcbdb7f2415bbfff04eedba4ebcc53b4ac672c7b60c5482650da1"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "mkvPlayer",
+  "name": "mkv player",
+  "version": "1.0.0",
+  "entryPath": "/apps/mkv-player/index.html",
+  "files": [
+    {
+      "path": "/apps/mkv-player/index.html",
+      "hash": "sha256:3168555cea43219b815203088e35b393292390f2b10f8e2904c077733a741bdc"
+    },
+    {
+      "path": "/apps/mkv-player/index.js",
+      "hash": "sha256:6ad99de8221239627a2f6abfa7a008687c1df5c02c1860d2ff04803dd60aebbf"
+    },
+    {
+      "path": "/apps/mkv-player/pixos_supported",
+      "hash": "sha256:912c58529c4f7568326117667a95abe865d63f404d6461a55b461f9ed2c3b71f"
+    },
+    {
+      "path": "/apps/mkv-player/pixos.app.json",
+      "hash": "sha256:4b71161fd006470fa48a893922d7e6c2fa02d87c7cc39359ec7a7adbf1ed5bc6"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "mkv"
+    ]
+  }
+}

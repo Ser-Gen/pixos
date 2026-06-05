@@ -1,0 +1,78 @@
+{
+  "id": "photopea",
+  "name": "Photopea",
+  "version": "1.0.0",
+  "entryPath": "/apps/photopea/index.html",
+  "files": [
+    {
+      "path": "/apps/photopea/.DS_Store",
+      "hash": "sha256:63fb202cd58b2aee90c60e03305b719e1f24f89494a878262bbbbea3411cf233"
+    },
+    {
+      "path": "/apps/photopea/index.html",
+      "hash": "sha256:7e1b328ea1f1ba1270366819c15fb39d29aebd391a60fea66dc6ecf42ce3a0d1"
+    },
+    {
+      "path": "/apps/photopea/pixos_supported",
+      "hash": "sha256:aa99cd7d398c693fcb173b46563b340a91bef8a5c8f7d1d76186d6c2a48533c3"
+    },
+    {
+      "path": "/apps/photopea/pixos.app.json",
+      "hash": "sha256:b02fd2eb0e4b82d12885928e394a191f36918ab5dcd85465ae5824758df4a41b"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "psd",
+      "ai",
+      "indd",
+      "xcf",
+      "sketch",
+      "xd",
+      "fig",
+      "kri",
+      "clip",
+      "pxd",
+      "pxz",
+      "cdr",
+      "ufo",
+      "afphoto",
+      "svg",
+      "eps",
+      "pdf",
+      "pdn",
+      "wmf",
+      "emf",
+      "png",
+      "jpg",
+      "jpeg",
+      "gif",
+      "webp",
+      "ico",
+      "icns",
+      "bmp",
+      "avif",
+      "heic",
+      "jxl",
+      "ppm",
+      "pgm",
+      "pbm",
+      "tiff",
+      "dds",
+      "iff",
+      "anim",
+      "tga",
+      "dng",
+      "nef",
+      "cr2",
+      "cr3",
+      "arw",
+      "rw2",
+      "raf",
+      "orf",
+      "gpr",
+      "3fr",
+      "fff"
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "id": "vips",
+  "name": "vips",
+  "version": "1.0.0",
+  "entryPath": "/apps/vips/index.html",
+  "files": [
+    {
+      "path": "/apps/vips/clipboard-2.jpg",
+      "hash": "sha256:5d04b85d6195ef1d47c97ace1f483d744527b353fbfab92e27fcedc7156240cc"
+    },
+    {
+      "path": "/apps/vips/clipboard-3.jpg",
+      "hash": "sha256:e2112ce452fc94571d5e272f6463d984bd72ab25413e9ec2563773d71fbf1b1a"
+    },
+    {
+      "path": "/apps/vips/clipboard-4.jpg",
+      "hash": "sha256:bf0d8cffdb7c4897fd9b7c98b918652bdf20a5d6bef27bdb350afad9fe24bc0a"
+    },
+    {
+      "path": "/apps/vips/index.html",
+      "hash": "sha256:e18551a4100d82d8bc318ca88e797a83eb2df7f2e9a20d46e575f9e95bf48074"
+    },
+    {
+      "path": "/apps/vips/pixos.app.json",
+      "hash": "sha256:58c432b38e23290cc6fe8142fb2d1d210769938d565e4072ddb77a1041b6f01d"
+    },
+    {
+      "path": "/apps/vips/vips-es6.js",
+      "hash": "sha256:62d99dfc7b502ae987fea8c29d5e8d822b03bfd3afa9d1365d77786614030f09"
+    },
+    {
+      "path": "/apps/vips/vips-heif.wasm",
+      "hash": "sha256:79d6c01981b5754ff3c4ca20d9a96931beedfa71df4999bbae345480eeedf161"
+    },
+    {
+      "path": "/apps/vips/vips-jxl.wasm",
+      "hash": "sha256:ceb872e5e5f7529c75a1f33d1681a51c336e869e152cb9b9989f72e2a7524baa"
+    },
+    {
+      "path": "/apps/vips/vips.js",
+      "hash": "sha256:700c80d5319ae9509d82e04ea412c579eb94c3766b70fd287282a27fd4408371"
+    },
+    {
+      "path": "/apps/vips/vips.wasm",
+      "hash": "sha256:c506a65f476e2ead7d31fcdbb59a6c23ba13e91401edcdadf7f082c24863d2dc"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "id": "tic80",
+  "name": "tic80",
+  "version": "1.0.0",
+  "entryPath": "/apps/tic80-v1.1-html/index.html",
+  "files": [
+    {
+      "path": "/apps/tic80-v1.1-html/index.html",
+      "hash": "sha256:f40a8c8a89eed5f451813f62a38c008b63f44eafc6fd95eebb5c2d2aac518ae8"
+    },
+    {
+      "path": "/apps/tic80-v1.1-html/pixos_supported",
+      "hash": "sha256:ba40439d4e3b6e47528fc4ea0b40763bdfdd8d99dfdd6ff94fbae9f31a24b2e3"
+    },
+    {
+      "path": "/apps/tic80-v1.1-html/pixos.app.json",
+      "hash": "sha256:be656d21e462b22dd99b8f06294b71886d6f09addc3a8c9247ddb1b90dc236ce"
+    },
+    {
+      "path": "/apps/tic80-v1.1-html/tic80.js",
+      "hash": "sha256:14c2ed64774129f23858e3d964e4ddbacd0457c34e74b19c74a2dcc94fa766b0"
+    },
+    {
+      "path": "/apps/tic80-v1.1-html/tic80.wasm",
+      "hash": "sha256:464b1373f5e44836f7e580d25bbbc5955a9bfb880399dc7efcb66a6bdb4e4b56"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "tic"
+    ]
+  }
+}

@@ -33,6 +33,7 @@
 <script src="js/jquery-1.11.1.min.js"></script>
 <script src="apps/file-type.19.0.0.js"></script>
 <script src="apps/app-catalog.js"></script>
+<script src="js/app-registry.js"></script>
 
 <script src="js/goldenlayout/goldenlayout.min.js"></script>
 <link rel="stylesheet" href="js/goldenlayout/goldenlayout-base.css">
@@ -193,6 +194,7 @@ function fsOnInit () {
 		// APP MANAGER
 		'/apps/app-manager/index.html',
 		'/apps/app-catalog.js',
+		'/apps/registry.json',
 	]
 	.map(item=>{
 		return new Promise(function (resolve) {
@@ -298,47 +300,94 @@ function fsOnInit () {
 		});
 	}
 
+	PixosAppRegistry.init({
+		fs: fs,
+		path: path,
+		scope: scope,
+		legacyCatalog: window.PIXOS_APP_CATALOG || {},
+		readJsonFile: readJsonFile,
+		writeFile: function (filePath, contents) {
+			return new Promise(function (resolve) {
+				writeFile(filePath, contents, function () {
+					resolve();
+				});
+			});
+		},
+		ensureDir: async function (dirPath) {
+			await checkAndCreateDestinationPath(dirPath);
+		},
+		updateDefaultAppAssociations: updateDefaultAppAssociationId
+	});
+
 	window.refreshInstalledAppsRegistry = async function () {
-		window.apps = await scanInstalledApps();
+		await PixosAppRegistry.buildAppRegistry();
+		window.apps = await PixosAppRegistry.scanInstalledApps();
 		notifyAppsRegistryChanged();
 		return window.apps;
 	};
 
+	window.buildAppRegistry = function () {
+		return PixosAppRegistry.buildAppRegistry();
+	};
+
 	window.installAppById = async function (appId) {
-		var app = getCatalogApp(appId);
-		if (!app) {
-			throw new Error('Unknown app: ' + appId);
-		}
-		if (!app.entryPath) {
-			throw new Error('App ' + appId + ' is not installable');
-		}
-
-		for (var i = 0; i < app.files.length; i++) {
-			var item = app.files[i];
-			var ab = await fetch(path.join(scope, item) + '?' + Math.random()).then(function (r) {
-				return r.arrayBuffer();
-			});
-			await new Promise(function (resolve) {
-				writeFile(item, Buffer.from(ab), function () {
-					resolve();
-				});
-			});
-		}
-
+		var result = await PixosAppRegistry.installAppById(appId);
 		await window.refreshInstalledAppsRegistry();
 		scheduleInstalledAppSupportHydration([appId]);
-		return {
-			id: appId,
-			name: app.label
-		};
+		return result;
+	};
+
+	window.checkAppUpdate = function (appId) {
+		return PixosAppRegistry.checkAppUpdate(appId);
+	};
+
+	window.detectLocalModifications = function (appId) {
+		return PixosAppRegistry.detectLocalModifications(appId);
+	};
+
+	window.updateAppById = async function (appId, options) {
+		var result = await PixosAppRegistry.updateAppById(appId, options);
+		if (result.updated) {
+			await window.refreshInstalledAppsRegistry();
+			scheduleInstalledAppSupportHydration([appId]);
+		}
+		return result;
+	};
+
+	window.checkAllAppUpdates = function () {
+		return PixosAppRegistry.checkAllAppUpdates();
+	};
+
+	window.getManagerApps = function () {
+		return PixosAppRegistry.getManagerApps();
+	};
+
+	window.validateLocalAppId = function (newId, oldId) {
+		return PixosAppRegistry.validateLocalAppId(newId, oldId);
+	};
+
+	window.renameLocalApp = async function (oldId, newId) {
+		var result = await PixosAppRegistry.renameLocalApp(oldId, newId);
+		await window.refreshInstalledAppsRegistry();
+		return result;
 	};
 
 	window.getInstallableApps = function () {
-		return getCatalogApps().filter(function (app) {
-			return !!app.entryPath;
-		});
+		return PixosAppRegistry.getInstallableApps();
 	};
-	window.getCatalogApp = getCatalogApp;
+	window.getCatalogApp = function (id) {
+		var app = PixosAppRegistry.getCatalogApp(id);
+		if (!app) {
+			return null;
+		}
+		var installedRecord = getInstalledAppRecord(id);
+		if (installedRecord) {
+			return Object.assign({}, app, {
+				supportStatus: installedRecord.supportStatus
+			});
+		}
+		return app;
+	};
 	window.getInstalledAppRecord = getInstalledAppRecord;
 	window.ensureAppSupportedExtensions = ensureAppSupportedExtensions;
 	window.ensureInstalledAppsSupportHydrated = ensureInstalledAppsSupportHydrated;
@@ -387,43 +436,21 @@ function fsOnInit () {
 	};
 
 	function getCatalogApps () {
-		return Object.keys(window.PIXOS_APP_CATALOG || {}).map(function (id) {
-			return getCatalogApp(id);
-		});
+		return PixosAppRegistry.getCatalogApps();
 	}
 
-	function getCatalogApp (id) {
-		var raw = window.PIXOS_APP_CATALOG && window.PIXOS_APP_CATALOG[id];
-		if (!raw) return null;
+	function getAppRecord (id) {
 		var installedRecord = getInstalledAppRecord(id);
-		return {
-			id: id,
-			label: raw.label || raw.name || id,
-			files: Array.isArray(raw.files) ? raw.files.slice() : [],
-			entryPath: resolveCatalogEntryPath(id, raw),
-			supportedFilePath: getCatalogSupportedFilePath(raw),
-			supportedExtensions: Array.isArray(raw.supportedExtensions) ? raw.supportedExtensions.slice() : [],
-			supportedMimeTypes: Array.isArray(raw.supportedMimeTypes) ? raw.supportedMimeTypes.slice() : [],
-			supportsText: !!raw.supportsText,
-			supportStatus: installedRecord ? installedRecord.supportStatus : (Array.isArray(raw.supportedExtensions) && raw.supportedExtensions.length ? 'ready' : 'idle')
-		};
-	}
-
-	function resolveCatalogEntryPath (id, raw) {
-		if (!raw || id === 'base') return null;
-		if (raw.entryPath) return raw.entryPath;
-		var files = Array.isArray(raw.files) ? raw.files : [];
-		var indexFile = files.find(function (item) {
-			return /\/index\.html$/.test(item);
-		});
-		return indexFile || null;
-	}
-
-	function getCatalogSupportedFilePath (raw) {
-		var files = raw && Array.isArray(raw.files) ? raw.files : [];
-		return files.find(function (item) {
-			return /\/pixos_supported$/.test(item);
-		}) || null;
+		var app = PixosAppRegistry.getApp(id) || PixosAppRegistry.getCatalogApp(id);
+		if (!app) {
+			return null;
+		}
+		if (installedRecord) {
+			app = Object.assign({}, app, {
+				supportStatus: installedRecord.supportStatus
+			});
+		}
+		return app;
 	}
 
 	async function loadSupportedExtensionsFromSource (files) {
@@ -445,23 +472,6 @@ function fsOnInit () {
 		}
 	}
 
-	function scanInstalledApps () {
-		return Promise.all(getCatalogApps().map(async function (app) {
-			if (!app || !app.entryPath || !(await stat(app.entryPath))) {
-				return null;
-			}
-			var seededExtensions = Array.isArray(app.supportedExtensions) ? app.supportedExtensions.slice() : [];
-			var hasSupportFile = !!app.supportedFilePath;
-			return {
-				id: app.id,
-				installed: true,
-				supportedExtensions: seededExtensions.length ? seededExtensions : null,
-				supportStatus: seededExtensions.length || !hasSupportFile ? 'ready' : 'idle'
-			};
-		})).then(function (apps) {
-			return apps.filter(Boolean);
-		});
-	}
 
 	function getInstalledAppRecord (appId) {
 		return (window.apps || []).find(function (entry) {
@@ -471,7 +481,7 @@ function fsOnInit () {
 
 	function ensureAppSupportedExtensions (appId) {
 		window.__pixosAppSupportLoads = window.__pixosAppSupportLoads || {};
-		var app = getCatalogApp(appId);
+		var app = getAppRecord(appId);
 		if (!app) {
 			return Promise.resolve([]);
 		}
@@ -497,9 +507,12 @@ function fsOnInit () {
 			notifyAppsRegistryChanged();
 		}
 
+		var filePaths = (app.files || []).map(function (item) {
+			return typeof item === 'string' ? item : item.path;
+		});
 		var loadPromise = (installedRecord && app.supportedFilePath
 			? readSupportedExtensionsFromFs(app.supportedFilePath)
-			: loadSupportedExtensionsFromSource(app.files || [])
+			: loadSupportedExtensionsFromSource(filePaths)
 		).then(function (extensions) {
 			var normalized = Array.isArray(extensions) ? extensions.slice() : [];
 			var raw = window.PIXOS_APP_CATALOG && window.PIXOS_APP_CATALOG[appId];
@@ -592,6 +605,19 @@ function fsOnInit () {
 		return window.defaultAppAssociations;
 	}
 
+	async function updateDefaultAppAssociationId (oldId, newId) {
+		var changed = false;
+		Object.keys(window.defaultAppAssociations || {}).forEach(function (ext) {
+			if (window.defaultAppAssociations[ext] === oldId) {
+				window.defaultAppAssociations[ext] = newId;
+				changed = true;
+			}
+		});
+		if (changed) {
+			await persistDefaultAppAssociations();
+		}
+	}
+
 	async function persistDefaultAppAssociations () {
 		var cleaned = {};
 		Object.keys(window.defaultAppAssociations || {}).forEach(function (ext) {
@@ -643,7 +669,7 @@ function fsOnInit () {
 	}
 
 	async function isAppCompatibleWithProfile (appId, profile) {
-		var app = getCatalogApp(appId);
+		var app = getAppRecord(appId);
 		if (!app || !profile) return false;
 		var supportedExtensions = profile.extension ? await ensureAppSupportedExtensions(appId) : (app.supportedExtensions || []);
 		if (profile.extension && supportedExtensions.indexOf(profile.extension) > -1) {
@@ -782,6 +808,7 @@ function fsOnInit () {
 
 window.openPath = openPath;
 window.openFile = openFile;
+window.openFiles = openFiles;
 
 window.viewCounter = 0;
 
@@ -799,12 +826,129 @@ async function openPath (path, app) {
 	}
 }
 
+function buildBrowserFsAbsoluteUrl (fsPath) {
+	var normalized = String(fsPath || '');
+	if (!normalized.startsWith('/')) {
+		normalized = '/' + normalized;
+	}
+	return new URL('/__browserfs__' + normalized, location.href).href;
+}
+
+function guessMediaPlayerMimeType (ext) {
+	var map = {
+		mp4: 'video/mp4',
+		m4v: 'video/mp4',
+		mov: 'video/quicktime',
+		webm: 'video/webm',
+		mkv: 'video/x-matroska',
+		avi: 'video/x-msvideo',
+		mpg: 'video/mpeg',
+		mpeg: 'video/mpeg',
+		m2ts: 'video/mp2t',
+		ts: 'video/mp2t',
+		mp3: 'audio/mpeg',
+		m4a: 'audio/mp4',
+		aac: 'audio/aac',
+		wav: 'audio/wav',
+		flac: 'audio/flac',
+		ogg: 'audio/ogg',
+		oga: 'audio/ogg',
+		opus: 'audio/ogg',
+		m3u8: 'application/vnd.apple.mpegurl',
+		m3u: 'audio/x-mpegurl'
+	};
+	return map[ext] || null;
+}
+
+function buildMediaPlayerPlaylistEntry (fsPath) {
+	var fileUrl = buildBrowserFsAbsoluteUrl(fsPath);
+	var name = window.path.basename(fsPath);
+	var ext = window.path.extname(fsPath).replace(/^\./, '').toLowerCase();
+	var entry = {
+		url: fileUrl,
+		name: name
+	};
+	var mimeType = guessMediaPlayerMimeType(ext);
+	if (mimeType) {
+		entry.mimeType = mimeType;
+	}
+	return entry;
+}
+
+function buildMediaPlayerEntryPath (fsPaths, appEntryPath) {
+	var paths = Array.isArray(fsPaths) ? fsPaths : [fsPaths];
+	var playlist = encodeURIComponent(JSON.stringify(
+		paths.map(buildMediaPlayerPlaylistEntry)
+	));
+	var base = appEntryPath || '/apps/media-player/index.html';
+	return base + '?initPlaylist=' + playlist;
+}
+
+function openMediaPlayerWindow (paths, title) {
+	window.viewCounter++;
+	var appEntryPath = getAppEntryPath('media-player');
+	var mediaEntryPath = buildMediaPlayerEntryPath(paths, appEntryPath);
+	winManager.openWindow({
+		title: title || (paths.length === 1 ? paths[0] : paths.length + ' media files'),
+		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${mediaEntryPath}"></iframe>`,
+	});
+	var mediaIframe = window['view' + window.viewCounter];
+	mediaIframe.onload = function () {
+		scheduleMediaPlayerAutoplay(mediaIframe);
+	};
+}
+
+function scheduleMediaPlayerAutoplay (iframe) {
+	var attempts = 0;
+	function tryPlay () {
+		attempts++;
+		var doc = iframe.contentDocument;
+		if (!doc) {
+			return;
+		}
+		var playBtn = doc.querySelector('[data-playlist-play]')
+			|| doc.querySelector('#viewer-center-button');
+		if (playBtn && !playBtn.disabled) {
+			playBtn.click();
+			return;
+		}
+		if (attempts < 40) {
+			setTimeout(tryPlay, 150);
+		}
+	}
+	setTimeout(tryPlay, 200);
+}
+
+async function openFiles (paths, app) {
+	if (!Array.isArray(paths) || !paths.length) {
+		return;
+	}
+	if (paths.length === 1) {
+		return openFile(paths[0], app);
+	}
+	if (!app) {
+		app = 'media-player';
+	}
+	if (app === 'media-player') {
+		openMediaPlayerWindow(paths);
+		return;
+	}
+	for (var i = 0; i < paths.length; i++) {
+		await openFile(paths[i], app);
+	}
+}
+
 async function openFile (path, app) {
 	if (!app) {
 		var defaultApp = await getDefaultAppForPath(path);
 		if (defaultApp) {
 			app = defaultApp;
 		}
+	}
+
+	if (app === 'media-player') {
+		openMediaPlayerWindow([path], path);
+		return;
 	}
 
 	window.viewCounter++;
@@ -866,7 +1010,12 @@ async function getDefaultAppForPath (path) {
 }
 
 function getAppEntryPath (appId) {
-	var app = typeof window.getCatalogApp === 'function' ? window.getCatalogApp(appId) : null;
+	var app = typeof window.getInstallableApps === 'function'
+		? window.getInstallableApps().find(function (entry) { return entry.id === appId; })
+		: null;
+	if (!app && typeof window.getCatalogApp === 'function') {
+		app = window.getCatalogApp(appId);
+	}
 	return app ? app.entryPath : null;
 }
 

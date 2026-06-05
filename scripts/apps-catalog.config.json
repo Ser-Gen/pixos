@@ -1,0 +1,6 @@
+{
+	"baseUrl": "",
+	"exclude": ["app-manager", "explorer"],
+	"reservedIds": ["base", "explorer", "app-manager", "app-catalog"],
+	"hashAlgorithm": "sha256"
+}

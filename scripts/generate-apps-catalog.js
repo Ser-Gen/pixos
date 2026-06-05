@@ -1,0 +1,245 @@
+#!/usr/bin/env node
+'use strict';
+
+var fs = require('fs');
+var path = require('path');
+var crypto = require('crypto');
+
+var REPO_ROOT = path.resolve(__dirname, '..');
+var APPS_DIR = path.join(REPO_ROOT, 'apps');
+var CONFIG_PATH = path.join(__dirname, 'apps-catalog.config.json');
+var CATALOG_JS = path.join(APPS_DIR, 'app-catalog.js');
+var REGISTRY_PATH = path.join(APPS_DIR, 'registry.json');
+
+function loadConfig () {
+	var defaults = {
+		baseUrl: '',
+		exclude: ['app-manager'],
+		reservedIds: ['base', 'explorer', 'app-manager', 'app-catalog'],
+		hashAlgorithm: 'sha256'
+	};
+	if (!fs.existsSync(CONFIG_PATH)) {
+		return defaults;
+	}
+	return Object.assign(defaults, JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')));
+}
+
+function loadLegacyCatalog () {
+	if (!fs.existsSync(CATALOG_JS)) {
+		return {};
+	}
+	var sandbox = { window: {} };
+	var code = fs.readFileSync(CATALOG_JS, 'utf8');
+	vmRun(code, sandbox);
+	return sandbox.window.PIXOS_APP_CATALOG || {};
+}
+
+function vmRun (code, sandbox) {
+	var vm = require('vm');
+	vm.runInNewContext(code, sandbox);
+}
+
+function sha256File (filePath) {
+	var data = fs.readFileSync(filePath);
+	return 'sha256:' + crypto.createHash('sha256').update(data).digest('hex');
+}
+
+function posixJoin () {
+	var parts = Array.prototype.slice.call(arguments).filter(Boolean);
+	return '/' + parts.join('/');
+}
+
+function toWebPath (absPath) {
+	var rel = path.relative(REPO_ROOT, absPath).replace(/\\/g, '/');
+	if (!rel.startsWith('/')) {
+		rel = '/' + rel;
+	}
+	return rel;
+}
+
+function parsePixosSupported (filePath) {
+	if (!fs.existsSync(filePath)) {
+		return [];
+	}
+	return fs.readFileSync(filePath, 'utf8')
+		.split(/\n/)
+		.map(function (line) {
+			line = line.trim();
+			if (!line || line.charAt(0) === '#') {
+				return '';
+			}
+			return line.replace(/^\./, '').toLowerCase();
+		})
+		.filter(Boolean);
+}
+
+function walkFiles (dir, list) {
+	var entries = fs.readdirSync(dir, { withFileTypes: true });
+	entries.forEach(function (entry) {
+		var full = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			walkFiles(full, list);
+		}
+		else if (entry.isFile()) {
+			list.push(full);
+		}
+	});
+}
+
+function resolveAppDirFromCatalog (id, entry) {
+	if (entry.entryPath) {
+		return path.join(REPO_ROOT, path.dirname(entry.entryPath.replace(/^\//, '')));
+	}
+	var files = Array.isArray(entry.files) ? entry.files : [];
+	var indexFile = files.find(function (f) {
+		return /\/index\.html$/.test(f);
+	});
+	if (indexFile) {
+		return path.join(REPO_ROOT, path.dirname(indexFile.replace(/^\//, '')));
+	}
+	var candidate = path.join(APPS_DIR, id);
+	if (fs.existsSync(candidate)) {
+		return candidate;
+	}
+	return null;
+}
+
+function readStubManifest (appDir, id, legacyEntry, config) {
+	var manifestPath = path.join(appDir, 'pixos.app.json');
+	var stub = {};
+	if (fs.existsSync(manifestPath)) {
+		try {
+			stub = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+		}
+		catch (e) {
+			console.warn('Invalid JSON in', manifestPath, e.message);
+		}
+	}
+	var folderId = path.basename(appDir);
+	var entryPath = stub.entryPath || (legacyEntry && legacyEntry.entryPath) ||
+		posixJoin('apps', folderId, 'index.html');
+	if (!stub.id) {
+		stub.id = legacyEntry && id !== folderId ? id : folderId;
+	}
+	if (!stub.name) {
+		stub.name = (legacyEntry && (legacyEntry.name || legacyEntry.label)) || stub.id;
+	}
+	if (!stub.version) {
+		stub.version = '1.0.0';
+	}
+	stub.entryPath = entryPath;
+	if (legacyEntry && legacyEntry.supportsText && !stub.supportsText) {
+		stub.supportsText = true;
+	}
+	if (legacyEntry && legacyEntry.supportedMimeTypes && !stub.supportedMimeTypes) {
+		stub.supportedMimeTypes = legacyEntry.supportedMimeTypes;
+	}
+	if (!stub.update && config.baseUrl) {
+		stub.update = {
+			type: 'manifest',
+			url: config.baseUrl.replace(/\/+$/, '') + '/apps/' + folderId + '/pixos.app.json'
+		};
+	}
+	return stub;
+}
+
+function buildManifestForDir (appDir, stub, config) {
+	var files = [];
+	walkFiles(appDir, files);
+	var fileEntries = files.map(function (abs) {
+		return {
+			path: toWebPath(abs),
+			hash: sha256File(abs)
+		};
+	}).sort(function (a, b) {
+		return a.path.localeCompare(b.path);
+	});
+
+	var supportedPath = path.join(appDir, 'pixos_supported');
+	var extensions = parsePixosSupported(supportedPath);
+	var manifest = {
+		id: stub.id,
+		name: stub.name,
+		version: stub.version,
+		entryPath: stub.entryPath,
+		files: fileEntries
+	};
+	if (extensions.length) {
+		manifest.supported = { extensions: extensions };
+	}
+	if (stub.supportsText) {
+		manifest.supportsText = true;
+	}
+	if (stub.supportedMimeTypes) {
+		manifest.supportedMimeTypes = stub.supportedMimeTypes;
+	}
+	if (stub.update) {
+		manifest.update = stub.update;
+	}
+	return manifest;
+}
+
+function discoverAppDirs (config, legacyCatalog) {
+	var dirs = new Map();
+
+	Object.keys(legacyCatalog).forEach(function (id) {
+		if (id === 'base') {
+			return;
+		}
+		var entry = legacyCatalog[id];
+		var appDir = resolveAppDirFromCatalog(id, entry);
+		if (appDir && fs.existsSync(appDir)) {
+			dirs.set(appDir, { id: id, legacyEntry: entry });
+		}
+	});
+
+	fs.readdirSync(APPS_DIR, { withFileTypes: true }).forEach(function (entry) {
+		if (!entry.isDirectory()) {
+			return;
+		}
+		if (config.exclude.indexOf(entry.name) >= 0) {
+			return;
+		}
+		var appDir = path.join(APPS_DIR, entry.name);
+		var hasIndex = fs.existsSync(path.join(appDir, 'index.html'));
+		var hasManifest = fs.existsSync(path.join(appDir, 'pixos.app.json'));
+		if (!hasIndex && !hasManifest) {
+			return;
+		}
+		if (!dirs.has(appDir)) {
+			dirs.set(appDir, { id: entry.name, legacyEntry: null });
+		}
+	});
+
+	return dirs;
+}
+
+function main () {
+	var config = loadConfig();
+	var legacyCatalog = loadLegacyCatalog();
+	var appDirs = discoverAppDirs(config, legacyCatalog);
+	var registryApps = [];
+
+	appDirs.forEach(function (meta, appDir) {
+		var stub = readStubManifest(appDir, meta.id, meta.legacyEntry, config);
+		var manifest = buildManifestForDir(appDir, stub, config);
+		var manifestPath = path.join(appDir, 'pixos.app.json');
+		fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+		console.log('Wrote', path.relative(REPO_ROOT, manifestPath), '(' + manifest.files.length + ' files)');
+		if (manifest.entryPath && fs.existsSync(path.join(REPO_ROOT, manifest.entryPath.replace(/^\//, '')))) {
+			registryApps.push({
+				id: manifest.id,
+				manifestPath: toWebPath(manifestPath)
+			});
+		}
+	});
+
+	registryApps.sort(function (a, b) {
+		return a.id.localeCompare(b.id);
+	});
+	var registry = { version: 1, apps: registryApps };
+	fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2) + '\n');
+	console.log('Wrote', path.relative(REPO_ROOT, REGISTRY_PATH), '(' + registryApps.length + ' apps)');
+}
+
+main();

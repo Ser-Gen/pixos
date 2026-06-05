@@ -1,0 +1,69 @@
+{
+  "id": "ruffle",
+  "name": "ruffle",
+  "version": "1.0.0",
+  "entryPath": "/apps/ruffle/index.html",
+  "files": [
+    {
+      "path": "/apps/ruffle/.DS_Store",
+      "hash": "sha256:75f7e57a9ebec65818598b2b1d1b7806a30c883861d4ac4d4a1f71131740936d"
+    },
+    {
+      "path": "/apps/ruffle/25cc2cbaaa5f41229f38.wasm",
+      "hash": "sha256:1f5ddef1c9ab81b00a1ad0ded5246a8399a5d80377a692de32419f3da60e2ae0"
+    },
+    {
+      "path": "/apps/ruffle/core.ruffle.4023be96d56a3c732101.js",
+      "hash": "sha256:51abe44288fb3f5c32ca8273dc992cfc04f5d8b59ed82e8a3d0f943193010169"
+    },
+    {
+      "path": "/apps/ruffle/core.ruffle.4023be96d56a3c732101.js.map",
+      "hash": "sha256:6e3245baa47731e2bc803bbb16ac13ad5ffd1f5a25b3dcb36ee048b190f40c0a"
+    },
+    {
+      "path": "/apps/ruffle/index.html",
+      "hash": "sha256:57972490fd794630ce5a73245fcbacbf66b32f1e3e9dc611dd5d6fa6440ef6e0"
+    },
+    {
+      "path": "/apps/ruffle/LICENSE_APACHE",
+      "hash": "sha256:62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    },
+    {
+      "path": "/apps/ruffle/LICENSE_MIT",
+      "hash": "sha256:4de9338a7879c68e911742a7d691f0797ff1ef8d8a6fb978b0c711e258fe959c"
+    },
+    {
+      "path": "/apps/ruffle/package.json",
+      "hash": "sha256:eaed921991c4024d0964e95e9419f5eeacc7d2e478fd069630a103454c873484"
+    },
+    {
+      "path": "/apps/ruffle/pixos_supported",
+      "hash": "sha256:07ea7abf5f305d9a6a77423bcec6df52331c35a8a8f3b33ce2a65880e2f1991e"
+    },
+    {
+      "path": "/apps/ruffle/pixos.app.json",
+      "hash": "sha256:db865d0257c3c993369b057284853e2cd4c68b7fc734d7a3cf823e51ae0dfd63"
+    },
+    {
+      "path": "/apps/ruffle/README.md",
+      "hash": "sha256:986146620686d86b3ef9e404bd7f07dd98f5241c02d66e9e5b96500d5eabe15f"
+    },
+    {
+      "path": "/apps/ruffle/ruffle.js",
+      "hash": "sha256:667a9d8ac6dfd2acd359644ec529701cd91de2f3c96fe312df61165884348280"
+    },
+    {
+      "path": "/apps/ruffle/ruffle.js.LICENSE.txt",
+      "hash": "sha256:73fae11242ef45ac94fd11e6ec88513f6a6fcee06c8bc319f3e163a0c7f29aa3"
+    },
+    {
+      "path": "/apps/ruffle/ruffle.js.map",
+      "hash": "sha256:f377071299d0873d64877aa2d0fe33a3420f966149b9bc67ceec1427352bd38e"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "swf"
+    ]
+  }
+}

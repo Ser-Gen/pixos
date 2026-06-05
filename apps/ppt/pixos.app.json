@@ -1,0 +1,93 @@
+{
+  "id": "ppt",
+  "name": "ppt",
+  "version": "1.0.0",
+  "entryPath": "/apps/ppt/index.html",
+  "files": [
+    {
+      "path": "/apps/ppt/.DS_Store",
+      "hash": "sha256:6e5ea03869b43525c910c46a8c2a79124e8470db7e947869e2b31121d4ed44a3"
+    },
+    {
+      "path": "/apps/ppt/css/nv.d3.min.css",
+      "hash": "sha256:d0821b9917df9978a8b377746ada4c15c311c83b1e44bcdfe812809ec5f51bd7"
+    },
+    {
+      "path": "/apps/ppt/css/pptxjs.css",
+      "hash": "sha256:c488fb0ec604387bb2a6b8cc8f1e2427dc6e24b2e38cf239b38b10a480195ed3"
+    },
+    {
+      "path": "/apps/ppt/filereader.js",
+      "hash": "sha256:96df9b7a2c5801e64fbf4917ea8d10167e22b90de17767352e286e8202737079"
+    },
+    {
+      "path": "/apps/ppt/index.html",
+      "hash": "sha256:a03ac600b70aee7ad335b4213ce09af77ac117c9eb7e8a3bc9a139a3770d027e"
+    },
+    {
+      "path": "/apps/ppt/js/d3.min.js",
+      "hash": "sha256:46c05e6969d585cd0ecb89f5de826501e7aa574f416a4a1823a500ae0a8254e3"
+    },
+    {
+      "path": "/apps/ppt/js/dingbat.js",
+      "hash": "sha256:9c1e836e97bf59bef1246addcc8028744a3abfa4dae82fcf90c0a44414362bf1"
+    },
+    {
+      "path": "/apps/ppt/js/divs2slides.js",
+      "hash": "sha256:2362ec53b975a6440f4b402b10f2dadf61ac19ccbe8c64f543cda5b279868e3d"
+    },
+    {
+      "path": "/apps/ppt/js/divs2slides.min.js",
+      "hash": "sha256:aebd8d03ecd91d13ca35ada9376dac62a61c56d4e8737d18779c5237ac0ec5d0"
+    },
+    {
+      "path": "/apps/ppt/js/filereader.js",
+      "hash": "sha256:96df9b7a2c5801e64fbf4917ea8d10167e22b90de17767352e286e8202737079"
+    },
+    {
+      "path": "/apps/ppt/js/jquery-1.11.3.min.js",
+      "hash": "sha256:ecb916133a9376911f10bc5c659952eb0031e457f5df367cde560edbfba38fb8"
+    },
+    {
+      "path": "/apps/ppt/js/jquery.fullscreen-min.js",
+      "hash": "sha256:44be3d8f1ec12caf21534ae6a70e387d568d6bf82b77f65e7d7e60635b4890ca"
+    },
+    {
+      "path": "/apps/ppt/js/jszip.min.js",
+      "hash": "sha256:215fb2537b13d82daabd46e1ee59ffe4dce90abd0acb0ac5432e77071f422e9c"
+    },
+    {
+      "path": "/apps/ppt/js/nv.d3.min.js",
+      "hash": "sha256:a88a6fcf2999cce9654cb119e8c2aa50872cc55da25341099b872f1a788ce233"
+    },
+    {
+      "path": "/apps/ppt/js/pptxjs.js",
+      "hash": "sha256:108fb8dca723240f98387d46507dee372fb1146cab71e42678a555e7986ac35e"
+    },
+    {
+      "path": "/apps/ppt/js/pptxjs.min.js",
+      "hash": "sha256:845555ec4179f557f0b78822baeffbaa6aa14c303eaaba1def7f608367eaca46"
+    },
+    {
+      "path": "/apps/ppt/LICENSE",
+      "hash": "sha256:01a22beb8c63e8e32bf96fe7d80f91fa09ab13b947596ffa268c2a123e8fb9a1"
+    },
+    {
+      "path": "/apps/ppt/pixos_supported",
+      "hash": "sha256:3b80543eff5cdffe8e40db5a9dea8daaadf60e9d5317228af8af4254d3de9c5f"
+    },
+    {
+      "path": "/apps/ppt/pixos.app.json",
+      "hash": "sha256:3cb859644fb17156a6b851d96b1dd9a2e1be9d88be880a1c6d40e21eaa9de624"
+    },
+    {
+      "path": "/apps/ppt/README.md",
+      "hash": "sha256:260ca66cbf1a960bee43644b5c420eb3f6572b4b46fc5e47893fae54f2dcccfc"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "pptx"
+    ]
+  }
+}

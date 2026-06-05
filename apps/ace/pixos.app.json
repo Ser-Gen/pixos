@@ -1,0 +1,29 @@
+{
+  "id": "ace",
+  "name": "ace",
+  "version": "1.0.0",
+  "entryPath": "/apps/ace/index.html",
+  "files": [
+    {
+      "path": "/apps/ace/index.html",
+      "hash": "sha256:32d7b09cc259699cb0bc09febfd1350bb6566bd467c2f5f899c0dc90ce0d72f5"
+    },
+    {
+      "path": "/apps/ace/pixos_supported",
+      "hash": "sha256:092eef04a2b0b6f73d4af2bd2ce7d5d82a816536e4e80bf2112c5a98bb95d76c"
+    },
+    {
+      "path": "/apps/ace/pixos.app.json",
+      "hash": "sha256:200f8ccc61bd78e93f2d39229c9d055dcecedf9ce494dda3caf5bddbc8da5d0b"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "txt",
+      "html",
+      "css",
+      "js"
+    ]
+  },
+  "supportsText": true
+}

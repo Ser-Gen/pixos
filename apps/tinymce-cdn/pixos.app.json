@@ -1,0 +1,28 @@
+{
+  "id": "tinymce",
+  "name": "tinymce",
+  "version": "1.0.0",
+  "entryPath": "/apps/tinymce-cdn/index.html",
+  "files": [
+    {
+      "path": "/apps/tinymce-cdn/index.html",
+      "hash": "sha256:37cc45e0d1e8b31507f487743e9c0e45cf8e177c7918ce26cf5378af4c95312d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/pixos_supported",
+      "hash": "sha256:95d53ad4efbcc898697e40693e04357cb6b8e54198270fc9d2b1b51227d23b7b"
+    },
+    {
+      "path": "/apps/tinymce-cdn/pixos.app.json",
+      "hash": "sha256:59815746e8db93fb5ddf01be0ccc67e58a158bc77de4c71a8684fc2596e24979"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "html"
+    ]
+  },
+  "supportedMimeTypes": [
+    "text/html"
+  ]
+}

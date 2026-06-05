@@ -1,0 +1,33 @@
+{
+  "id": "djvujs",
+  "name": "djvujs",
+  "version": "1.0.0",
+  "entryPath": "/apps/djvujs/index.html",
+  "files": [
+    {
+      "path": "/apps/djvujs/djvu_viewer.js",
+      "hash": "sha256:2d8bff05e37146affdc2428fd476751f002175879a9f918e4d17e5f4e37060a9"
+    },
+    {
+      "path": "/apps/djvujs/djvu.js",
+      "hash": "sha256:10a831d62cc7ced39c30c7350a11410402d082a0f0a5b073a88d3d7ca662add3"
+    },
+    {
+      "path": "/apps/djvujs/index.html",
+      "hash": "sha256:f134f19b4c1e7587eb562b041ef3bb01c38ff5cad59fb6d5818c6547de7ffb46"
+    },
+    {
+      "path": "/apps/djvujs/pixos_supported",
+      "hash": "sha256:416d0ddcaf862139270ee1a45f80b7971fe1de8a5b8d089afe00055331877d03"
+    },
+    {
+      "path": "/apps/djvujs/pixos.app.json",
+      "hash": "sha256:959cfaaff63995b1e22b55d889166d9c09f86cb398c85bbd331d483fb4144cdf"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "djvu"
+    ]
+  }
+}

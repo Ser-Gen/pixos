@@ -1,0 +1,12 @@
+{
+  "id": "explorer",
+  "name": "explorer",
+  "version": "1.0.0",
+  "entryPath": "/apps/explorer/index.html",
+  "files": [
+    {
+      "path": "/apps/explorer/index.html",
+      "hash": "sha256:0a143afb85ee6116b18eb7a228febe220f123fa05fdc75a87d5f31be4f57325c"
+    }
+  ]
+}

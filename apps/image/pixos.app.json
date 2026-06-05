@@ -1,0 +1,55 @@
+{
+  "id": "image",
+  "name": "image viewer",
+  "version": "1.0.0",
+  "entryPath": "/apps/image/index.html",
+  "files": [
+    {
+      "path": "/apps/image/comparator.js",
+      "hash": "sha256:87539a783be7daa1086cc45a4814640299db9187dec8adb10d084244e964a078"
+    },
+    {
+      "path": "/apps/image/diff_match_patch_uncompressed.js",
+      "hash": "sha256:9a79cf031ac7c2e366416181051acb3e6d2cacf79c5354148f4c71ea20c7e4a3"
+    },
+    {
+      "path": "/apps/image/getDiffImgData.worker.js",
+      "hash": "sha256:e9f56069fd039da5595690a2d06c01617c23d69003fc99f9c6b1ed9a16c8684e"
+    },
+    {
+      "path": "/apps/image/getDiffInline.js",
+      "hash": "sha256:ab091855d0a12c411e48fbbd571ffe22045d99970b3d3634f3cef2f2a14bc749"
+    },
+    {
+      "path": "/apps/image/image-input.js",
+      "hash": "sha256:74a5c220ff5ab0767921de8c92829dd4d4e8318a8d6cfb9f3d7b0a11ef0675a2"
+    },
+    {
+      "path": "/apps/image/index.html",
+      "hash": "sha256:c848c0d2bcd11903595b0319bd2c825bdb09ab87298e4cc3a7be03b55f3276a4"
+    },
+    {
+      "path": "/apps/image/paste.js",
+      "hash": "sha256:5c197ea974b39531d5f8e924ee99c8dfbec6a360044c26d72eda0d72a00f94ab"
+    },
+    {
+      "path": "/apps/image/pixos_supported",
+      "hash": "sha256:c1d40c434a8578b9b7b909e6be126cbae70ef6193e48ac2eb19c4b135ec97498"
+    },
+    {
+      "path": "/apps/image/pixos.app.json",
+      "hash": "sha256:3af227083441e2e9b8722a65b38bf5b97967f106cd51f924eff59cd5b8e846c2"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "jpg",
+      "jpeg",
+      "png",
+      "gif",
+      "webp",
+      "bmp",
+      "svg"
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "id": "ocr",
+  "name": "image OCR",
+  "version": "1.0.0",
+  "entryPath": "/apps/ocr/index.html",
+  "files": [
+    {
+      "path": "/apps/ocr/.DS_Store",
+      "hash": "sha256:d65165279105ca6773180500688df4bdc69a2c7b771752f0a46ef120b7fd8ec3"
+    },
+    {
+      "path": "/apps/ocr/index.html",
+      "hash": "sha256:b2bfb5c0730a524146c2bfa544f018658b0a9e619f85e7dce98078fb25c437dd"
+    },
+    {
+      "path": "/apps/ocr/pixos_supported",
+      "hash": "sha256:c1d40c434a8578b9b7b909e6be126cbae70ef6193e48ac2eb19c4b135ec97498"
+    },
+    {
+      "path": "/apps/ocr/pixos.app.json",
+      "hash": "sha256:d0732199632769306d1ebf07fc0f7c16139647d7a4a89df0f61ce425d04b84b5"
+    },
+    {
+      "path": "/apps/ocr/tesseract-core-simd-lstm.js",
+      "hash": "sha256:4aaf414ae3c2a410df8182c2169b2b6598b06d1fd595df5f1e88a1fbb1c41f52"
+    },
+    {
+      "path": "/apps/ocr/tesseract-core-simd-lstm.wasm.js",
+      "hash": "sha256:18797eef96bab787636c40b53efaa445cf5ca1c97abd735c4fd8dc3d03652959"
+    },
+    {
+      "path": "/apps/ocr/tesseract-core.js",
+      "hash": "sha256:f3b9b5b49258980aebc2bd4df26bc5389bef7c5f5d29e09bbff0b034aacddddb"
+    },
+    {
+      "path": "/apps/ocr/tesseract-core.wasm.js",
+      "hash": "sha256:fe68f746dc186bb19e2c55de3514d3d6c4036ede53488b5a4db00dfe3f75e5f1"
+    },
+    {
+      "path": "/apps/ocr/tesseract.5.1.0.min.js",
+      "hash": "sha256:ed178b2478023fcd09eaf5df5ce5fc284cc6a6c60169edc5be13f33fb7823d88"
+    },
+    {
+      "path": "/apps/ocr/tesseract.5.min.js",
+      "hash": "sha256:be397e903f26199d428b528e8d834cdca8064f95c82068fa34ec8c4d34fd9de9"
+    },
+    {
+      "path": "/apps/ocr/worker.5.1.0.min.js",
+      "hash": "sha256:162d4728065ffb34b69825f895b8a9b4fde3a22a217252fec3a4c3d1effc34e6"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "jpg",
+      "jpeg",
+      "png",
+      "gif",
+      "webp",
+      "bmp",
+      "svg"
+    ]
+  }
+}

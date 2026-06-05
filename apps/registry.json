@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "apps": [
+    {
+      "id": "ace",
+      "manifestPath": "/apps/ace/pixos.app.json"
+    },
+    {
+      "id": "djvujs",
+      "manifestPath": "/apps/djvujs/pixos.app.json"
+    },
+    {
+      "id": "docx",
+      "manifestPath": "/apps/docx/pixos.app.json"
+    },
+    {
+      "id": "emulatorjs",
+      "manifestPath": "/apps/emulatorjs/pixos.app.json"
+    },
+    {
+      "id": "image",
+      "manifestPath": "/apps/image/pixos.app.json"
+    },
+    {
+      "id": "jsdos",
+      "manifestPath": "/apps/jsdosv7.5.0/pixos.app.json"
+    },
+    {
+      "id": "luckySheet",
+      "manifestPath": "/apps/luckySheet/pixos.app.json"
+    },
+    {
+      "id": "media-player",
+      "manifestPath": "/apps/media-player/pixos.app.json"
+    },
+    {
+      "id": "mkvPlayer",
+      "manifestPath": "/apps/mkv-player/pixos.app.json"
+    },
+    {
+      "id": "monaco",
+      "manifestPath": "/apps/monaco-cdn/pixos.app.json"
+    },
+    {
+      "id": "ocr",
+      "manifestPath": "/apps/ocr/pixos.app.json"
+    },
+    {
+      "id": "photopea",
+      "manifestPath": "/apps/photopea/pixos.app.json"
+    },
+    {
+      "id": "pico8",
+      "manifestPath": "/apps/pico8/pixos.app.json"
+    },
+    {
+      "id": "ppt",
+      "manifestPath": "/apps/ppt/pixos.app.json"
+    },
+    {
+      "id": "ruffle",
+      "manifestPath": "/apps/ruffle/pixos.app.json"
+    },
+    {
+      "id": "sheetjs",
+      "manifestPath": "/apps/sheetjs/pixos.app.json"
+    },
+    {
+      "id": "terminal",
+      "manifestPath": "/apps/terminal/pixos.app.json"
+    },
+    {
+      "id": "tic80",
+      "manifestPath": "/apps/tic80-v1.1-html/pixos.app.json"
+    },
+    {
+      "id": "tinymce",
+      "manifestPath": "/apps/tinymce-cdn/pixos.app.json"
+    },
+    {
+      "id": "vips",
+      "manifestPath": "/apps/vips/pixos.app.json"
+    },
+    {
+      "id": "yaReader",
+      "manifestPath": "/apps/ya-book-reader/pixos.app.json"
+    }
+  ]
+}

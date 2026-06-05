@@ -1,0 +1,29 @@
+{
+  "id": "monaco",
+  "name": "monaco",
+  "version": "1.0.0",
+  "entryPath": "/apps/monaco-cdn/index.html",
+  "files": [
+    {
+      "path": "/apps/monaco-cdn/index.html",
+      "hash": "sha256:cecb2cbac17f66049ccbd260fe1939393e0fcd96b7ab2fc1e8e498f6d04958b8"
+    },
+    {
+      "path": "/apps/monaco-cdn/pixos_supported",
+      "hash": "sha256:092eef04a2b0b6f73d4af2bd2ce7d5d82a816536e4e80bf2112c5a98bb95d76c"
+    },
+    {
+      "path": "/apps/monaco-cdn/pixos.app.json",
+      "hash": "sha256:2147e7c73464895791b3b5d6f3ed424c5f1f426f016f189c26154af5f8f7db9d"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "txt",
+      "html",
+      "css",
+      "js"
+    ]
+  },
+  "supportsText": true
+}

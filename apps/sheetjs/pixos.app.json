@@ -1,0 +1,30 @@
+{
+  "id": "sheetjs",
+  "name": "sheetjs",
+  "version": "1.0.0",
+  "entryPath": "/apps/sheetjs/index.html",
+  "files": [
+    {
+      "path": "/apps/sheetjs/index.html",
+      "hash": "sha256:06f8be818ed1086276d8dc656e8f9b68fe059e4f1321626d4e87406a74a1d1ff"
+    },
+    {
+      "path": "/apps/sheetjs/pixos_supported",
+      "hash": "sha256:880f8e8678c449a9f7ac1ffa70486ade66cbef01fa396212a49b42eaa5230cb9"
+    },
+    {
+      "path": "/apps/sheetjs/pixos.app.json",
+      "hash": "sha256:dcb935876900579ccb6a7af891fd26886cc2f8949e63a8b33b768c5f84def37a"
+    },
+    {
+      "path": "/apps/sheetjs/sheet.js",
+      "hash": "sha256:c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "csv",
+      "xls"
+    ]
+  }
+}

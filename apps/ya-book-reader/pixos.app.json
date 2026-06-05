@@ -1,0 +1,203 @@
+{
+  "id": "yaReader",
+  "name": "Yandex Book Reader",
+  "version": "1.0.0",
+  "entryPath": "/apps/ya-book-reader/index.html",
+  "files": [
+    {
+      "path": "/apps/ya-book-reader/.DS_Store",
+      "hash": "sha256:536614bcf93c944192c4937b91488dde358b252509151c9e223afe8e72c14cbd"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/.DS_Store",
+      "hash": "sha256:16e69d9de722179488466acb39284323a9b8789229b74785162cfbc6d2f37578"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_cover/images/book_cover.png",
+      "hash": "sha256:061469a6346c549cfd9d7cae1c6deb48284da39280f4e7d4373ee73ca00cd260"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_close_hover.png",
+      "hash": "sha256:248246f09084dd7b83c1703e4627a3157b63a735e9563bd30ba92b7ee59e72a8"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_close.png",
+      "hash": "sha256:810da7c618a86c87ea6c2977e29d2b09de256dd54c7db13c3f75ba9a1c83ca9d"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_minus_hover.png",
+      "hash": "sha256:1dc90244201394aad643ef761673e5921d49537ec7446d3d5e0d48f8665b5a55"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_minus.png",
+      "hash": "sha256:6dd0c042a9344631c6020f1b908c63739f6ddf48755907d9809c3ec1994aa94f"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_mode_page_hover.png",
+      "hash": "sha256:c088e911658c4302929dbf24a7695a052e452f1eee6faef1961f0b8287551582"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_mode_page.png",
+      "hash": "sha256:95cd32bdb9dcd53934542ef3d38c883bb9a092f820e952a1112d3404e335c5ae"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_mode_scroll_hover.png",
+      "hash": "sha256:e44984a7a092a74417dcbc507e43b61680e2668fe8f1d7210e469ff34b7e6754"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_mode_scroll.png",
+      "hash": "sha256:855186eeb38657685ce9a2d3db899c10b1798e48c794cc8b99e31ac5b6055b8b"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_navigation_hover.png",
+      "hash": "sha256:c652130b685d7c8425537889bbb5fbd50caa48304ad4e75b834ca76a1fe2d0fd"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_navigation.png",
+      "hash": "sha256:77fd2acf37c6f6d1fbbba3daa2993c256cba8f3d6ba1f56f88f7563ea48bdc34"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_open.png",
+      "hash": "sha256:cb727eaa478586e043a2dbbc59a77dd1fe76733518f3c0dff3dda9ce0177a81c"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_plus_hover.png",
+      "hash": "sha256:d76a2bc23e7d3b7f61afd5f19c2e2e652e4025a8b34c954d459cd4c79b50f2ba"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_action_plus.png",
+      "hash": "sha256:d551eb8342e882b2a91a1b9bf3c289f024353d7f37010e014e68ef5310cc4cdf"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_menu/images/menu_delimiter.png",
+      "hash": "sha256:591b3f9e8e29b224a893e239e3de923941401fc74670acb2cc2becd5a427eeb5"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_navigation/images/close_button_hover.png",
+      "hash": "sha256:a02249a16de13a9c68e93559733b5c763174999c70565f0b455f990052c74532"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_navigation/images/close_button.png",
+      "hash": "sha256:820816bedb26a9398f3c254d9491d81810ee98d778c62836bec6015a4190b1bf"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_page/images/arrow_left_hover.png",
+      "hash": "sha256:57138da6432abe4618a2ee0f8d3ea8e10420e54b0cf3b6a76cbe27b1ddc3a0c4"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_page/images/arrow_left.png",
+      "hash": "sha256:2285b0322632c3272df72977f6edace2b1a86baa6d1c2d3d4f6309676ff53a26"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_page/images/arrow_right_hover.png",
+      "hash": "sha256:6e1ae3835d4bedc6c81be0c22bf5f78b8a5781884254f315e3025ee8d500b1ab"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_page/images/arrow_right.png",
+      "hash": "sha256:5ef355aa73eb1477a3082e5061fe595db059d352f006910ab490c8ca284339e4"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_page/images/bookmark_icon_active.png",
+      "hash": "sha256:b76d76f9a2f56005af97ffc7b719222432913ef42d7b435048478f9e62cb6c74"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_page/images/bookmark_icon_hover.png",
+      "hash": "sha256:a5755049c3bdb275bd8ccc336e79a8d15265009de4b46df4261e58395b0de293"
+    },
+    {
+      "path": "/apps/ya-book-reader/elements/reader_page/images/bookmark_icon.png",
+      "hash": "sha256:0020967c011459dd30f0be29d73f631ab02255db75c14849b7a8620729929c29"
+    },
+    {
+      "path": "/apps/ya-book-reader/extensions/keep_alive.js",
+      "hash": "sha256:0bb60ec083129046e4d98f3a4b6696e64ce4b9481dca146748ea91d57c80ec07"
+    },
+    {
+      "path": "/apps/ya-book-reader/extensions/keep_alive.mojom.js",
+      "hash": "sha256:7a2c0312bcbe8f5b97c31ed1f75dbcb10a2ca65d6671d606ce360f965d3243cd"
+    },
+    {
+      "path": "/apps/ya-book-reader/extensions/mime_handler.mojom.js",
+      "hash": "sha256:f63707b85fb9eff4d07c937ad95fdbae42eab85400564ae1dad59c883178ddaf"
+    },
+    {
+      "path": "/apps/ya-book-reader/extensions/mimeHandlerPrivate.js",
+      "hash": "sha256:61a9c3486b34361d6ef9681927d1d875a541779bdd8f4e6b588ab9df9fab9321"
+    },
+    {
+      "path": "/apps/ya-book-reader/extensions/mojo_bindings.js",
+      "hash": "sha256:6036cf29a7d67eaf94defb80c4b64408b2637bfdf935660500667c0ab4fba968"
+    },
+    {
+      "path": "/apps/ya-book-reader/extensions/uncaught_exception_handler.js",
+      "hash": "sha256:903bf007ec2c9348c83a8a71fcb57b8c9aa3d46cea5c05823e8f6d6183ca6636"
+    },
+    {
+      "path": "/apps/ya-book-reader/index.css",
+      "hash": "sha256:67c59eedcf31c46956e2f6205dafa13ea99433012ccd948ea88a911249ee35e4"
+    },
+    {
+      "path": "/apps/ya-book-reader/index.html",
+      "hash": "sha256:81bc6f64366162a63f4b6be1a78a144e3b74dcf61485557faba1864d6bb14143"
+    },
+    {
+      "path": "/apps/ya-book-reader/index.js",
+      "hash": "sha256:e304b9b7403f8ad106fd5578f3addc2398d70b6f719ed26ff311503f9237d515"
+    },
+    {
+      "path": "/apps/ya-book-reader/pixos_supported",
+      "hash": "sha256:1bebcefea3460fbfa27e648c08bfaa8ca030580ef1dd0b06f536a94b4b3be9d5"
+    },
+    {
+      "path": "/apps/ya-book-reader/pixos.app.json",
+      "hash": "sha256:ed61c3ab4c37ee392a733108e1f623375aeb4aa2a71e821847addff9450f69f3"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/.DS_Store",
+      "hash": "sha256:d6aadf4c26f6eada566c116778bf3fdb4145a75c4c3c6b740d2e348edcd3daf0"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/css/text_defaults.css",
+      "hash": "sha256:fb453bb126f38422ef6eceffd8e9734e1cf9c30c4621fe2176a725fc58871456"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/js/load_time_data.m.js",
+      "hash": "sha256:36fc1600bf2ae6ac37d5d505c645b480662568865cdba74807a7a83309ed7270"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/js/reader_core/reader_core.js",
+      "hash": "sha256:18561ea1f27f9985717e7041da6a7544e38c37d58f267353fb0570bc98644078"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/js/zip/inflate.js",
+      "hash": "sha256:a84720d8facc41ed623f58133692fad63906fafa00ef83f4975635107d10b778"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/js/zip/mime_types.js",
+      "hash": "sha256:06f5a1237148c4c75ec2bf6d16893b432feedc9f1385883f6420133c62a9a03d"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/js/zip/z_worker.js",
+      "hash": "sha256:09b0b5863d28324cddf31ac2819a0e3a4dfff6a06cae173d99d14e20a17c3a76"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/js/zip/zip.js",
+      "hash": "sha256:37be829622a0070d7f9987ce4db7f413fbc437eabfb8b2ab4a196a4057087ee2"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/polymer/v3_0/polymer/polymer_bundled.min.js",
+      "hash": "sha256:ef4d2e80e16c431ef287755e0354d0354d452618f795016be1b16c16bc6ddec1"
+    },
+    {
+      "path": "/apps/ya-book-reader/resources/yandex/images/loader.svg",
+      "hash": "sha256:22cde5f39305e144b4057e7277b24ee445004e61fdba2d599712ae94aedae3d2"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "epub",
+      "fb2.zip",
+      "fb2"
+    ]
+  }
+}

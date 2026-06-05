@@ -13,6 +13,13 @@
 			font-family: sans-serif;
 		}
 
+		.toolbar {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 8px;
+			margin-bottom: 12px;
+		}
+
 		#items {
 			display: grid;
 			gap: 8px;
@@ -20,7 +27,7 @@
 
 		.AppCard {
 			display: flex;
-			align-items: center;
+			align-items: flex-start;
 			justify-content: space-between;
 			gap: 12px;
 			padding: 10px 12px;
@@ -28,18 +35,71 @@
 			border: 1px solid rgba(255, 255, 255, 0.12);
 		}
 
+		.AppCard--conflict {
+			border-color: rgba(255, 180, 80, 0.6);
+		}
+
+		.AppCard--broken {
+			border-color: rgba(255, 100, 100, 0.5);
+		}
+
 		.AppCard__meta {
 			display: grid;
 			gap: 4px;
+			min-width: 0;
+			flex: 1;
+		}
+
+		.AppCard__titleRow {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: center;
+			gap: 6px;
 		}
 
 		.AppCard__name {
 			font-size: 14px;
 		}
 
-		.AppCard__exts {
+		.badge {
+			font-size: 10px;
+			padding: 2px 6px;
+			border-radius: 3px;
+			text-transform: uppercase;
+			letter-spacing: 0.04em;
+		}
+
+		.badge--catalog {
+			background: rgba(80, 140, 255, 0.25);
+			color: #9ec0ff;
+		}
+
+		.badge--local {
+			background: rgba(80, 200, 120, 0.2);
+			color: #9ee8b0;
+		}
+
+		.badge--warn {
+			background: rgba(255, 180, 80, 0.25);
+			color: #ffd49a;
+		}
+
+		.AppCard__exts,
+		.AppCard__status {
 			font-size: 12px;
 			color: rgba(255, 255, 255, 0.65);
+		}
+
+		.AppCard__warn {
+			font-size: 12px;
+			color: #ffcc88;
+		}
+
+		.AppCard__actions {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px;
+			justify-content: flex-end;
 		}
 
 		button {
@@ -55,62 +115,295 @@
 			cursor: default;
 			opacity: 0.6;
 		}
+
+		.dialog-backdrop {
+			position: fixed;
+			inset: 0;
+			background: rgba(0, 0, 0, 0.55);
+			display: none;
+			align-items: center;
+			justify-content: center;
+			z-index: 10;
+		}
+
+		.dialog-backdrop.is-open {
+			display: flex;
+		}
+
+		.dialog {
+			width: min(360px, calc(100vw - 32px));
+			background: #3a3a3a;
+			border: 1px solid rgba(255, 255, 255, 0.15);
+			padding: 16px;
+			display: grid;
+			gap: 10px;
+		}
+
+		.dialog h2 {
+			margin: 0;
+			font-size: 15px;
+		}
+
+		.dialog input {
+			width: 100%;
+			box-sizing: border-box;
+			height: 30px;
+			padding: 0 8px;
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			background: #2b2b2b;
+			color: #fff;
+		}
+
+		.dialog__error {
+			font-size: 12px;
+			color: #ff9a9a;
+			min-height: 16px;
+		}
+
+		.dialog__actions {
+			display: flex;
+			gap: 8px;
+			justify-content: flex-end;
+		}
 	</style>
 </head>
 <body>
+<div class="toolbar">
+	<button type="button" id="rescanBtn">Rescan apps</button>
+	<button type="button" id="checkAllBtn">Check all updates</button>
+</div>
 <div id="items"></div>
+
+<div class="dialog-backdrop" id="renameDialog">
+	<div class="dialog">
+		<h2>Rename local app</h2>
+		<p id="renameHint"></p>
+		<input type="text" id="renameInput" autocomplete="off" spellcheck="false">
+		<div class="dialog__error" id="renameError"></div>
+		<div class="dialog__actions">
+			<button type="button" data-type="rename-cancel">Cancel</button>
+			<button type="button" data-type="rename-ok">Rename</button>
+		</div>
+	</div>
+</div>
+
 <script>
 var itemsNode = document.querySelector('#items');
+var renameDialog = document.querySelector('#renameDialog');
+var renameInput = document.querySelector('#renameInput');
+var renameError = document.querySelector('#renameError');
+var renameHint = document.querySelector('#renameHint');
+var renameTargetId = null;
+var updateInfoById = {};
 
 render();
 hydrateCatalogSupportData();
 
 async function render () {
-	var catalog = typeof parent.getInstallableApps === 'function' ? parent.getInstallableApps() : [];
+	var apps = typeof parent.getManagerApps === 'function'
+		? parent.getManagerApps()
+		: (typeof parent.getInstallableApps === 'function' ? parent.getInstallableApps() : []);
 	var installedRecords = parent.apps || [];
 	var installedSet = new Set(installedRecords.map(function (entry) {
 		return entry.id;
 	}));
 
-	itemsNode.innerHTML = catalog.map(function (app) {
-		var isInstalled = installedSet.has(app.id);
-		var installedRecord = typeof parent.getInstalledAppRecord === 'function'
-			? parent.getInstalledAppRecord(app.id)
-			: null;
-		var supportStatus = installedRecord ? installedRecord.supportStatus : app.supportStatus;
-		var supportedExtensions = installedRecord && Array.isArray(installedRecord.supportedExtensions)
-			? installedRecord.supportedExtensions
-			: (Array.isArray(app.supportedExtensions) ? app.supportedExtensions : []);
-		var exts = supportedExtensions.length
-			? supportedExtensions.join(', ')
-			: (app.supportsText
-				? 'text files'
-				: (app.supportedMimeTypes && app.supportedMimeTypes.length
-					? app.supportedMimeTypes.join(', ')
-					: (isInstalled && supportStatus !== 'ready'
-						? 'loading file associations...'
-						: 'file associations will load on demand')));
-		return `
-			<div class="AppCard" data-app-id="${escapeHtml(app.id)}">
-				<div class="AppCard__meta">
-					<div class="AppCard__name">${escapeHtml(app.label)}</div>
-					<div class="AppCard__exts">${escapeHtml(exts)}</div>
-				</div>
-				<button data-type="install"${isInstalled ? ' disabled' : ''}>${isInstalled ? 'installed' : 'install'}</button>
-			</div>
-		`;
+	itemsNode.innerHTML = apps.map(function (app) {
+		return renderCard(app, installedSet, installedRecords);
 	}).join('');
 }
 
+function renderCard (app, installedSet, installedRecords) {
+	var isCatalog = app.source === 'catalog';
+	var isLocal = app.source === 'local';
+	var isConflict = app.localStatus === 'id_conflict';
+	var isBroken = app.localStatus === 'broken';
+	var isInstalled = isLocal ? app.localStatus === 'active' : installedSet.has(app.id);
+	var installedRecord = typeof parent.getInstalledAppRecord === 'function'
+		? parent.getInstalledAppRecord(app.id)
+		: null;
+	var updateInfo = updateInfoById[app.id] || null;
+	var supportStatus = installedRecord ? installedRecord.supportStatus : app.supportStatus;
+	var supportedExtensions = installedRecord && Array.isArray(installedRecord.supportedExtensions)
+		? installedRecord.supportedExtensions
+		: (Array.isArray(app.supportedExtensions) ? app.supportedExtensions : []);
+	var exts = supportedExtensions.length
+		? supportedExtensions.join(', ')
+		: (app.supportsText
+			? 'text files'
+			: (app.supportedMimeTypes && app.supportedMimeTypes.length
+				? app.supportedMimeTypes.join(', ')
+				: (isInstalled && supportStatus !== 'ready'
+					? 'loading file associations...'
+					: 'file associations will load on demand')));
+
+	var statusText = '';
+	if (isConflict) {
+		statusText = 'ID conflicts with catalog app — rename to activate';
+	}
+	else if (isBroken) {
+		statusText = 'Missing index.html';
+	}
+	else if (isCatalog) {
+		if (!isInstalled) {
+			statusText = 'Not installed · v' + escapeHtml(app.version || '?');
+		}
+		else {
+			statusText = 'Installed · v' + escapeHtml((installedRecord && installedRecord.version) || app.version || '?');
+			if (updateInfo && updateInfo.updateAvailable) {
+				statusText += ' · update to v' + escapeHtml(updateInfo.remoteVersion);
+			}
+			if (updateInfo && updateInfo.localModified) {
+				statusText += ' · local changes detected';
+			}
+		}
+	}
+	else if (isLocal) {
+		statusText = 'Local app · v' + escapeHtml(app.version || '?');
+	}
+
+	var cardClass = 'AppCard';
+	if (isConflict) cardClass += ' AppCard--conflict';
+	if (isBroken) cardClass += ' AppCard--broken';
+
+	var badges = '';
+	if (isCatalog) {
+		badges += '<span class="badge badge--catalog">catalog</span>';
+	}
+	if (isLocal) {
+		badges += '<span class="badge badge--local">local</span>';
+	}
+	if (isConflict) {
+		badges += '<span class="badge badge--warn">id conflict</span>';
+	}
+
+	var actions = '';
+	if (isConflict) {
+		actions += '<button type="button" data-type="rename" data-app-id="' + escapeHtml(app.id) + '">Rename</button>';
+	}
+	else if (isCatalog) {
+		if (!isInstalled) {
+			actions += '<button type="button" data-type="install" data-app-id="' + escapeHtml(app.id) + '">Install</button>';
+		}
+		else {
+			actions += '<button type="button" data-type="check-update" data-app-id="' + escapeHtml(app.id) + '">Check update</button>';
+			if (updateInfo && updateInfo.updateAvailable) {
+				actions += '<button type="button" data-type="update" data-app-id="' + escapeHtml(app.id) + '"' +
+					(updateInfo.localModified ? ' data-force="1"' : '') + '>Update' +
+					(updateInfo.localModified ? ' anyway' : '') + '</button>';
+			}
+		}
+	}
+	else if (isLocal && app.localStatus === 'active') {
+		actions += '<button type="button" disabled>active</button>';
+	}
+
+	return `
+		<div class="${cardClass}" data-app-id="${escapeHtml(app.id)}">
+			<div class="AppCard__meta">
+				<div class="AppCard__titleRow">
+					<div class="AppCard__name">${escapeHtml(app.label || app.id)}</div>
+					${badges}
+				</div>
+				<div class="AppCard__exts">${escapeHtml(exts)}</div>
+				<div class="AppCard__status">${statusText}</div>
+				${isConflict ? '<div class="AppCard__warn">Rename local app "' + escapeHtml(app.id) + '" to avoid conflict with the catalog app.</div>' : ''}
+			</div>
+			<div class="AppCard__actions">${actions}</div>
+		</div>
+	`;
+}
+
 document.addEventListener('click', async function (e) {
-	var button = e.target.closest('[data-type="install"]');
-	if (!button || button.disabled) return;
+	var button = e.target.closest('button[data-type]');
+	if (!button) return;
+
+	if (button.dataset.type === 'install') {
+		await handleInstall(button);
+		return;
+	}
+	if (button.dataset.type === 'check-update') {
+		await handleCheckUpdate(button);
+		return;
+	}
+	if (button.dataset.type === 'update') {
+		await handleUpdate(button);
+		return;
+	}
+	if (button.dataset.type === 'rename') {
+		openRenameDialog(button.dataset.appId);
+		return;
+	}
+	if (button.dataset.type === 'rename-cancel') {
+		closeRenameDialog();
+		return;
+	}
+	if (button.dataset.type === 'rename-ok') {
+		await submitRename();
+		return;
+	}
+});
+
+document.querySelector('#rescanBtn').addEventListener('click', async function () {
+	var btn = this;
+	btn.disabled = true;
+	btn.textContent = 'Scanning...';
+	try {
+		if (typeof parent.refreshInstalledAppsRegistry === 'function') {
+			await parent.refreshInstalledAppsRegistry();
+		}
+		else if (typeof parent.buildAppRegistry === 'function') {
+			await parent.buildAppRegistry();
+		}
+		await render();
+	}
+	catch (err) {
+		console.error(err);
+	}
+	finally {
+		btn.disabled = false;
+		btn.textContent = 'Rescan apps';
+	}
+});
+
+document.querySelector('#checkAllBtn').addEventListener('click', async function () {
+	var btn = this;
+	if (typeof parent.checkAllAppUpdates !== 'function') {
+		return;
+	}
+	btn.disabled = true;
+	btn.textContent = 'Checking...';
+	try {
+		var results = await parent.checkAllAppUpdates();
+		Object.keys(results).forEach(function (id) {
+			updateInfoById[id] = results[id];
+		});
+		await render();
+	}
+	catch (err) {
+		console.error(err);
+	}
+	finally {
+		btn.disabled = false;
+		btn.textContent = 'Check all updates';
+	}
+});
+
+renameInput.addEventListener('input', function () {
+	validateRenameInput();
+});
+
+if (parent && typeof parent.addEventListener === 'function') {
+	parent.addEventListener('pixos:apps-registry-updated', function () {
+		render();
+	});
+}
+
+async function handleInstall (button) {
 	var card = button.closest('[data-app-id]');
 	if (!card) return;
-
 	button.disabled = true;
 	button.textContent = 'installing...';
-
 	try {
 		await parent.installAppById(card.dataset.appId);
 		await render();
@@ -118,14 +411,89 @@ document.addEventListener('click', async function (e) {
 	catch (err) {
 		console.error(err);
 		button.disabled = false;
-		button.textContent = 'install';
+		button.textContent = 'Install';
 	}
-});
+}
 
-if (parent && typeof parent.addEventListener === 'function') {
-	parent.addEventListener('pixos:apps-registry-updated', function () {
-		render();
-	});
+async function handleCheckUpdate (button) {
+	var appId = button.dataset.appId;
+	button.disabled = true;
+	button.textContent = 'checking...';
+	try {
+		updateInfoById[appId] = await parent.checkAppUpdate(appId);
+		await render();
+	}
+	catch (err) {
+		console.error(err);
+		button.disabled = false;
+		button.textContent = 'Check update';
+	}
+}
+
+async function handleUpdate (button) {
+	var appId = button.dataset.appId;
+	var force = button.dataset.force === '1';
+	if (force && !window.confirm('Local files were modified. Update anyway?')) {
+		return;
+	}
+	button.disabled = true;
+	button.textContent = 'updating...';
+	try {
+		var result = await parent.updateAppById(appId, { force: force });
+		if (result.reason === 'local-modified') {
+			updateInfoById[appId] = await parent.checkAppUpdate(appId);
+			window.alert('Local changes detected. Use "Update anyway" to overwrite.');
+		}
+		else if (result.updated) {
+			updateInfoById[appId] = await parent.checkAppUpdate(appId);
+		}
+		await render();
+	}
+	catch (err) {
+		console.error(err);
+		button.disabled = false;
+		button.textContent = force ? 'Update anyway' : 'Update';
+	}
+}
+
+function openRenameDialog (appId) {
+	renameTargetId = appId;
+	renameHint.textContent = 'Choose a new ID for local app "' + appId + '".';
+	renameInput.value = appId + '-local';
+	renameError.textContent = '';
+	renameDialog.classList.add('is-open');
+	validateRenameInput();
+	renameInput.focus();
+	renameInput.select();
+}
+
+function closeRenameDialog () {
+	renameDialog.classList.remove('is-open');
+	renameTargetId = null;
+}
+
+function validateRenameInput () {
+	if (!renameTargetId || typeof parent.validateLocalAppId !== 'function') {
+		return false;
+	}
+	var result = parent.validateLocalAppId(renameInput.value.trim(), renameTargetId);
+	renameError.textContent = result.valid ? '' : result.errors.join('; ');
+	return result.valid;
+}
+
+async function submitRename () {
+	if (!renameTargetId || !validateRenameInput()) {
+		return;
+	}
+	var newId = renameInput.value.trim();
+	try {
+		await parent.renameLocalApp(renameTargetId, newId);
+		closeRenameDialog();
+		await render();
+	}
+	catch (err) {
+		renameError.textContent = err.message || String(err);
+	}
 }
 
 async function hydrateCatalogSupportData () {
