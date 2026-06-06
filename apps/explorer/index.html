@@ -3,11 +3,40 @@
 <head>
 	<script>
 		(function () {
-			if (!window.opener) return;
+			var FILES3_CONFIG_KEY = 'pixos_files3_config';
 			var token = new URLSearchParams(location.search).get('token');
 			if (!token) return;
-			window.opener.postMessage({ type: 'files3-token', token: token }, location.origin);
-			window.close();
+
+			function resolveFiles3LocalStorageId () {
+				var lsId = 'files3_token_storage';
+				try {
+					var raw = localStorage.getItem(FILES3_CONFIG_KEY);
+					if (!raw) return lsId;
+					var cfg = JSON.parse(raw);
+					if (cfg && cfg.localStorageId) {
+						return cfg.localStorageId;
+					}
+					if (cfg && cfg.baseUrl) {
+						return 'files3_token_' + (new URL(cfg.baseUrl).hostname || 'storage');
+					}
+				} catch (e) { /* ignore */ }
+				return lsId;
+			}
+
+			try {
+				localStorage.setItem(resolveFiles3LocalStorageId(), token);
+			} catch (e) { /* ignore */ }
+
+			try {
+				history.replaceState(null, '', location.pathname + location.hash);
+			} catch (e) { /* ignore */ }
+
+			if (window.opener) {
+				try {
+					window.opener.postMessage({ type: 'files3-token', token: token }, location.origin);
+				} catch (e) { /* ignore */ }
+				window.close();
+			}
 		})();
 	</script>
 	<meta charset="UTF-8">
