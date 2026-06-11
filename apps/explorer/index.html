@@ -3963,6 +3963,9 @@ async function openExplorer () {
 	}
 
 	async function listDirectory (dirPath) {
+		if (mountManager && typeof mountManager.refreshFiles3Directory === 'function') {
+			mountManager.refreshFiles3Directory(dirPath);
+		}
 		var contents = await readdir(dirPath);
 		var stats = await Promise.all(contents.map(async function (item) {
 			var itemPath = path.join(dirPath, item);

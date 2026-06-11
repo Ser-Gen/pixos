@@ -271,6 +271,50 @@
 		return this._mounts[path] || null;
 	};
 
+	MountManager.prototype.findMountPointForPath = function (absolutePath) {
+		var normalized = absolutePath.charAt(0) === '/' ? absolutePath : '/' + absolutePath;
+		var mounts = Object.keys(this._mounts).sort(function (a, b) {
+			return b.length - a.length;
+		});
+		for (var i = 0; i < mounts.length; i++) {
+			var mp = mounts[i];
+			if (normalized === mp || normalized.indexOf(mp + '/') === 0) {
+				return mp;
+			}
+		}
+		return null;
+	};
+
+	MountManager.prototype._unwrapMountedFs = function (fs) {
+		if (fs && typeof fs.getFSUnlocked === 'function') {
+			return fs.getFSUnlocked();
+		}
+		return fs;
+	};
+
+	/**
+	 * Drop Files3 directory cache for absoluteDirPath so the next readdir
+	 * fetches a fresh listing from the API.
+	 */
+	MountManager.prototype.refreshFiles3Directory = function (absoluteDirPath) {
+		var mountPoint = this.findMountPointForPath(absoluteDirPath);
+		if (!mountPoint || !this._mounts[mountPoint] || this._mounts[mountPoint].type !== 'files3') {
+			return false;
+		}
+		var rootFs = this._getRootFS();
+		if (!rootFs || typeof rootFs._getFs !== 'function') {
+			return false;
+		}
+		var located = rootFs._getFs(absoluteDirPath);
+		var files3Fs = this._unwrapMountedFs(located && located.fs);
+		if (!files3Fs || !files3Fs._resolver || typeof files3Fs._resolver.invalidatePath !== 'function') {
+			return false;
+		}
+		var bustPath = absoluteDirPath.replace(/\/+$/, '') + '/.pixos-cache-bust';
+		files3Fs._resolver.invalidatePath(bustPath);
+		return true;
+	};
+
 	MountManager.prototype.listMounts = function () {
 		var self = this;
 		return Object.keys(self._mounts).map(function (mp) {
