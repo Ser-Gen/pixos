@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Disk Treemap</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="toolbar">
+    <h1 class="toolbar-title">Disk Treemap</h1>
+    <button type="button" id="btn-open" class="btn">Открыть папку</button>
+    <input type="file" id="folder-input" webkitdirectory hidden>
+    <nav id="breadcrumb" class="breadcrumb" aria-label="Навигация"></nav>
+    <div id="stats" class="stats"></div>
+  </header>
+
+  <main id="main" class="main">
+    <div id="empty-state" class="empty-state">
+      <p class="empty-state-title">Анализатор занятого места</p>
+      <p class="empty-state-hint">Выберите папку для построения treemap по размерам файлов и каталогов. Пустые каталоги не отображаются — браузер не передаёт их при выборе папки.</p>
+      <button type="button" id="btn-open-empty" class="btn btn-lg">Открыть папку</button>
+    </div>
+    <canvas id="treemap-canvas" hidden></canvas>
+  </main>
+
+  <footer class="footer">
+    <div id="progress-wrap" class="progress-wrap" hidden>
+      <div id="progress-bar" class="progress-bar"></div>
+      <span id="progress-text" class="progress-text"></span>
+    </div>
+    <div id="hover-info" class="hover-info">—</div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

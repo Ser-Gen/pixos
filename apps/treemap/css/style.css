@@ -1,0 +1,236 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #1a1a2e;
+  color: #e8e8e8;
+  display: flex;
+  flex-direction: column;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #16213e;
+  border-bottom: 1px solid #2a2a4a;
+  flex-shrink: 0;
+  min-height: 48px;
+}
+
+.toolbar-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #a8dadc;
+  white-space: nowrap;
+}
+
+.btn {
+  display: inline-block;
+  padding: 6px 14px;
+  font-size: 0.875rem;
+  border: 1px solid #3a3a5c;
+  border-radius: 4px;
+  background: #2a2a4a;
+  color: #e8e8e8;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: #3a3a5c;
+  border-color: #4a4a6c;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:focus-visible {
+  outline: 2px solid #a8dadc;
+  outline-offset: 2px;
+}
+
+.breadcrumb-item:focus-visible {
+  outline: 2px solid #a8dadc;
+  outline-offset: 1px;
+}
+
+.btn-lg {
+  padding: 10px 22px;
+  font-size: 0.95rem;
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.breadcrumb-item {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumb-item:hover {
+  color: #a8dadc;
+  background: rgba(168, 218, 220, 0.08);
+}
+
+.breadcrumb-item.is-current {
+  color: #e8e8e8;
+  cursor: default;
+  font-weight: 500;
+}
+
+.breadcrumb-item.is-current:hover {
+  background: none;
+}
+
+.breadcrumb-sep {
+  color: #555;
+  font-size: 0.75rem;
+  user-select: none;
+}
+
+.stats {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: #888;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.main {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background: #12121f;
+}
+
+#treemap-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+#treemap-canvas.is-folder-hover {
+  cursor: pointer;
+}
+
+.empty-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.empty-state[hidden] {
+  display: none;
+}
+
+.empty-state-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #a8dadc;
+}
+
+.empty-state-hint {
+  margin: 0;
+  max-width: 420px;
+  font-size: 0.9rem;
+  color: #666;
+  line-height: 1.5;
+}
+
+.footer {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 6px 16px;
+  background: #16213e;
+  border-top: 1px solid #2a2a4a;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.progress-wrap[hidden] {
+  display: none;
+}
+
+.progress-bar {
+  width: 120px;
+  height: 4px;
+  background: #2a2a4a;
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: var(--progress, 0%);
+  background: #a8dadc;
+  border-radius: 2px;
+  transition: width 0.15s;
+}
+
+.progress-text {
+  font-size: 0.75rem;
+  color: #888;
+  white-space: nowrap;
+}
+
+.hover-info {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.8rem;
+  color: #aaa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

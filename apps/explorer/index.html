@@ -2734,7 +2734,10 @@ async function openExplorer () {
 					state.dialog = null;
 					renderOverlays();
 					var fileItems = items.filter(function (entry) { return !entry.isDirectory; });
-					if (!app.installed && fileItems.length && typeof parent.installAppById === 'function') {
+					if (!app.installed && typeof parent.installAppById === 'function') {
+						var needsInstall = fileItems.length > 0
+							|| (items.length === 1 && items[0].isDirectory && app.id === 'treemap');
+						if (needsInstall) {
 						try {
 							await parent.installAppById(app.id);
 						}
@@ -2742,6 +2745,7 @@ async function openExplorer () {
 							console.error(err);
 							openInfoDialog('Install error', String(err));
 							return;
+						}
 						}
 					}
 					if (fileItems.length === 1 && extension && payload.setAsDefault && typeof parent.setDefaultAppForExtension === 'function') {
@@ -3706,11 +3710,25 @@ async function openExplorer () {
 
 	async function getOpenWithApps (item) {
 		if (item.isDirectory) {
-			return [
+			var dirApps = [
 				{id: 'explorer', label: 'explorer', installed: true},
 				{id: 'new explorer', label: 'new explorer', installed: true},
 				{id: 'terminal', label: 'terminal', installed: true}
 			];
+			var treemapInstalled = (parent.apps || []).some(function (entry) {
+				return entry.id === 'treemap';
+			});
+			var treemapCatalog = typeof parent.getInstallableApps === 'function'
+				? parent.getInstallableApps().some(function (entry) { return entry.id === 'treemap'; })
+				: false;
+			if (treemapInstalled || treemapCatalog) {
+				dirApps.push({
+					id: 'treemap',
+					label: getCatalogLabel('treemap') || 'Disk Treemap',
+					installed: treemapInstalled
+				});
+			}
+			return dirApps;
 		}
 		var profile = await getCompatibilityProfileForItem(item.path);
 		var installedApps = [];

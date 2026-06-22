@@ -830,6 +830,11 @@ window.openFiles = openFiles;
 window.viewCounter = 0;
 
 async function openPath (path, app) {
+	if (app === 'treemap') {
+		openTreemapWindow(path, path);
+		return;
+	}
+
 	window.viewCounter++;
 
 	if (app === 'new explorer') {
@@ -840,7 +845,27 @@ async function openPath (path, app) {
 		window['view'+ window.viewCounter].onload = function () {
 			this.contentWindow.cwd = path;
 		}
+		return;
 	}
+
+	if (app === 'treemap') {
+		openTreemapWindow(path, path);
+		return;
+	}
+}
+
+function openTreemapWindow (fsPath, title) {
+	window.viewCounter++;
+	var appEntryPath = getAppEntryPath('treemap') || '/apps/treemap/index.html';
+	var entryPath = appEntryPath;
+	if (fsPath) {
+		var normalized = fsPath.startsWith('/') ? fsPath : '/' + fsPath;
+		entryPath += '?path=' + encodeURIComponent(normalized);
+	}
+	winManager.openWindow({
+		title: title || fsPath || 'Disk Treemap',
+		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${entryPath}"></iframe>`,
+	});
 }
 
 function buildBrowserFsAbsoluteUrl (fsPath) {

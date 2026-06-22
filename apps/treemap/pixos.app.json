@@ -1,0 +1,64 @@
+{
+  "id": "treemap",
+  "name": "Disk Treemap",
+  "version": "1.0.0",
+  "entryPath": "/apps/treemap/index.html",
+  "files": [
+    {
+      "path": "/apps/treemap/css/style.css",
+      "hash": "sha256:9ae0a0e4da73ac4842a9eb6386be86917530839fa4eb125239520f8c74ddd7ab"
+    },
+    {
+      "path": "/apps/treemap/index.html",
+      "hash": "sha256:d305af51ac6843f9e4b3326253e034174a86c9bb5e3c19ec1d43f4d09bbd2f26"
+    },
+    {
+      "path": "/apps/treemap/js/app.js",
+      "hash": "sha256:e2f08b5a68019f0be9c9183e0f5fea5d40c21dd43ecfb5602f61ad8c0a7417dc"
+    },
+    {
+      "path": "/apps/treemap/js/colors.js",
+      "hash": "sha256:bbc6878c4d036631df8bc3497a6ec6899f08a952e0e599d269aface957547265"
+    },
+    {
+      "path": "/apps/treemap/js/format.js",
+      "hash": "sha256:2f9bd95af4fad8a0618b06f4739d11ddeab7e5208de2d184803a901153bfe750"
+    },
+    {
+      "path": "/apps/treemap/js/render.js",
+      "hash": "sha256:536791096f65ba4b8040445fd5d0ea69943e1d140c06f959e0959b8d6ea1ecd0"
+    },
+    {
+      "path": "/apps/treemap/js/scan-pixos.js",
+      "hash": "sha256:0a8a93194167cc027ad164b99ab7beb0c68b2b0d5c3c0081ce180d58b255b39e"
+    },
+    {
+      "path": "/apps/treemap/js/scan.js",
+      "hash": "sha256:467968cc4f3270a91ad3cfd4eff236fa12a61afec711b11f9a08a7f93c7f72cc"
+    },
+    {
+      "path": "/apps/treemap/js/treemap.js",
+      "hash": "sha256:6e4ff9bf7cca99c582f3559713a01d78ca5185dc9171e3c507e62c94062fbff9"
+    },
+    {
+      "path": "/apps/treemap/pixos.app.json",
+      "hash": "sha256:34d3d4b4bcdf7808c529d1dd300b182c187506188c1e4f9b8a7af758fed92980"
+    },
+    {
+      "path": "/apps/treemap/test-data/readme.txt",
+      "hash": "sha256:a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
+    },
+    {
+      "path": "/apps/treemap/test-data/subdir/big.bin",
+      "hash": "sha256:16fa66a7dc98d93f2a4c5d20baf5177f59c4c37fc62face65690c11c15fe6ff9"
+    },
+    {
+      "path": "/apps/treemap/test-data/subdir/file.js",
+      "hash": "sha256:434728a410a78f56fc1b5899c3593436e61ab0c731e9072d95e96db290205e53"
+    },
+    {
+      "path": "/apps/treemap/test-data/subdir/nested/deep.json",
+      "hash": "sha256:2396099c6c084fa4b9beac9f0d52cf3be9cf8d47040ef127883d532b5790cd74"
+    }
+  ]
+}

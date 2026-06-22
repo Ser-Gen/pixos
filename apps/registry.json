@@ -82,6 +82,10 @@
       "manifestPath": "/apps/transcriber/pixos.app.json"
     },
     {
+      "id": "treemap",
+      "manifestPath": "/apps/treemap/pixos.app.json"
+    },
+    {
       "id": "vips",
       "manifestPath": "/apps/vips/pixos.app.json"
     },
