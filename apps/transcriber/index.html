@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GigaAM — редактор субтитров</title>
+  <link rel="stylesheet" href="./editor.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="toolbar">
+      <span class="toolbar-title">GigaAM Transcriber</span>
+      <input type="file" id="fileInput" accept="audio/*" />
+      <input
+        type="url"
+        id="audioUrlInput"
+        class="toolbar-audio-url"
+        placeholder="URL аудио"
+        spellcheck="false"
+        title="HTTP(S) адрес аудио; или ?audio=… в URL страницы; без CORS — прокси /api/audio"
+      />
+      <button type="button" id="loadAudioUrlBtn" class="secondary" disabled>Загрузить</button>
+      <button id="runBtn" disabled>Распознать</button>
+      <button type="button" id="stopTranscribeBtn" class="secondary stop-transcribing" disabled>■ Стоп</button>
+      <button id="recordBtn" class="secondary" disabled>● Запись</button>
+      <button id="liveBtn" class="secondary" disabled>● Live</button>
+      <button id="downloadSrtBtn" class="secondary" disabled>SRT</button>
+      <button id="downloadShareHtmlBtn" class="secondary" disabled>HTML</button>
+      <span class="toolbar-spacer"></span>
+      <span id="recordTimer"></span>
+      <div id="loadProgressWrap" class="load-progress-wrap" hidden>
+        <progress id="loadProgress" max="100" value="0"></progress>
+      </div>
+      <span id="status"></span>
+      <button
+        id="settingsBtn"
+        class="secondary btn-icon toolbar-settings-btn"
+        type="button"
+        aria-label="Настройки"
+        title="Настройки"
+      >
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+      </button>
+    </header>
+
+    <div id="swWarning" class="sw-warning" hidden>
+      <p id="swWarningText"></p>
+      <button type="button" id="swReloadBtn" class="secondary">Перезагрузить страницу</button>
+    </div>
+
+    <main class="editor-main">
+      <section class="waveform-panel">
+        <div class="waveform-header">
+          <button type="button" id="playPauseBtn" class="secondary" disabled>▶</button>
+          <span id="transportTime" class="waveform-hint">0:00.000</span>
+          <span id="fileName">Нет аудио</span>
+        </div>
+        <div id="waveformContainer" class="waveform-container"></div>
+        <p class="waveform-hint">
+          Клик — перемотка. Alt+перетаскивание — выделение. Escape или «Снять выделение» — убрать. Shift+край — сдвиг границы.
+        </p>
+      </section>
+
+      <aside class="panel panel-speakers">
+        <div class="panel-header">Говорящие</div>
+        <div class="panel-body">
+          <div data-speakers-list></div>
+          <button type="button" class="secondary" data-add-speaker style="width:100%;margin-top:0.5rem">+ Говорящий</button>
+          <p class="panel-hint" data-diarization-hint>Авто-диаризация — в следующих версиях.</p>
+        </div>
+      </aside>
+
+      <section class="panel panel-transcript">
+        <div class="panel-header">Субтитры</div>
+        <div class="transcript-toolbar" data-transcript-toolbar>
+          <button type="button" class="secondary" data-split>Разделить</button>
+          <button type="button" class="secondary" data-merge>Объединить</button>
+          <button type="button" class="secondary" data-delete>Удалить</button>
+          <button type="button" class="secondary" data-clear-region disabled>Снять выделение</button>
+          <button type="button" class="secondary" data-assign-region>Привязать выделение</button>
+          <button type="button" class="secondary" data-create-from-region>Новый из выделения</button>
+        </div>
+        <div class="panel-body panel-body--transcript">
+          <p class="transcript-empty" data-transcript-empty>Загрузите аудио и нажмите «Распознать» или «Live».</p>
+          <div class="transcript-list" data-transcript-list></div>
+        </div>
+      </section>
+    </main>
+
+    <details class="log-panel">
+      <summary>Лог</summary>
+      <div class="log-scroll">
+        <pre id="log"></pre>
+      </div>
+    </details>
+  </div>
+
+  <div id="settingsBackdrop" class="settings-backdrop"></div>
+  <aside id="settingsDrawer" class="settings-drawer" aria-hidden="true">
+    <div class="settings-drawer-header">
+      <strong>Настройки</strong>
+      <button type="button" id="settingsCloseBtn" class="secondary">Закрыть</button>
+    </div>
+    <div class="settings-drawer-body">
+      <section class="settings-section">
+        <h3>Модель WASM</h3>
+        <div class="field">
+          <label for="wasmBinaryUrlInput">URL .wasm</label>
+          <input type="url" id="wasmBinaryUrlInput" placeholder="пусто = ./sherpa-onnx-wasm.wasm" />
+        </div>
+        <div class="field">
+          <label for="wasmDataUrlInput">URL .data</label>
+          <input type="url" id="wasmDataUrlInput" placeholder="пусто = ./sherpa-onnx-wasm.data" />
+        </div>
+        <p class="field-hint">Для CDN нужны CORS и CORP. После сохранения страница перезагрузится.</p>
+        <p class="field-hint">Или в адресе страницы: <code>?wasm=…&amp;data=…</code> (URL кодируйте).</p>
+        <div class="field-actions">
+          <button type="button" id="wasmSaveBtn">Сохранить URL</button>
+          <button type="button" id="wasmResetBtn" class="secondary">Локальные файлы</button>
+        </div>
+      </section>
+      <section class="settings-section">
+        <h3>Сегментация (VAD)</h3>
+        <div class="vad-grid">
+          <div class="field">
+            <label for="vadProfileSelect">Профиль</label>
+            <select id="vadProfileSelect">
+              <option value="">Авто</option>
+              <option value="file">Файл</option>
+              <option value="microphone">Микрофон</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="vadThreshold">Порог</label>
+            <input type="number" id="vadThreshold" min="0.05" max="0.95" step="0.01" />
+          </div>
+          <div class="field">
+            <label for="vadMinSilence">Мин. пауза, с</label>
+            <input type="number" id="vadMinSilence" min="0.05" max="5" step="0.05" />
+          </div>
+          <div class="field">
+            <label for="vadMinSpeech">Мин. речь, с</label>
+            <input type="number" id="vadMinSpeech" min="0.05" max="5" step="0.05" />
+          </div>
+          <div class="field">
+            <label for="vadMaxSpeech">Макс. речь, с</label>
+            <input type="number" id="vadMaxSpeech" min="1" max="30" step="0.5" />
+          </div>
+          <div class="field">
+            <label for="vadMinRms">Мин. RMS</label>
+            <input type="number" id="vadMinRms" min="0" max="0.1" step="0.001" />
+          </div>
+        </div>
+        <div class="field-actions">
+          <button type="button" id="vadResetFileBtn" class="secondary">Сброс: файл</button>
+          <button type="button" id="vadResetMicBtn" class="secondary">Сброс: микрофон</button>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <audio id="preview"></audio>
+
+  <script src="./wasm-assets-config.js"></script>
+  <script src="./service-worker-register.js"></script>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

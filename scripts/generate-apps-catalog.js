@@ -10,6 +10,30 @@ var APPS_DIR = path.join(REPO_ROOT, 'apps');
 var CONFIG_PATH = path.join(__dirname, 'apps-catalog.config.json');
 var CATALOG_JS = path.join(APPS_DIR, 'app-catalog.js');
 var REGISTRY_PATH = path.join(APPS_DIR, 'registry.json');
+var SKIP_FILE_NAMES = {
+	'.DS_Store': true,
+	'Thumbs.db': true,
+	'desktop.ini': true
+};
+
+function parseCliArgs () {
+	var only = null;
+	var argv = process.argv.slice(2);
+	for (var i = 0; i < argv.length; i++) {
+		var arg = argv[i];
+		if (arg === '--only' && argv[i + 1]) {
+			only = argv[++i].split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+		}
+		else if (arg.indexOf('--only=') === 0) {
+			only = arg.slice('--only='.length).split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+		}
+	}
+	return { only: only };
+}
+
+function shouldSkipFile (fileName) {
+	return !!SKIP_FILE_NAMES[fileName];
+}
 
 function loadConfig () {
 	var defaults = {
@@ -76,6 +100,9 @@ function parsePixosSupported (filePath) {
 function walkFiles (dir, list) {
 	var entries = fs.readdirSync(dir, { withFileTypes: true });
 	entries.forEach(function (entry) {
+		if (shouldSkipFile(entry.name)) {
+			return;
+		}
 		var full = path.join(dir, entry.name);
 		if (entry.isDirectory()) {
 			walkFiles(full, list);
@@ -143,17 +170,24 @@ function readStubManifest (appDir, id, legacyEntry, config) {
 	return stub;
 }
 
-function buildManifestForDir (appDir, stub, config) {
+function buildManifestBody (appDir, stub, config) {
+	var manifestPath = path.join(appDir, 'pixos.app.json');
+	var manifestWebPath = toWebPath(manifestPath);
 	var files = [];
 	walkFiles(appDir, files);
-	var fileEntries = files.map(function (abs) {
-		return {
-			path: toWebPath(abs),
-			hash: sha256File(abs)
-		};
-	}).sort(function (a, b) {
-		return a.path.localeCompare(b.path);
-	});
+	var fileEntries = files
+		.filter(function (abs) {
+			return toWebPath(abs) !== manifestWebPath;
+		})
+		.map(function (abs) {
+			return {
+				path: toWebPath(abs),
+				hash: sha256File(abs)
+			};
+		})
+		.sort(function (a, b) {
+			return a.path.localeCompare(b.path);
+		});
 
 	var supportedPath = path.join(appDir, 'pixos_supported');
 	var extensions = parsePixosSupported(supportedPath);
@@ -176,7 +210,77 @@ function buildManifestForDir (appDir, stub, config) {
 	if (stub.update) {
 		manifest.update = stub.update;
 	}
+	return { manifest: manifest, manifestPath: manifestPath, manifestWebPath: manifestWebPath, fileEntries: fileEntries };
+}
+
+function sortFileEntries (entries) {
+	return entries.slice().sort(function (a, b) {
+		return a.path.localeCompare(b.path);
+	});
+}
+
+function writeManifestForDir (appDir, stub, config) {
+	var built = buildManifestBody(appDir, stub, config);
+	var manifest = built.manifest;
+	var manifestPath = built.manifestPath;
+	var manifestWebPath = built.manifestWebPath;
+	var fileEntries = built.fileEntries;
+
+	var selfHash = 'sha256:' + crypto.createHash('sha256')
+		.update(JSON.stringify(manifest, null, 2) + '\n')
+		.digest('hex');
+
+	for (var pass = 0; pass < 8; pass++) {
+		manifest.files = sortFileEntries(fileEntries.concat([{
+			path: manifestWebPath,
+			hash: selfHash
+		}]));
+		fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
+		var nextHash = sha256File(manifestPath);
+		if (nextHash === selfHash) {
+			break;
+		}
+		selfHash = nextHash;
+	}
+
 	return manifest;
+}
+
+function shouldProcessApp (meta, onlyFilter) {
+	if (!onlyFilter || !onlyFilter.length) {
+		return true;
+	}
+	var folder = meta.id;
+	var manifestId = meta.manifestId || folder;
+	return onlyFilter.indexOf(folder) >= 0 || onlyFilter.indexOf(manifestId) >= 0;
+}
+
+function buildRegistryFromDirs (appDirs) {
+	var registryApps = [];
+	appDirs.forEach(function (meta, appDir) {
+		var manifestPath = path.join(appDir, 'pixos.app.json');
+		if (!fs.existsSync(manifestPath)) {
+			return;
+		}
+		var manifest;
+		try {
+			manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+		}
+		catch (e) {
+			console.warn('Skipping invalid manifest', manifestPath, e.message);
+			return;
+		}
+		if (manifest.entryPath && fs.existsSync(path.join(REPO_ROOT, manifest.entryPath.replace(/^\//, '')))) {
+			registryApps.push({
+				id: manifest.id || meta.id,
+				manifestPath: toWebPath(manifestPath)
+			});
+		}
+	});
+	registryApps.sort(function (a, b) {
+		return a.id.localeCompare(b.id);
+	});
+	return registryApps;
 }
 
 function discoverAppDirs (config, legacyCatalog) {
@@ -215,28 +319,30 @@ function discoverAppDirs (config, legacyCatalog) {
 }
 
 function main () {
+	var cli = parseCliArgs();
 	var config = loadConfig();
 	var legacyCatalog = loadLegacyCatalog();
 	var appDirs = discoverAppDirs(config, legacyCatalog);
-	var registryApps = [];
 
 	appDirs.forEach(function (meta, appDir) {
-		var stub = readStubManifest(appDir, meta.id, meta.legacyEntry, config);
-		var manifest = buildManifestForDir(appDir, stub, config);
 		var manifestPath = path.join(appDir, 'pixos.app.json');
-		fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-		console.log('Wrote', path.relative(REPO_ROOT, manifestPath), '(' + manifest.files.length + ' files)');
-		if (manifest.entryPath && fs.existsSync(path.join(REPO_ROOT, manifest.entryPath.replace(/^\//, '')))) {
-			registryApps.push({
-				id: manifest.id,
-				manifestPath: toWebPath(manifestPath)
-			});
+		if (fs.existsSync(manifestPath)) {
+			try {
+				meta.manifestId = JSON.parse(fs.readFileSync(manifestPath, 'utf8')).id;
+			}
+			catch (e) {
+				meta.manifestId = meta.id;
+			}
 		}
+		if (!shouldProcessApp(meta, cli.only)) {
+			return;
+		}
+		var stub = readStubManifest(appDir, meta.id, meta.legacyEntry, config);
+		var manifest = writeManifestForDir(appDir, stub, config);
+		console.log('Wrote', path.relative(REPO_ROOT, manifestPath), '(' + manifest.files.length + ' files)');
 	});
 
-	registryApps.sort(function (a, b) {
-		return a.id.localeCompare(b.id);
-	});
+	var registryApps = buildRegistryFromDirs(appDirs);
 	var registry = { version: 1, apps: registryApps };
 	fs.writeFileSync(REGISTRY_PATH, JSON.stringify(registry, null, 2) + '\n');
 	console.log('Wrote', path.relative(REPO_ROOT, REGISTRY_PATH), '(' + registryApps.length + ' apps)');

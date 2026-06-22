@@ -87,6 +87,23 @@ if ('serviceWorker' in navigator) {
 				// registration worked
 				console.log('Registration succeeded. Scope is ' + reg.scope);
 
+				function ensureCrossOriginIsolated() {
+					if (window.crossOriginIsolated) {
+						sessionStorage.removeItem('pixos-coi-reload');
+						return;
+					}
+					if (sessionStorage.getItem('pixos-coi-reload')) {
+						return;
+					}
+					if (!navigator.serviceWorker.controller) {
+						return;
+					}
+					sessionStorage.setItem('pixos-coi-reload', '1');
+					location.reload();
+				}
+				ensureCrossOriginIsolated();
+				navigator.serviceWorker.addEventListener('controllerchange', ensureCrossOriginIsolated);
+
 				BrowserFS.configure({
 					fs: "MountableFileSystem",
 					options: {
@@ -884,6 +901,22 @@ function buildMediaPlayerEntryPath (fsPaths, appEntryPath) {
 	return base + '?initPlaylist=' + playlist;
 }
 
+function buildTranscriberEntryPath (fsPath, appEntryPath) {
+	var audioUrl = buildBrowserFsAbsoluteUrl(fsPath);
+	var base = appEntryPath || '/apps/transcriber/index.html';
+	return base + '?audio=' + encodeURIComponent(audioUrl);
+}
+
+function openTranscriberWindow (paths, title) {
+	window.viewCounter++;
+	var appEntryPath = getAppEntryPath('transcriber') || '/apps/transcriber/index.html';
+	var transcriberEntryPath = buildTranscriberEntryPath(paths[0], appEntryPath);
+	winManager.openWindow({
+		title: title || paths[0],
+		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${transcriberEntryPath}"></iframe>`,
+	});
+}
+
 function openMediaPlayerWindow (paths, title) {
 	window.viewCounter++;
 	var appEntryPath = getAppEntryPath('media-player');
@@ -948,6 +981,11 @@ async function openFile (path, app) {
 
 	if (app === 'media-player') {
 		openMediaPlayerWindow([path], path);
+		return;
+	}
+
+	if (app === 'transcriber') {
+		openTranscriberWindow([path], path);
 		return;
 	}
 

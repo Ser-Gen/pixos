@@ -1,0 +1,126 @@
+{
+  "id": "transcriber",
+  "name": "Transcriber",
+  "version": "1.0.0",
+  "entryPath": "/apps/transcriber/index.html",
+  "files": [
+    {
+      "path": "/apps/transcriber/app.js",
+      "hash": "sha256:e8469b70aad2f4bdb3643b1195311f79bf72c5e034f78b395a98afd952e88184"
+    },
+    {
+      "path": "/apps/transcriber/audio-url.js",
+      "hash": "sha256:267957f08781d8818cc41c8d9d7952c27c9bdd598c576abc7cbae580c35db911"
+    },
+    {
+      "path": "/apps/transcriber/editor-controller.js",
+      "hash": "sha256:2e3444c644d04e7e19cbdcdf729aa2f587f8ea35e7cfe4bb29412bdf874aa9b9"
+    },
+    {
+      "path": "/apps/transcriber/editor.css",
+      "hash": "sha256:bbdd421fac23fd68d176aee76256e205f5ffd534830ba18ac356a961da4a5a3f"
+    },
+    {
+      "path": "/apps/transcriber/gigaam-transcriber.js",
+      "hash": "sha256:7e814e86a946b8c014f4efb802941d1187c1a6d8ca8c74d2f63f6259e54d052e"
+    },
+    {
+      "path": "/apps/transcriber/index.html",
+      "hash": "sha256:6069109debd39bc3dc314779f2ed88663b178b61241f8cab587f0230fc159d0f"
+    },
+    {
+      "path": "/apps/transcriber/pixos_supported",
+      "hash": "sha256:b61f398662cbd2088435f2a744c2588327e91aa7f69b964ba2534a7da4013b96"
+    },
+    {
+      "path": "/apps/transcriber/pixos.app.json",
+      "hash": "sha256:d6089f97c92af1b3005807dd0b933cb6a3b683ee753eba2283e00e66042a1ae0"
+    },
+    {
+      "path": "/apps/transcriber/README.md",
+      "hash": "sha256:635469206ac167765a6e34d8ce78a0e6faab30e9f28c4fe24401f50c98bda10b"
+    },
+    {
+      "path": "/apps/transcriber/recognizer-worker.js",
+      "hash": "sha256:9471617b4a314faf96ea6d532798f5677123497fdc585f2fe83f2668cd2b5853"
+    },
+    {
+      "path": "/apps/transcriber/serve.py",
+      "hash": "sha256:218ca915fd015a4282f5d835044d3e0191811f199f15966b99972e2557675f14"
+    },
+    {
+      "path": "/apps/transcriber/service-worker-register.js",
+      "hash": "sha256:8dc3c3f0f899ea4de64626632f16028ee24f9b73d8eb18b262a9691f8b85827c"
+    },
+    {
+      "path": "/apps/transcriber/service-worker.js",
+      "hash": "sha256:71be27810fd6c796a023fa51b3e7d3df73e3a76febce215818083753a2027159"
+    },
+    {
+      "path": "/apps/transcriber/share-export.js",
+      "hash": "sha256:0ec5d0bd3156b010934c4b007d75d3094eb118f8467805b8687e79ed7b4c0826"
+    },
+    {
+      "path": "/apps/transcriber/sherpa-onnx-asr.js",
+      "hash": "sha256:d51ae8e8b756ee5e53423ffada0c9702973f154f561aca7984fe0b12f4060178"
+    },
+    {
+      "path": "/apps/transcriber/sherpa-onnx-vad.js",
+      "hash": "sha256:893f01168d529add8318c0a6055cf725e788585fda9b81722564a8c3c3f60e34"
+    },
+    {
+      "path": "/apps/transcriber/sherpa-onnx-wasm.js",
+      "hash": "sha256:9bb6efce53e07f77a23a0472cdd6898051c9a1f9143ec4ce93dee2cff11638de"
+    },
+    {
+      "path": "/apps/transcriber/speakers-panel.js",
+      "hash": "sha256:d4bdfed77b6e9d6e784ab56acc9484f59175485cbf36fefecfba79bd87ef3c4d"
+    },
+    {
+      "path": "/apps/transcriber/srt.js",
+      "hash": "sha256:18a1276c7309852fd31635fbe3ec2297fe08db4366477493470536b5fda4c379"
+    },
+    {
+      "path": "/apps/transcriber/sw-readiness.js",
+      "hash": "sha256:b9d7b5e72bba375b969b61ac3df4862dc1b7c36150068d374c75030097c55101"
+    },
+    {
+      "path": "/apps/transcriber/transcriber-config.js",
+      "hash": "sha256:6eae03308fc519f52b86268956014a86d1c818bfaf0343934ddbe4b45e0d9d29"
+    },
+    {
+      "path": "/apps/transcriber/transcript-model.js",
+      "hash": "sha256:098c3c2a2e8044be5de2f122b73132a397171f4913529ba69e3480532f98c170"
+    },
+    {
+      "path": "/apps/transcriber/transcript-panel.js",
+      "hash": "sha256:f9b40716cae4a93b9a1311819ce4e44187b11bf1ea0362c4ae8c9ea7716353f8"
+    },
+    {
+      "path": "/apps/transcriber/wasm-assets-config.js",
+      "hash": "sha256:98278d3e9abe92259612868173e8bb786cf322d66f0297a484c74a7420813eef"
+    },
+    {
+      "path": "/apps/transcriber/wasm-settings.js",
+      "hash": "sha256:0912382bd0f563b08ab5a167a47963a82a6c0e64b63d7a6a4b1be0ea82f25ec0"
+    },
+    {
+      "path": "/apps/transcriber/waveform-view.js",
+      "hash": "sha256:e4c0c9fb55b439145747a1b04c3774161cfdb6ffcec144ff64f93107580df890"
+    }
+  ],
+  "supported": {
+    "extensions": [
+      "wav",
+      "mp3",
+      "m4a",
+      "aac",
+      "flac",
+      "ogg",
+      "oga",
+      "opus",
+      "wma",
+      "webm"
+    ]
+  }
+}

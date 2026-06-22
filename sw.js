@@ -34,6 +34,102 @@ function isOnMount(path) {
 	return false;
 }
 
+function parseRangeHeader(rangeHeader, size) {
+	var match = /^bytes=(\d+)-(\d*)$/i.exec((rangeHeader || '').trim());
+	if (!match) {
+		return null;
+	}
+	var start = parseInt(match[1], 10);
+	var end = match[2] ? parseInt(match[2], 10) : size - 1;
+	if (isNaN(start) || start >= size) {
+		return null;
+	}
+	end = Math.min(end, size - 1);
+	if (end < start) {
+		return null;
+	}
+	return { start: start, end: end };
+}
+
+function bufferByteLength(buffer) {
+	return buffer.byteLength !== undefined ? buffer.byteLength : buffer.length;
+}
+
+function sliceBuffer(buffer, start, end) {
+	if (buffer.subarray) {
+		return buffer.subarray(start, end + 1);
+	}
+	return buffer.slice(start, end + 1);
+}
+
+function isolationHeaders(extra) {
+	var headers = extra || new Headers();
+	if (!(headers instanceof Headers)) {
+		headers = new Headers(headers);
+	}
+	headers.set('Cross-Origin-Embedder-Policy', 'credentialless');
+	headers.set('Cross-Origin-Opener-Policy', 'same-origin');
+	return headers;
+}
+
+function withIsolationResponse(response) {
+	if (!response || response.status === 0) {
+		return response;
+	}
+	var headers = isolationHeaders(new Headers(response.headers));
+	return new Response(response.body, {
+		status: response.status,
+		statusText: response.statusText,
+		headers: headers
+	});
+}
+
+function isAudioProxyRequest(requestUrl) {
+	try {
+		var pathname = new URL(requestUrl).pathname;
+		return pathname === '/api/audio' || pathname.slice(-10) === '/api/audio';
+	} catch (e) {
+		return false;
+	}
+}
+
+function fetchAudioProxy(request) {
+	var requestUrl = new URL(request.url);
+	var target = requestUrl.searchParams.get('url');
+	if (!target) {
+		return Promise.resolve(new Response('Missing url query parameter', {
+			status: 400,
+			headers: isolationHeaders()
+		}));
+	}
+	var parsed;
+	try {
+		parsed = new URL(target);
+	} catch (e) {
+		return Promise.resolve(new Response('Invalid url', {
+			status: 400,
+			headers: isolationHeaders()
+		}));
+	}
+	if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+		return Promise.resolve(new Response('Only http/https URLs are allowed', {
+			status: 400,
+			headers: isolationHeaders()
+		}));
+	}
+	return fetch(parsed.toString(), { credentials: 'omit' }).then(function (upstream) {
+		var headers = isolationHeaders(new Headers(upstream.headers));
+		headers.set('Access-Control-Allow-Origin', '*');
+		return new Response(upstream.body, {
+			status: upstream.status,
+			statusText: upstream.statusText,
+			headers: headers
+		});
+	}).catch(function () {
+		return new Response('Proxy error', { status: 502, headers: isolationHeaders() });
+	});
+}
+
 self.addEventListener('install', function(event) {
 	self.skipWaiting();
 });
@@ -43,6 +139,11 @@ self.addEventListener('activate', function(event) {
 });
 
 self.addEventListener('fetch', function (event) {
+    if (event.request.method === 'GET' && isAudioProxyRequest(event.request.url)) {
+        event.respondWith(fetchAudioProxy(event.request));
+        return;
+    }
+
     let path = BrowserFS.BFSRequire('path');
     let fs = new Promise(function(resolve, reject) {
         BrowserFS.configure({ fs: 'IndexedDB', options: {
@@ -83,6 +184,8 @@ self.addEventListener('fetch', function (event) {
                     });
                 });
             }
+
+            var request = event.request;
 
             function makeFileResponse(buffer, filePath) {
                     var ext = filePath.replace(/.*\./, '');
@@ -128,6 +231,7 @@ self.addEventListener('fetch', function (event) {
                         'pps'    : 'application/vnd.ms-powerpoint',
                         'pwz'    : 'application/vnd.ms-powerpoint',
                         'wasm'   : 'application/wasm',
+                        'data'   : 'application/octet-stream',
                         'bcpio'  : 'application/x-bcpio',
                         'cpio'   : 'application/x-cpio',
                         'csh'    : 'application/x-csh',
@@ -258,12 +362,39 @@ self.addEventListener('fetch', function (event) {
                         'pic' : 'image/pict',
                         'xul' : 'text/xul',
                     };
-                    var headers = new Headers({
-                        'Content-Type': mime[ext] || 'application/octet-stream',
-                        'Cross-Origin-Embedder-Policy': 'require-corp',
-                        'Cross-Origin-Opener-Policy': 'same-origin',
+                    var contentType = mime[ext] || 'application/octet-stream';
+                    var size = bufferByteLength(buffer);
+                    var rangeHeader = request.headers.get('Range');
+
+                    if (rangeHeader) {
+                        var range = parseRangeHeader(rangeHeader, size);
+                        if (!range) {
+                            return new Response(null, {
+                                status: 416,
+                                headers: isolationHeaders({
+                                    'Content-Range': 'bytes */' + size
+                                })
+                            });
+                        }
+                        var slice = sliceBuffer(buffer, range.start, range.end);
+                        return new Response(slice, {
+                            status: 206,
+                            headers: isolationHeaders({
+                                'Accept-Ranges': 'bytes',
+                                'Content-Length': String(range.end - range.start + 1),
+                                'Content-Type': contentType,
+                                'Content-Range': 'bytes ' + range.start + '-' + range.end + '/' + size
+                            })
+                        });
+                    }
+
+                    return new Response(buffer, {
+                        headers: isolationHeaders({
+                            'Accept-Ranges': 'bytes',
+                            'Content-Length': String(size),
+                            'Content-Type': contentType
+                        })
                     });
-                    return new Response(buffer, {headers});
             }
 
             function sendFileFromClient(path) {
@@ -388,7 +519,9 @@ self.addEventListener('fetch', function (event) {
                     return;
                 }
                 //request = credentials: 'include'
-                fetch(event.request).then(resolve).catch(reject);
+                fetch(event.request).then(function (response) {
+                    resolve(withIsolationResponse(response));
+                }).catch(reject);
             }
         });
     }));
@@ -419,7 +552,11 @@ function textResponse(string, filename) {
     var blob = new Blob([string], {
         type: 'text/html'
     });
-    return new Response(blob);
+    return new Response(blob, {
+        headers: isolationHeaders({
+            'Content-Type': 'text/html'
+        })
+    });
 }
 
 // -----------------------------------------------------------------------------

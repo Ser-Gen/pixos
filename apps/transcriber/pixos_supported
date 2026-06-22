@@ -1,0 +1,11 @@
+# Audio formats supported by Transcriber
+wav
+mp3
+m4a
+aac
+flac
+ogg
+oga
+opus
+wma
+webm

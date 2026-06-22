@@ -78,6 +78,10 @@
       "manifestPath": "/apps/tinymce-cdn/pixos.app.json"
     },
     {
+      "id": "transcriber",
+      "manifestPath": "/apps/transcriber/pixos.app.json"
+    },
+    {
       "id": "vips",
       "manifestPath": "/apps/vips/pixos.app.json"
     },
