@@ -246,17 +246,19 @@ function fsOnInit () {
 		});
 	}))
 	.then(function () {
-		return window.refreshInstalledAppsRegistry();
-	})
-	.then(function () {
 		return loadDefaultAppAssociations();
 	})
 	.then(function () {
+		window.apps = [];
 		winManager.openWindow({
 			title: 'PixOS',
 			content: `<iframe id="view" allow="file-system-access" src="__browserfs__/apps/explorer"></iframe>`,
 		});
-		scheduleInstalledAppSupportHydration();
+		window.refreshInstalledAppsRegistry().then(function () {
+			scheduleInstalledAppSupportHydration();
+		}).catch(function (err) {
+			console.error('refreshInstalledAppsRegistry failed', err);
+		});
 	})
 
 	function writeFile(filePath, contents, cb) {

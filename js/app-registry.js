@@ -10,6 +10,7 @@
 	var catalogIds = new Set();
 	var localIds = new Set();
 	var installedStateCache = {};
+	var buildRegistryPromise = null;
 
 	function init (options) {
 		deps = options || {};
@@ -191,19 +192,21 @@
 				return r.json();
 			});
 			var entries = Array.isArray(registry.apps) ? registry.apps : [];
-			for (var i = 0; i < entries.length; i++) {
-				var entry = entries[i];
+			var manifests = await Promise.all(entries.map(function (entry) {
 				var id = typeof entry === 'string' ? entry : entry.id;
 				var manifestPath = typeof entry === 'object' && entry.manifestPath
 					? entry.manifestPath
 					: '/apps/' + id + '/pixos.app.json';
-				var manifest = await loadAppManifest(manifestPath, 'catalog');
-				if (manifest) {
+				return loadAppManifest(manifestPath, 'catalog').then(function (manifest) {
+					if (!manifest) {
+						return null;
+					}
 					manifest.source = 'catalog';
 					manifest.manifestPath = manifestPath;
-					out.push(manifest);
-				}
-			}
+					return manifest;
+				});
+			}));
+			out = manifests.filter(Boolean);
 		}
 		catch (err) {
 			console.warn('registry.json unavailable, using legacy catalog', err);
@@ -274,29 +277,28 @@
 		options = options || {};
 		var skipFolders = options.skipFolders || new Set();
 		var appsDir = '/apps';
-		var out = [];
 		var names;
 		try {
 			names = await fsReaddir(appsDir);
 		}
 		catch (err) {
-			return out;
+			return [];
 		}
-		for (var i = 0; i < names.length; i++) {
-			var folder = names[i];
+
+		var records = await Promise.all(names.map(async function (folder) {
 			if (skipFolders.has(folder) || RESERVED_IDS.indexOf(folder) > -1) {
-				continue;
+				return null;
 			}
 			var dirPath = getPath().join(appsDir, folder);
 			if (!(await isDirectory(dirPath))) {
-				continue;
+				return null;
 			}
 			var manifestPath = getPath().join(dirPath, 'pixos.app.json');
 			var indexPath = getPath().join(dirPath, 'index.html');
 			var hasManifest = await fsStat(manifestPath);
 			var hasIndex = await fsStat(indexPath);
 			if (!hasManifest && !hasIndex) {
-				continue;
+				return null;
 			}
 			var manifest = null;
 			if (hasManifest) {
@@ -305,7 +307,7 @@
 			var appId = (manifest && manifest.id) || folder;
 			var entryPath = (manifest && manifest.entryPath) || getPath().join('/apps', appId, 'index.html');
 			if (!(await fsStat(entryPath))) {
-				out.push({
+				return {
 					id: appId,
 					folder: folder,
 					source: 'local',
@@ -319,13 +321,12 @@
 					manifestPath: hasManifest ? manifestPath : null,
 					localStatus: 'broken',
 					status: 'broken'
-				});
-				continue;
+				};
 			}
 			var files = manifest && manifest.files.length
 				? manifest.files
 				: await buildFilesListFromFs(dirPath, appId);
-			out.push({
+			return {
 				id: appId,
 				folder: folder,
 				source: 'local',
@@ -339,9 +340,10 @@
 				manifestPath: hasManifest ? manifestPath : null,
 				localStatus: 'active',
 				status: 'active'
-			});
-		}
-		return out;
+			};
+		}));
+
+		return records.filter(Boolean);
 	}
 
 	function manifestToAppRecord (manifest) {
@@ -371,49 +373,57 @@
 	}
 
 	async function buildAppRegistry () {
-		var catalogManifests = await loadCatalogFromRegistry();
-		if (!catalogManifests.length) {
-			catalogManifests = loadCatalogFromLegacy();
+		if (buildRegistryPromise) {
+			return buildRegistryPromise;
 		}
-		var seenCatalogIds = {};
-		catalogManifests.forEach(function (manifest) {
-			seenCatalogIds[manifest.id] = manifest;
-		});
-
-		var catalogFolders = catalogInstallFolders(catalogManifests);
-		var localApps = await scanLocalAppsInFs({ skipFolders: catalogFolders });
-		var merged = {};
-		catalogIds = new Set();
-		localIds = new Set();
-
-		catalogManifests.forEach(function (manifest) {
-			if (manifest.id === 'base' || !manifest.entryPath) {
-				return;
+		buildRegistryPromise = (async function () {
+			var catalogManifests = await loadCatalogFromRegistry();
+			if (!catalogManifests.length) {
+				catalogManifests = loadCatalogFromLegacy();
 			}
-			catalogIds.add(manifest.id);
-			merged[manifest.id] = manifestToAppRecord(manifest);
-			merged[manifest.id].status = 'catalog';
-		});
+			var seenCatalogIds = {};
+			catalogManifests.forEach(function (manifest) {
+				seenCatalogIds[manifest.id] = manifest;
+			});
 
-		localApps.forEach(function (local) {
-			localIds.add(local.id);
-			if (seenCatalogIds[local.id]) {
-				local.localStatus = 'id_conflict';
-				local.status = 'id_conflict';
-				var conflictKey = local.id + '::local';
-				merged[conflictKey] = manifestToAppRecord(local);
-				merged[conflictKey].id = local.id;
-				merged[conflictKey].registryKey = conflictKey;
-				return;
-			}
-			if (merged[local.id]) {
-				return;
-			}
-			merged[local.id] = manifestToAppRecord(local);
-		});
+			var catalogFolders = catalogInstallFolders(catalogManifests);
+			var localApps = await scanLocalAppsInFs({ skipFolders: catalogFolders });
+			var merged = {};
+			catalogIds = new Set();
+			localIds = new Set();
 
-		appRegistry = merged;
-		return appRegistry;
+			catalogManifests.forEach(function (manifest) {
+				if (manifest.id === 'base' || !manifest.entryPath) {
+					return;
+				}
+				catalogIds.add(manifest.id);
+				merged[manifest.id] = manifestToAppRecord(manifest);
+				merged[manifest.id].status = 'catalog';
+			});
+
+			localApps.forEach(function (local) {
+				localIds.add(local.id);
+				if (seenCatalogIds[local.id]) {
+					local.localStatus = 'id_conflict';
+					local.status = 'id_conflict';
+					var conflictKey = local.id + '::local';
+					merged[conflictKey] = manifestToAppRecord(local);
+					merged[conflictKey].id = local.id;
+					merged[conflictKey].registryKey = conflictKey;
+					return;
+				}
+				if (merged[local.id]) {
+					return;
+				}
+				merged[local.id] = manifestToAppRecord(local);
+			});
+
+			appRegistry = merged;
+			return appRegistry;
+		})().finally(function () {
+			buildRegistryPromise = null;
+		});
+		return buildRegistryPromise;
 	}
 
 	function getRegistryApps () {
@@ -525,7 +535,6 @@
 	}
 
 	async function scanInstalledApps () {
-		await buildAppRegistry();
 		var records = await Promise.all(getRegistryApps().map(async function (app) {
 			if (app.registryKey) {
 				return null;
