@@ -94,14 +94,69 @@ export function resolvePixosAbsolutePath(scanRoot, nodePath) {
   return relative ? `${root}/${relative}` : root;
 }
 
-function openInNewTab(file) {
-  const url = URL.createObjectURL(file);
-  const tab = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!tab) {
-    URL.revokeObjectURL(url);
-    return { ok: false, message: 'Не удалось открыть вкладку (блокировщик всплывающих окон?)' };
+/** @type {Record<string, string>} */
+const MIME_BY_EXTENSION = {
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  gif: 'image/gif',
+  ico: 'image/x-icon',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  svg: 'image/svg+xml',
+  webp: 'image/webp',
+  mp3: 'audio/mpeg',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  weba: 'audio/webm',
+  mp4: 'video/mp4',
+  ogv: 'video/ogg',
+  webm: 'video/webm',
+  pdf: 'application/pdf',
+  css: 'text/css',
+  csv: 'text/csv',
+  htm: 'text/html',
+  html: 'text/html',
+  js: 'text/javascript',
+  json: 'application/json',
+  md: 'text/markdown',
+  mjs: 'text/javascript',
+  txt: 'text/plain',
+  xml: 'application/xml',
+};
+
+function mimeTypeForFile(file) {
+  if (file.type) {
+    return file.type;
   }
-  window.setTimeout(() => URL.revokeObjectURL(url), 120_000);
+  const ext = fileExtension(file.name);
+  return MIME_BY_EXTENSION[ext] || 'application/octet-stream';
+}
+
+function fileWithMimeType(file) {
+  const mimeType = mimeTypeForFile(file);
+  if (file.type === mimeType) {
+    return file;
+  }
+  return new File([file], file.name, {
+    type: mimeType,
+    lastModified: file.lastModified,
+  });
+}
+
+function openInNewTab(file) {
+  const typedFile = fileWithMimeType(file);
+  const url = URL.createObjectURL(typedFile);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  window.setTimeout(() => URL.revokeObjectURL(url), 600_000);
   return { ok: true };
 }
 
