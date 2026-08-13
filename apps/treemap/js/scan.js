@@ -26,6 +26,13 @@ function stripRootPrefix(parts, rootName) {
   return parts;
 }
 
+function relPathToNodePath(relPath, rootName) {
+  let parts = relPath.split('/').filter(Boolean);
+  parts = stripRootPrefix(parts, rootName);
+  if (parts.length === 0) return null;
+  return [rootName, ...parts].join('/');
+}
+
 function addFileToTree(root, relativePath, size) {
   let parts = relativePath.split('/').filter(Boolean);
   if (parts.length === 0) return;
@@ -125,6 +132,7 @@ export function scanFileList(fileList, onProgress) {
 
     const rootName = detectRootName(fileList);
     const root = createNode(rootName, rootName, false);
+    const localFileMap = new Map();
 
     let index = 0;
 
@@ -134,6 +142,10 @@ export function scanFileList(fileList, onProgress) {
         const file = fileList[index];
         const relPath = file.webkitRelativePath || file.name;
         addFileToTree(root, relPath, file.size);
+        const nodePath = relPathToNodePath(relPath, rootName);
+        if (nodePath) {
+          localFileMap.set(nodePath, file);
+        }
       }
 
       onProgress?.({ current: index, total, phase: 'scan' });
@@ -145,7 +157,7 @@ export function scanFileList(fileList, onProgress) {
         sortChildren(root);
         const folderCount = countFolders(root);
         onProgress?.({ current: total, total, phase: 'done' });
-        resolve({ root, fileCount: root.fileCount, folderCount });
+        resolve({ root, fileCount: root.fileCount, folderCount, localFileMap });
       }
     }
 

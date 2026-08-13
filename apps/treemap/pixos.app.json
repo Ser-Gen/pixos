@@ -6,19 +6,23 @@
   "files": [
     {
       "path": "/apps/treemap/css/style.css",
-      "hash": "sha256:9ae0a0e4da73ac4842a9eb6386be86917530839fa4eb125239520f8c74ddd7ab"
+      "hash": "sha256:d298ee0e7e273b0bae0c4efc5be4ee2004139daaf760618f3a383e5be87abf13"
     },
     {
       "path": "/apps/treemap/index.html",
-      "hash": "sha256:d305af51ac6843f9e4b3326253e034174a86c9bb5e3c19ec1d43f4d09bbd2f26"
+      "hash": "sha256:a3a62ad7b2170b64016db60877c7739b32443f6b31091dbf283eb51431f345c0"
     },
     {
       "path": "/apps/treemap/js/app.js",
-      "hash": "sha256:e2f08b5a68019f0be9c9183e0f5fea5d40c21dd43ecfb5602f61ad8c0a7417dc"
+      "hash": "sha256:65c7cb657337b0742eccc18aa0bccd9f2adef839c467340230a66fe91c280e31"
     },
     {
       "path": "/apps/treemap/js/colors.js",
       "hash": "sha256:bbc6878c4d036631df8bc3497a6ec6899f08a952e0e599d269aface957547265"
+    },
+    {
+      "path": "/apps/treemap/js/open-file.js",
+      "hash": "sha256:af82745a2366df97896c8f3d3dbb628a3c23028419e7cfd3787526339ffea3e2"
     },
     {
       "path": "/apps/treemap/js/format.js",
@@ -30,11 +34,11 @@
     },
     {
       "path": "/apps/treemap/js/scan-pixos.js",
-      "hash": "sha256:0a8a93194167cc027ad164b99ab7beb0c68b2b0d5c3c0081ce180d58b255b39e"
+      "hash": "sha256:f286645be3644e242d7ef3602775025f932f595b694947aa0c4f824abc98b3f5"
     },
     {
       "path": "/apps/treemap/js/scan.js",
-      "hash": "sha256:467968cc4f3270a91ad3cfd4eff236fa12a61afec711b11f9a08a7f93c7f72cc"
+      "hash": "sha256:7f4b198a488b0f285575843f26782da07f3ccf2ca600a1fd55d84f586c3c352e"
     },
     {
       "path": "/apps/treemap/js/treemap.js",

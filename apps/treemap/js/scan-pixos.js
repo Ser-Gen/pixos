@@ -131,5 +131,8 @@ export async function scanPixosPath(fsPath, onProgress) {
   onProgress?.({ current: 0, total: 0, phase: 'scan' });
   await walkPixosDirectory(fs, pathModule, normalized, normalized, rootName, entries, onProgress);
   onProgress?.({ current: entries.length, total: entries.length, phase: 'done' });
-  return buildTreeFromRelativeFiles(entries, rootName);
+  return {
+    ...buildTreeFromRelativeFiles(entries, rootName),
+    scanRootPath: normalized,
+  };
 }

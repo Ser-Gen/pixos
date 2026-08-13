@@ -7,6 +7,7 @@ import {
   parsePathFromQuery,
   scanPixosPath,
 } from './scan-pixos.js';
+import { canOpenFile, openTreemapFile } from './open-file.js';
 
 const els = {
   btnOpen: document.getElementById('btn-open'),
@@ -21,6 +22,10 @@ const els = {
   progressBar: document.getElementById('progress-bar'),
   progressText: document.getElementById('progress-text'),
   hoverInfo: document.getElementById('hover-info'),
+  hoverTooltip: document.getElementById('hover-tooltip'),
+  hoverTooltipName: document.querySelector('#hover-tooltip .hover-tooltip__name'),
+  hoverTooltipMeta: document.querySelector('#hover-tooltip .hover-tooltip__meta'),
+  hoverTooltipHint: document.querySelector('#hover-tooltip .hover-tooltip__hint'),
 };
 
 const renderer = new TreemapRenderer(els.canvas);
@@ -36,6 +41,8 @@ const state = {
   folderCount: 0,
   scanning: false,
   hoverIndex: -1,
+  scanRootPath: null,
+  localFileMap: null,
 };
 
 function setScanning(active) {
@@ -145,6 +152,7 @@ function navigateToIndex(index) {
   }
   state.hoverIndex = -1;
   els.hoverInfo.textContent = '—';
+  hideHoverTooltip();
   refreshLayout();
 }
 
@@ -154,6 +162,7 @@ function drillDown(node) {
   state.currentNode = node;
   state.hoverIndex = -1;
   els.hoverInfo.textContent = '—';
+  hideHoverTooltip();
   refreshLayout();
 }
 
@@ -165,29 +174,112 @@ function navigateUp() {
     : state.root;
   state.hoverIndex = -1;
   els.hoverInfo.textContent = '—';
+  hideHoverTooltip();
   refreshLayout();
 }
 
-function updateHoverInfo(index) {
+function hasLocalFileSource() {
+  return state.localFileMap instanceof Map && state.localFileMap.size > 0;
+}
+
+function canOpenNode(node) {
+  return canOpenFile(node, {
+    pixosEmbedded: pixosEmbedded && !hasLocalFileSource(),
+    hasLocalSource: hasLocalFileSource(),
+    localFile: state.localFileMap?.get(node.path),
+  });
+}
+
+const TOOLTIP_OFFSET = 14;
+const TOOLTIP_MARGIN = 8;
+
+function buildHoverDetails(node) {
+  const total = state.currentNode?.size ?? state.totalBytes;
+  const type = node.isFile ? 'файл' : 'папка';
+  let hint = '';
+  if (node.isFile && canOpenNode(node)) {
+    hint = 'Щелчок — открыть';
+  } else if (!node.isFile && node.children.size > 0) {
+    hint = 'Щелчок — войти';
+  }
+  const meta = `${formatBytes(node.size)} · ${formatPercent(node.size, total)} · ${type}`;
+  const line = hint ? `${node.name} · ${meta} · ${hint.toLowerCase()}` : `${node.name} · ${meta}`;
+  return { name: node.name, meta, hint, line };
+}
+
+function hideHoverTooltip() {
+  els.hoverTooltip.hidden = true;
+}
+
+function positionHoverTooltip(clientX, clientY) {
+  const tip = els.hoverTooltip;
+  tip.hidden = false;
+
+  const rect = tip.getBoundingClientRect();
+  let x = clientX + TOOLTIP_OFFSET;
+  let y = clientY + TOOLTIP_OFFSET;
+
+  if (x + rect.width > window.innerWidth - TOOLTIP_MARGIN) {
+    x = clientX - rect.width - TOOLTIP_OFFSET;
+  }
+  if (y + rect.height > window.innerHeight - TOOLTIP_MARGIN) {
+    y = clientY - rect.height - TOOLTIP_OFFSET;
+  }
+
+  tip.style.left = `${Math.max(TOOLTIP_MARGIN, x)}px`;
+  tip.style.top = `${Math.max(TOOLTIP_MARGIN, y)}px`;
+}
+
+function updateHoverTooltip(node, clientX, clientY) {
+  if (!node || clientX == null || clientY == null) {
+    hideHoverTooltip();
+    return;
+  }
+
+  const details = buildHoverDetails(node);
+  els.hoverTooltipName.textContent = details.name;
+  els.hoverTooltipName.title = details.name;
+  els.hoverTooltipMeta.textContent = details.meta;
+  els.hoverTooltipHint.textContent = details.hint;
+  positionHoverTooltip(clientX, clientY);
+}
+
+function updateHoverInfo(index, clientX, clientY) {
   const rect = renderer.getRect(index);
   if (!rect) {
     els.hoverInfo.textContent = '—';
+    hideHoverTooltip();
     return;
   }
-  const node = rect.data;
-  const total = state.currentNode?.size ?? state.totalBytes;
-  const type = node.isFile ? 'файл' : 'папка';
-  els.hoverInfo.textContent = `${node.name} · ${formatBytes(node.size)} · ${formatPercent(node.size, total)} · ${type}`;
+
+  const details = buildHoverDetails(rect.data);
+  els.hoverInfo.textContent = details.line;
+  updateHoverTooltip(rect.data, clientX, clientY);
 }
 
 function updateCursor() {
   const rect = renderer.getRect(state.hoverIndex);
   const isFolder = rect && !rect.data.isFile && rect.data.children.size > 0;
+  const isOpenableFile = rect
+    && rect.data.isFile
+    && canOpenNode(rect.data);
   els.canvas.classList.toggle('is-folder-hover', isFolder);
+  els.canvas.classList.toggle('is-file-hover', isOpenableFile);
   if (state.hoverIndex < 0) {
     els.canvas.style.cursor = '';
   } else {
-    els.canvas.style.cursor = isFolder ? 'pointer' : 'default';
+    els.canvas.style.cursor = (isFolder || isOpenableFile) ? 'pointer' : 'default';
+  }
+}
+
+function openNodeFile(node) {
+  const result = openTreemapFile(node, {
+    pixosEmbedded,
+    scanRootPath: state.scanRootPath,
+    localFileMap: state.localFileMap,
+  });
+  if (!result.ok && result.message) {
+    els.hoverInfo.textContent = result.message;
   }
 }
 
@@ -203,6 +295,8 @@ function applyScanResult(result) {
   state.totalBytes = result.root.size;
   state.fileCount = result.fileCount;
   state.folderCount = result.folderCount;
+  state.scanRootPath = result.scanRootPath ?? null;
+  state.localFileMap = result.localFileMap ?? null;
 
   els.emptyState.hidden = true;
   els.canvas.hidden = false;
@@ -268,7 +362,7 @@ els.canvas.addEventListener('mousemove', (e) => {
   const index = renderer.hitTest(e.clientX, e.clientY);
   state.hoverIndex = index;
   renderer.setHoverIndex(index);
-  updateHoverInfo(index);
+  updateHoverInfo(index, e.clientX, e.clientY);
   updateCursor();
 });
 
@@ -276,20 +370,27 @@ els.canvas.addEventListener('mouseleave', () => {
   state.hoverIndex = -1;
   renderer.setHoverIndex(-1);
   els.hoverInfo.textContent = '—';
+  hideHoverTooltip();
   els.canvas.style.cursor = '';
   els.canvas.classList.remove('is-folder-hover');
+  els.canvas.classList.remove('is-file-hover');
 });
 
 els.canvas.addEventListener('click', (e) => {
   const index = renderer.hitTest(e.clientX, e.clientY);
   const rect = renderer.getRect(index);
-  if (rect && !rect.data.isFile && rect.data.children.size > 0) {
+  if (!rect) return;
+
+  if (rect.data.isFile) {
+    if (canOpenNode(rect.data)) {
+      openNodeFile(rect.data);
+    }
+    return;
+  }
+
+  if (rect.data.children.size > 0) {
     drillDown(rect.data);
   }
-});
-
-els.canvas.addEventListener('dblclick', () => {
-  navigateUp();
 });
 
 const resizeObserver = new ResizeObserver(() => {

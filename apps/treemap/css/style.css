@@ -142,7 +142,8 @@ body {
   cursor: crosshair;
 }
 
-#treemap-canvas.is-folder-hover {
+#treemap-canvas.is-folder-hover,
+#treemap-canvas.is-file-hover {
   cursor: pointer;
 }
 
@@ -233,4 +234,45 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.hover-tooltip {
+  position: fixed;
+  z-index: 100;
+  pointer-events: none;
+  max-width: 280px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(22, 33, 62, 0.96);
+  border: 1px solid #3a3a5c;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.hover-tooltip[hidden] {
+  display: none;
+}
+
+.hover-tooltip__name {
+  font-weight: 600;
+  color: #e8e8e8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hover-tooltip__meta {
+  margin-top: 2px;
+  color: #aaa;
+}
+
+.hover-tooltip__hint {
+  margin-top: 4px;
+  font-size: 0.7rem;
+  color: #a8dadc;
+}
+
+.hover-tooltip__hint:empty {
+  display: none;
 }
