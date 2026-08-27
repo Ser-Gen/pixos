@@ -1,7 +1,7 @@
 {
   "id": "media-player",
   "name": "Media Player",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entryPath": "/apps/media-player/index.html",
   "files": [
     {
@@ -29,8 +29,12 @@
       "hash": "sha256:242931933b757920171cbdfd4ad7a082cfaa6537a0110e707d80d1555eaa0890"
     },
     {
+      "path": "/apps/media-player/favicon.svg",
+      "hash": "sha256:533792f526a704756fb95f2cc30e2a6e8ac0b1a01a848b8c99ea496264fdcad7"
+    },
+    {
       "path": "/apps/media-player/index.html",
-      "hash": "sha256:26b49891151b58ecfef7cd2b57e5ee6289f9cde7d136c4a2900c9dc3173b882f"
+      "hash": "sha256:ed4c715673fb3dd196ca28cd6c4349da20be3f5c8d18fa0a86ac12f83c7abc3b"
     },
     {
       "path": "/apps/media-player/pixos_supported",
@@ -38,7 +42,7 @@
     },
     {
       "path": "/apps/media-player/pixos.app.json",
-      "hash": "sha256:2757b9a1b27755f85e38392e403725a35468f575ce95f44dae33c045f595e719"
+      "hash": "sha256:b5d611790eed54dd10652fbe251aa6cd10f113cf220c462b88493f5459181277"
     }
   ],
   "supported": {

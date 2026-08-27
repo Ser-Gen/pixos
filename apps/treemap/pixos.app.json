@@ -1,7 +1,7 @@
 {
   "id": "treemap",
   "name": "Disk Treemap",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entryPath": "/apps/treemap/index.html",
   "files": [
     {
@@ -9,8 +9,12 @@
       "hash": "sha256:cd07dbe208806ee16ededd3575e9c2600a35bcbfc5ec6a7b705224a517d90a75"
     },
     {
+      "path": "/apps/treemap/favicon.svg",
+      "hash": "sha256:f291018eb5bd9afa878d189981ad58e4f2f96ce86e963e3c2ce88ebdac661487"
+    },
+    {
       "path": "/apps/treemap/index.html",
-      "hash": "sha256:368f4d30e7c72d568481c7a09f105b3646f8812d03d7cc08ddf9abdc86c72be3"
+      "hash": "sha256:983b528e72abc6b4cf6e5bb29366ea5e7e09b2f12004611719f460d9a867b4a6"
     },
     {
       "path": "/apps/treemap/js/app.js",
@@ -46,7 +50,7 @@
     },
     {
       "path": "/apps/treemap/pixos.app.json",
-      "hash": "sha256:cba328b71f123a2120d47214f9b28f3763e051faa75f4bc442199b5910777d39"
+      "hash": "sha256:46b08b837798039923f398aaff5e4f38af262f4ff41f4c516f1a8c475a341e8b"
     },
     {
       "path": "/apps/treemap/test-data/readme.txt",
