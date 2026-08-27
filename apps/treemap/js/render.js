@@ -107,4 +107,15 @@ export class TreemapRenderer {
   getRect(index) {
     return index >= 0 ? this.rects[index] : null;
   }
+
+  clear() {
+    this.rects = [];
+    this.hoverIndex = -1;
+    const { ctx, width, height } = this;
+    if (width > 0 && height > 0) {
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = '#12121f';
+      ctx.fillRect(0, 0, width, height);
+    }
+  }
 }

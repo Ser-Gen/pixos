@@ -1,4 +1,4 @@
-import { scanFileList } from './scan.js';
+import { scanFileList, mergeScanResults } from './scan.js';
 import { layoutTreemap } from './treemap.js';
 import { TreemapRenderer } from './render.js';
 import { formatBytes, formatPercent } from './format.js';
@@ -11,6 +11,8 @@ import { canOpenFile, openTreemapFile } from './open-file.js';
 
 const els = {
   btnOpen: document.getElementById('btn-open'),
+  btnAddFolder: document.getElementById('btn-add-folder'),
+  btnReset: document.getElementById('btn-reset'),
   btnOpenEmpty: document.getElementById('btn-open-empty'),
   folderInput: document.getElementById('folder-input'),
   breadcrumb: document.getElementById('breadcrumb'),
@@ -43,12 +45,30 @@ const state = {
   hoverIndex: -1,
   scanRootPath: null,
   localFileMap: null,
+  combined: false,
+  localSelection: false,
 };
+
+function isLocalSelectionActive() {
+  return state.localSelection && !state.scanRootPath;
+}
+
+function updateLocalFolderControls() {
+  const showLocalActions = isLocalSelectionActive();
+  els.btnAddFolder.hidden = !showLocalActions;
+  els.btnReset.hidden = !showLocalActions;
+  if (!pixosEmbedded) {
+    els.btnOpen.hidden = showLocalActions;
+  }
+  configureStandaloneUi();
+}
 
 function setScanning(active) {
   state.scanning = active;
   els.btnOpen.disabled = active;
   els.btnOpenEmpty.disabled = active;
+  els.btnAddFolder.disabled = active;
+  els.btnReset.disabled = active;
   els.progressWrap.hidden = !active;
   if (active) {
     els.canvas.hidden = true;
@@ -297,11 +317,40 @@ function applyScanResult(result) {
   state.folderCount = result.folderCount;
   state.scanRootPath = result.scanRootPath ?? null;
   state.localFileMap = result.localFileMap ?? null;
+  state.combined = result.combined ?? false;
+  state.localSelection = result.localFileMap instanceof Map;
 
   els.emptyState.hidden = true;
   els.canvas.hidden = false;
+  updateLocalFolderControls();
   refreshLayout();
   return true;
+}
+
+function resetLocalSelection() {
+  state.root = null;
+  state.currentNode = null;
+  state.pathStack = [];
+  state.layoutRects = [];
+  state.totalBytes = 0;
+  state.fileCount = 0;
+  state.folderCount = 0;
+  state.hoverIndex = -1;
+  state.scanRootPath = null;
+  state.localFileMap = null;
+  state.combined = false;
+  state.localSelection = false;
+
+  els.emptyState.hidden = false;
+  els.canvas.hidden = true;
+  renderer.clear();
+  els.canvas.classList.remove('is-folder-hover');
+  els.canvas.classList.remove('is-file-hover');
+  els.hoverInfo.textContent = '—';
+  hideHoverTooltip();
+  els.stats.textContent = '';
+  els.breadcrumb.replaceChildren();
+  updateLocalFolderControls();
 }
 
 async function runScan(scanFn) {
@@ -325,10 +374,24 @@ async function handleFolderSelect(event) {
   updateProgress(0, files.length);
 
   try {
-    const result = await scanFileList(files, ({ current, total }) => {
+    const incoming = await scanFileList(files, ({ current, total }) => {
       updateProgress(current, total);
     });
-    applyScanResult(result);
+    if (!incoming?.root) {
+      return;
+    }
+
+    const merged = state.localSelection
+      ? mergeScanResults({
+        root: state.root,
+        fileCount: state.fileCount,
+        folderCount: state.folderCount,
+        localFileMap: state.localFileMap,
+        combined: state.combined,
+      }, incoming)
+      : incoming;
+
+    applyScanResult(merged);
   } finally {
     setScanning(false);
     els.folderInput.value = '';
@@ -350,11 +413,20 @@ async function openPixosPath(fsPath) {
 function configureStandaloneUi() {
   if (pixosEmbedded) {
     els.btnOpen.textContent = 'Локальная папка';
+    els.btnAddFolder.textContent = 'Добавить локальную папку';
     els.btnOpenEmpty.textContent = 'Локальная папка';
+    return;
   }
+  els.btnOpen.textContent = 'Выбрать папку';
+  els.btnAddFolder.textContent = 'Добавить папку';
+  els.btnOpenEmpty.textContent = 'Выбрать папку';
 }
 
 els.btnOpen.addEventListener('click', openFolderPicker);
+els.btnAddFolder.addEventListener('click', openFolderPicker);
+els.btnReset.addEventListener('click', () => {
+  if (!state.scanning) resetLocalSelection();
+});
 els.btnOpenEmpty.addEventListener('click', openFolderPicker);
 els.folderInput.addEventListener('change', handleFolderSelect);
 
@@ -410,6 +482,7 @@ window.openPath = function openPath(fsPath) {
 };
 
 configureStandaloneUi();
+updateLocalFolderControls();
 
 const pathFromQuery = parsePathFromQuery();
 if (pathFromQuery) {

@@ -9,7 +9,11 @@
 <body>
   <header class="toolbar">
     <h1 class="toolbar-title">Disk Treemap</h1>
-    <button type="button" id="btn-open" class="btn">Открыть папку</button>
+    <div class="toolbar-actions">
+      <button type="button" id="btn-open" class="btn">Выбрать папку</button>
+      <button type="button" id="btn-add-folder" class="btn" hidden>Добавить папку</button>
+      <button type="button" id="btn-reset" class="btn btn-ghost" hidden>Сбросить</button>
+    </div>
     <input type="file" id="folder-input" webkitdirectory hidden>
     <nav id="breadcrumb" class="breadcrumb" aria-label="Навигация"></nav>
     <div id="stats" class="stats"></div>
@@ -18,8 +22,10 @@
   <main id="main" class="main">
     <div id="empty-state" class="empty-state">
       <p class="empty-state-title">Анализатор занятого места</p>
-      <p class="empty-state-hint">Выберите папку для построения treemap по размерам файлов и каталогов. Пустые каталоги не отображаются — браузер не передаёт их при выборе папки.</p>
-      <button type="button" id="btn-open-empty" class="btn btn-lg">Открыть папку</button>
+      <p class="empty-state-hint">Выберите одну или несколько папок для построения treemap. Каждая следующая папка добавляется к анализу — так можно не сканировать огромный каталог целиком. Пустые каталоги не отображаются.</p>
+      <div class="empty-state-actions">
+        <button type="button" id="btn-open-empty" class="btn btn-lg">Выбрать папку</button>
+      </div>
     </div>
     <canvas id="treemap-canvas" hidden></canvas>
     <div id="hover-tooltip" class="hover-tooltip" hidden role="tooltip">

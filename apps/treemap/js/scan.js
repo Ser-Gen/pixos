@@ -126,7 +126,7 @@ export function scanFileList(fileList, onProgress) {
   return new Promise((resolve) => {
     const total = fileList.length;
     if (total === 0) {
-      resolve({ root: null, fileCount: 0, folderCount: 0 });
+      resolve({ root: null, fileCount: 0, folderCount: 0, localFileMap: new Map() });
       return;
     }
 
@@ -157,10 +157,101 @@ export function scanFileList(fileList, onProgress) {
         sortChildren(root);
         const folderCount = countFolders(root);
         onProgress?.({ current: total, total, phase: 'done' });
-        resolve({ root, fileCount: root.fileCount, folderCount, localFileMap });
+        resolve({ root, fileCount: root.fileCount, folderCount, localFileMap, combined: false });
       }
     }
 
     requestAnimationFrame(processBatch);
   });
+}
+
+const COMBINED_ROOT_NAME = 'Анализ';
+
+function remapNodePaths(node, fromPrefix, toPrefix, newName) {
+  if (newName != null) {
+    node.name = newName;
+  }
+  if (node.path === fromPrefix) {
+    node.path = toPrefix;
+  } else if (node.path.startsWith(`${fromPrefix}/`)) {
+    node.path = `${toPrefix}${node.path.slice(fromPrefix.length)}`;
+  }
+  if (node.isFile) {
+    return;
+  }
+  node.sortedChildren = null;
+  for (const child of node.children.values()) {
+    remapNodePaths(child, fromPrefix, toPrefix);
+  }
+}
+
+function remapFileMapKeys(fileMap, fromPrefix, toPrefix) {
+  const remapped = new Map();
+  for (const [key, file] of fileMap) {
+    if (key === fromPrefix || key.startsWith(`${fromPrefix}/`)) {
+      remapped.set(`${toPrefix}${key.slice(fromPrefix.length)}`, file);
+    } else {
+      remapped.set(key, file);
+    }
+  }
+  return remapped;
+}
+
+function attachScanRoot(combinedRoot, scanRoot, sourceFileMap, targetFileMap) {
+  let folderName = scanRoot.name;
+  if (combinedRoot.children.has(folderName)) {
+    let suffix = 2;
+    while (combinedRoot.children.has(`${scanRoot.name} (${suffix})`)) {
+      suffix += 1;
+    }
+    folderName = `${scanRoot.name} (${suffix})`;
+  }
+
+  const oldPrefix = scanRoot.path;
+  const newPrefix = `${combinedRoot.path}/${folderName}`;
+  remapNodePaths(scanRoot, oldPrefix, newPrefix, folderName);
+
+  for (const [key, file] of remapFileMapKeys(sourceFileMap, oldPrefix, newPrefix)) {
+    targetFileMap.set(key, file);
+  }
+
+  combinedRoot.children.set(folderName, scanRoot);
+}
+
+/**
+ * @param {{ root: object, fileCount: number, folderCount: number, localFileMap?: Map, combined?: boolean } | null} current
+ * @param {{ root: object, fileCount: number, folderCount: number, localFileMap?: Map, combined?: boolean } | null} incoming
+ */
+export function mergeScanResults(current, incoming) {
+  if (!incoming?.root) {
+    return current ?? null;
+  }
+  if (!current?.root) {
+    return incoming;
+  }
+
+  const fileMap = new Map();
+  let combinedRoot;
+
+  if (!current.combined) {
+    combinedRoot = createNode(COMBINED_ROOT_NAME, COMBINED_ROOT_NAME, false);
+    attachScanRoot(combinedRoot, current.root, current.localFileMap ?? new Map(), fileMap);
+  } else {
+    combinedRoot = current.root;
+    for (const [key, file] of current.localFileMap ?? []) {
+      fileMap.set(key, file);
+    }
+  }
+
+  attachScanRoot(combinedRoot, incoming.root, incoming.localFileMap ?? new Map(), fileMap);
+  aggregateSizes(combinedRoot);
+  sortChildren(combinedRoot);
+
+  return {
+    root: combinedRoot,
+    fileCount: combinedRoot.fileCount,
+    folderCount: countFolders(combinedRoot),
+    localFileMap: fileMap,
+    combined: true,
+  };
 }
