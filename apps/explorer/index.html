@@ -598,7 +598,7 @@ fs.stat('/apps/ffmpeg.0.12.10/ffmpeg.js', function (err, stats) {
 async function openExplorer () {
 	var rootElem = document.querySelector('#explorer');
 		var state = {
-		cwd: window.cwd || '/',
+		cwd: getInitialCwd(),
 		items: [],
 		selectedPaths: new Set(),
 		clipboard: null,
@@ -809,7 +809,10 @@ async function openExplorer () {
 
 		ui.fileInput.onchange = async function () {
 			if (!ui.fileInput.files.length) return;
-			await Promise.all(Array.from(ui.fileInput.files).map(onFileHandler));
+			// map() would pass the array index as onFileHandler's filePath argument.
+			await Promise.all(Array.from(ui.fileInput.files).map(function (file) {
+				return onFileHandler(file);
+			}));
 			ui.fileInput.value = '';
 			await refreshCurrentDir(false);
 		};
@@ -1004,7 +1007,9 @@ async function openExplorer () {
 			}
 
 			if (e.clipboardData.files.length) {
-				await Promise.all(Array.from(e.clipboardData.files).map(onFileHandler));
+				await Promise.all(Array.from(e.clipboardData.files).map(function (file) {
+					return onFileHandler(file);
+				}));
 			}
 
 			await refreshCurrentDir(false);
@@ -2385,7 +2390,7 @@ async function openExplorer () {
 		var isMountable = mountableExts.indexOf(ext) !== -1;
 		var isMountPoint = mountManager && mountManager.isMountPoint(item.path);
 
-		return [
+		var fileMenuItems = [
 			{label: 'Open', action: function () { actions.open(item.path); }},
 			{label: 'Open with...', action: function () { actions.openWith(item.path); }},
 			{separator: true},
@@ -2404,6 +2409,17 @@ async function openExplorer () {
 				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
 			]}
 		];
+
+		// The images are already here, so this is the natural place to set one as the
+		// wallpaper. Only offered under the shell, which is what owns the desktop.
+		if (isImageExtension(item.path) && typeof parent.setWallpaperImage === 'function') {
+			fileMenuItems.push({separator: true});
+			fileMenuItems.push({label: 'Set as wallpaper', action: function () {
+				parent.setWallpaperImage(item.path);
+			}});
+		}
+
+		return fileMenuItems;
 	}
 
 	function getMultiMenuItems () {
@@ -3550,7 +3566,9 @@ async function openExplorer () {
 			return;
 		}
 
-		await Promise.all(Array.from(files).map(onFileHandler));
+		await Promise.all(Array.from(files).map(function (file) {
+			return onFileHandler(file);
+		}));
 		await refreshCurrentDir(false);
 	}
 
@@ -3700,6 +3718,23 @@ async function openExplorer () {
 			name: name,
 			ext: ext
 		};
+	}
+
+	// The shell opens a second Explorer with ?cwd=<path>. window.cwd stays supported for
+	// anything that still assigns it, but it can only be read after the iframe has loaded,
+	// by which time this state object has long been built -- hence the query string.
+	function getInitialCwd () {
+		try {
+			var fromQuery = new URLSearchParams(location.search).get('cwd');
+			if (fromQuery) {
+				return fromQuery;
+			}
+		}
+		catch (err) {
+			// URLSearchParams is unavailable in nothing we support, but a bad URL should
+			// not stop Explorer from opening at all.
+		}
+		return window.cwd || '/';
 	}
 
 	async function onFileHandler (file, filePath) {

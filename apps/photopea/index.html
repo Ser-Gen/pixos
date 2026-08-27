@@ -6,10 +6,40 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
 	<style>
+		body {
+			margin: 0;
+			background: #1b1e23;
+			color: #e4e4e4;
+			font-family: Arial, Helvetica, sans-serif;
+		}
+
+		#notice {
+			position: fixed;
+			inset: 0;
+			z-index: 1;
+			padding: 24px;
+			max-width: 640px;
+		}
+
+		#notice h1 {
+			font-size: 18px;
+		}
+
+		#notice p {
+			font-size: 13px;
+			line-height: 1.7;
+			color: #b8bec7;
+		}
+
+		#notice code {
+			color: #e4e4e4;
+		}
+
 		#photopea {
 			position: fixed;
 			top: 0;
 			left: 0;
+			z-index: 2;
 			width: 100% !important;
 			height: 100% !important;
 		}
@@ -20,14 +50,17 @@
     <script>
       var n = 0, wnd;
 	  var toOpen = [];
+	  var reachedPhotopea = false;
+
       function iframeLoaded(pp) {
         wnd = pp.contentWindow;
         window.addEventListener("message", ppReady);
       }
 
       function ppReady(e) {
-        console.log(e);
-        
+        reachedPhotopea = true;
+        showEditor();
+
         if (e.data == "done") {
           n++;
 
@@ -43,15 +76,52 @@
       }
 
 	  window.openFile = openFile;
+
+      // The frame covers the whole window, so the notice is only reachable with the
+      // frame out of the way. Both directions, because a slow photopea may still turn
+      // up after the timeout has already given up on it.
+      function showEditor() {
+        document.getElementById("notice").hidden = true;
+        document.getElementById("photopea").style.display = "";
+      }
+
+      function showNotice() {
+        document.getElementById("photopea").style.display = "none";
+        document.getElementById("notice").hidden = false;
+      }
+
+      // A blocked frame still fires load, so there is nothing to listen for -- only a
+      // silence to time out. Without this the window is simply blank and the reason
+      // lives in devtools.
+      window.addEventListener("load", function () {
+        setTimeout(function () {
+          if (!reachedPhotopea) {
+            showNotice();
+          }
+        }, 12000);
+      });
     </script>    
   </head>  
   <body>
-    <h1>
-      Load a file (as ArrayBuffer) and give it to Photopea
-    </h1>
-    <p>
-      This is demo 2 for <a href="https://www.photopea.com/api/live">Photopea Live Messaging API</a><br/>
-    </p>
-    <iframe id="photopea" src="https://www.photopea.com" style="width:800px; height:500px; border:none;" onload="iframeLoaded(this)"></iframe>
+    <div id="notice" hidden>
+      <h1>Photopea did not load</h1>
+      <p>
+        PixOS serves every page with <code>Cross-Origin-Embedder-Policy</code>, and a COEP
+        document may only embed frames that set COEP themselves. photopea.com does not, so
+        the browser blocks it unless the frame below is marked
+        <code>credentialless</code> &mdash; which only Chromium-based browsers understand.
+      </p>
+      <p>
+        In Firefox and Safari this app cannot work. Everything else in PixOS is unaffected;
+        the attribute is on this one frame and changes nothing globally.
+      </p>
+    </div>
+    <!--
+      credentialless exempts this frame from the COEP embedding requirement, which is the
+      only reason photopea can load inside PixOS at all. The cost is that it runs without
+      photopea.com's cookies or storage, so accounts and saved settings do not carry over.
+      Chromium 110+; ignored (and the frame stays blocked) elsewhere.
+    -->
+    <iframe id="photopea" credentialless src="https://www.photopea.com" style="width:800px; height:500px; border:none;" onload="iframeLoaded(this)"></iframe>
   </body>
 </html>

@@ -40,18 +40,92 @@
 <link rel="stylesheet" href="js/goldenlayout/goldenlayout-dark-theme.css">
 <style>
 	html,
-	body,
-	#root {
+	body {
 		margin: 0;
 		height: 100%;
+		overflow: hidden;
 	}
 	body {
-		background-color: #333;
+		background-color: #12141a;
 		color: #fff;
 	}
+
+	/* The shell is four stacked layers and z-index is the entire contract between them.
+	   #windows is fixed at the viewport origin on purpose: the containers inside it are
+	   positioned from getBoundingClientRect(), i.e. in viewport coordinates, so giving
+	   this element a transform or an offset parent silently misplaces every window. */
+	#shell {
+		position: fixed;
+		inset: 0;
+	}
+	#desktop {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		overflow: hidden;
+	}
+	#root {
+		position: absolute;
+		inset: 0;
+		z-index: 10;
+	}
+	#windows {
+		position: fixed;
+		inset: 0;
+		z-index: 100;
+		pointer-events: none;
+	}
+	#overlays {
+		position: fixed;
+		inset: 0;
+		z-index: 300;
+		pointer-events: none;
+	}
+	#windows > *,
+	#overlays > * {
+		pointer-events: auto;
+	}
+
+	[data-goldenlayout-contid] {
+		position: absolute;
+	}
+	[data-goldenlayout-winid] {
+		width: 100%;
+		height: 100%;
+	}
+
+	/* Let the wallpaper through: the dark theme paints both of these opaque. */
+	.lm_goldenlayout,
+	.lm_content {
+		background: transparent;
+	}
+
+	/* With no windows open the layout is still a full-screen transparent sheet. Without
+	   this the desktop underneath would never receive a right-click. */
+	.PixShell--empty #root {
+		pointer-events: none;
+	}
+
+	/* Peek hides the windows without touching them. Anything that moved an iframe in the
+	   DOM here would reload it and throw away the app's state. */
+	#root,
+	#windows {
+		transition: opacity 180ms ease;
+	}
+	.PixShell--peek #root,
+	.PixShell--peek #windows {
+		opacity: 0;
+		pointer-events: none;
+	}
+	/* The rule above puts pointer-events back on every window; without this an invisible
+	   iframe still swallows the clicks and right-clicks meant for the desktop. */
+	.PixShell--peek #windows > * {
+		pointer-events: none;
+	}
+
 	iframe {
 		border: 1px solid #000;
-		background-color: rgba(255,255,255,.3);
+		background-color: #1b1e23;
 		box-sizing: border-box;
 	}
 	#omg {
@@ -62,14 +136,24 @@
 	}
 </style>
 
-<div id="root"></div>
+<div id="shell">
+	<div id="desktop"></div>
+	<div id="root"></div>
+	<div id="windows"></div>
+	<div id="overlays"></div>
+</div>
 
 <script type="module">
-import WM from "./js/goldenlayout/goldenlayout.wm.js";
+import WM from "./js/shell/wm.js";
+import * as desktop from "./js/shell/desktop.js";
 
 var winManager = new WM({
 	root: '#root',
+	windowsRoot: '#windows'
 });
+
+window.wm = winManager;
+window.desktop = desktop;
 
 var scope = location.pathname.replace(/\/[^\/]+$/, '/');
 
@@ -249,10 +333,12 @@ function fsOnInit () {
 		return loadDefaultAppAssociations();
 	})
 	.then(function () {
+		return initDesktop();
+	})
+	.then(function () {
 		window.apps = [];
-		winManager.openWindow({
-			title: 'PixOS',
-			content: `<iframe id="view" allow="file-system-access" src="__browserfs__/apps/explorer"></iframe>`,
+		openApp('explorer').catch(function (err) {
+			console.error('Failed to open Explorer', err);
 		});
 		window.refreshInstalledAppsRegistry().then(function () {
 			scheduleInstalledAppSupportHydration();
@@ -662,6 +748,36 @@ function fsOnInit () {
 		await writeFile('/settings/default-apps.json', Buffer.from(JSON.stringify(cleaned, null, 2)));
 	}
 
+	// The desktop is booted before the first window so that a failure anywhere later
+	// still leaves a surface with a working right-click menu.
+	async function initDesktop () {
+		var settings = await readJsonFile('/settings/desktop.json', {});
+		desktop.init({
+			shell: document.getElementById('shell'),
+			desktop: document.getElementById('desktop'),
+			overlays: document.getElementById('overlays'),
+			wm: winManager,
+			wallpaper: settings.wallpaper,
+			buildMenu: buildDesktopMenu,
+			persist: persistDesktopSettings
+		});
+	}
+
+	async function persistDesktopSettings (patch) {
+		var settings = await readJsonFile('/settings/desktop.json', {});
+		var next = Object.assign({}, settings, patch);
+		await writeFile('/settings/desktop.json', Buffer.from(JSON.stringify(next, null, 2)));
+		return next;
+	}
+
+	window.setWallpaper = function (config) {
+		return desktop.setWallpaper(config);
+	};
+
+	window.setWallpaperImage = function (filePath, options) {
+		return desktop.setWallpaperImage(filePath, options);
+	};
+
 	function normalizeExtension (ext) {
 		return String(ext || '').trim().replace(/^\./, '').toLowerCase();
 	}
@@ -881,46 +997,283 @@ function fsOnInit () {
 window.openPath = openPath;
 window.openFile = openFile;
 window.openFiles = openFiles;
+window.openApp = openApp;
+window.launch = launch;
+window.listLaunchableApps = listLaunchableApps;
 
 window.viewCounter = 0;
 
-async function openPath (path, app) {
-	if (app === 'treemap') {
-		openTreemapWindow(path, path);
-		return;
+// Explorer and App Manager are preloaded before the registry exists, so the launcher
+// has to know where they are without asking it.
+var SYSTEM_APPS = {
+	explorer: {name: 'Explorer', entryPath: '/apps/explorer/index.html'},
+	'app-manager': {name: 'App Manager', entryPath: '/apps/app-manager/index.html'}
+};
+
+// Per-app launch quirks live in this table rather than as branches inside openFile().
+// Each entry may provide:
+//   url(descriptor, entryPath)         the iframe src, defaulting to the entry path
+//   iframeAttrs                        extra attributes on the iframe element
+//   multi                              app takes several files in one window
+//   prepare(descriptor)                runs before the window opens; result goes to deliver
+//   deliver(frame, descriptor, ready)  runs on iframe load, instead of the default
+//                                      contentWindow.openFile(path, name)
+var APP_LAUNCHERS = {
+	explorer: {
+		iframeAttrs: 'allow="file-system-access"',
+		// Explorer reads its starting directory as it boots, which is long before the
+		// parent's load handler could hand it one -- so it has to be in the URL.
+		url: function (descriptor, entryPath) {
+			return descriptor.paths[0]
+				? entryPath + '?cwd=' + encodeURIComponent(descriptor.paths[0])
+				: entryPath;
+		},
+		deliver: function () {}
+	},
+	treemap: {
+		url: function (descriptor, entryPath) {
+			if (!descriptor.paths[0]) {
+				return entryPath;
+			}
+			var normalized = descriptor.paths[0].startsWith('/') ? descriptor.paths[0] : '/' + descriptor.paths[0];
+			return entryPath + '?path=' + encodeURIComponent(normalized);
+		},
+		deliver: function () {}
+	},
+	'media-player': {
+		multi: true,
+		url: function (descriptor, entryPath) {
+			return buildMediaPlayerEntryPath(descriptor.paths, entryPath);
+		},
+		// initPlaylist does not autoplay on its own.
+		deliver: function (frame) {
+			scheduleMediaPlayerAutoplay(frame);
+		}
+	},
+	transcriber: {
+		url: function (descriptor, entryPath) {
+			return buildTranscriberEntryPath(descriptor.paths[0], entryPath);
+		},
+		deliver: function () {}
+	},
+	tic80: {
+		// The app reads parent.__ticUrl as it boots, so the object URL has to exist
+		// before the iframe is created, not on load.
+		prepare: async function (descriptor) {
+			if (!descriptor.paths[0]) {
+				return null;
+			}
+			var blob = await fetch('/__browserfs__' + descriptor.paths[0]).then(function (r) {
+				return r.blob();
+			});
+			window.__ticUrl = URL.createObjectURL(blob);
+			return null;
+		},
+		deliver: function () {}
+	},
+	photopea: {
+		// Photopea's openFile() wants an ArrayBuffer, not a path. The previous code
+		// passed it an undefined variable, so opening an image here never worked.
+		prepare: function (descriptor) {
+			if (!descriptor.paths[0]) {
+				return null;
+			}
+			return fetch('/__browserfs__' + descriptor.paths[0]).then(function (r) {
+				return r.arrayBuffer();
+			});
+		},
+		deliver: function (frame, descriptor, prepared) {
+			frame.contentWindow.openFile(prepared, window.path.basename(descriptor.paths[0]));
+		}
 	}
+};
+
+// Every window in the system is opened through here, including windows with no file at
+// all. The descriptor is also what a session restore will replay, so anything a window
+// needs in order to come back has to be expressible in it.
+async function launch (descriptor) {
+	descriptor = Object.assign({paths: []}, descriptor);
+	descriptor.paths = (descriptor.paths || []).filter(Boolean);
+
+	var appId = descriptor.appId || null;
+	var launcher = (appId && APP_LAUNCHERS[appId]) || {};
+	// Without an app the path is the window: that is how Explorer opens a bare html file.
+	var entryPath = appId ? getAppEntryPath(appId) : descriptor.paths[0];
+
+	if (appId && !entryPath) {
+		throw new Error('App ' + appId + ' has no launch path');
+	}
+	if (!entryPath) {
+		throw new Error('launch() needs an app or a path');
+	}
+
+	// A failed prepare must not swallow the whole launch: an app that opens empty is at
+	// least visible and closable, whereas a rejected launch looks like a dead click.
+	var prepared = null;
+	if (launcher.prepare) {
+		try {
+			prepared = await launcher.prepare(descriptor);
+		}
+		catch (err) {
+			console.error('Preparing ' + appId + ' for ' + descriptor.paths[0] + ' failed', err);
+		}
+	}
+	var url = launcher.url ? launcher.url(descriptor, entryPath) : entryPath;
 
 	window.viewCounter++;
+	var frameId = 'view' + window.viewCounter;
+	var attributes = launcher.iframeAttrs ? ' ' + launcher.iframeAttrs : '';
 
-	if (app === 'new explorer') {
-		winManager.openWindow({
-			title: 'PixOS',
-			content: `<iframe id="view${window.viewCounter}" allow="file-system-access" src="__browserfs__/apps/explorer"></iframe>`,
-		});
-		window['view'+ window.viewCounter].onload = function () {
-			this.contentWindow.cwd = path;
+	var record = winManager.openWindow({
+		title: descriptor.title || defaultWindowTitle(descriptor),
+		appId: appId,
+		path: descriptor.paths[0] || null,
+		launch: {appId: appId, paths: descriptor.paths.slice(), title: descriptor.title || null},
+		content: '<iframe id="' + frameId + '"' + attributes + ' src="__browserfs__' + url + '"></iframe>'
+	});
+
+	var frame = winManager.getFrame(record.id);
+	frame.onload = function () {
+		if (launcher.deliver) {
+			launcher.deliver(frame, descriptor, prepared);
 		}
+		else {
+			deliverFile(frame, descriptor);
+		}
+	};
+
+	return record;
+}
+
+// The App API: the shell hands the app a /__browserfs__ path plus the real basename,
+// because the path it is served from may carry no usable extension.
+function deliverFile (frame, descriptor) {
+	if (!descriptor.appId || !descriptor.paths.length) {
 		return;
 	}
+	frame.contentWindow.openFile('/__browserfs__' + descriptor.paths[0], window.path.basename(descriptor.paths[0]));
+}
 
-	if (app === 'treemap') {
-		openTreemapWindow(path, path);
+function defaultWindowTitle (descriptor) {
+	if (descriptor.paths.length > 1) {
+		return descriptor.paths.length + ' files';
+	}
+	if (descriptor.paths[0]) {
+		return descriptor.paths[0];
+	}
+	return getAppName(descriptor.appId) || 'PixOS';
+}
+
+function openApp (appId) {
+	return launch({appId: appId});
+}
+
+async function openFile (filePath, appId) {
+	if (!appId) {
+		appId = await getDefaultAppForPath(filePath);
+	}
+	return launch({appId: appId, paths: [filePath]});
+}
+
+async function openFiles (paths, appId) {
+	if (!Array.isArray(paths) || !paths.length) {
 		return;
+	}
+	if (paths.length === 1) {
+		return openFile(paths[0], appId);
+	}
+	if (!appId) {
+		appId = 'media-player';
+	}
+	if ((APP_LAUNCHERS[appId] || {}).multi) {
+		return launch({appId: appId, paths: paths});
+	}
+	for (var i = 0; i < paths.length; i++) {
+		await openFile(paths[i], appId);
 	}
 }
 
-function openTreemapWindow (fsPath, title) {
-	window.viewCounter++;
-	var appEntryPath = getAppEntryPath('treemap') || '/apps/treemap/index.html';
-	var entryPath = appEntryPath;
-	if (fsPath) {
-		var normalized = fsPath.startsWith('/') ? fsPath : '/' + fsPath;
-		entryPath += '?path=' + encodeURIComponent(normalized);
+// 'new explorer' is what Explorer's own menu still calls this.
+async function openPath (dirPath, appId) {
+	if (!appId || appId === 'new explorer') {
+		appId = 'explorer';
 	}
-	winManager.openWindow({
-		title: title || fsPath || 'Disk Treemap',
-		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${entryPath}"></iframe>`,
+	return launch({appId: appId, paths: dirPath ? [dirPath] : []});
+}
+
+function buildDesktopMenu () {
+	var apps = listLaunchableApps();
+
+	return [
+		{
+			label: 'Applications',
+			submenu: apps.length
+				? apps.map(function (app) {
+					return {
+						label: app.name,
+						action: function () {
+							openApp(app.id);
+						}
+					};
+				})
+				: [{label: 'No applications installed', disabled: true}]
+		},
+		{separator: true},
+		{label: 'New Explorer', action: function () { openApp('explorer'); }},
+		{label: 'App Manager', action: function () { openApp('app-manager'); }},
+		{separator: true},
+		{label: 'Wallpaper...', action: function () { desktop.openWallpaperPicker(); }},
+		{
+			label: desktop.isPeeking() ? 'Show windows' : 'Show desktop',
+			hint: 'Ctrl+Alt+D',
+			action: function () { desktop.togglePeek(); }
+		}
+	];
+}
+
+// Only apps whose files are actually in BrowserFS: the catalog also lists apps that are
+// merely installable, and launching one of those opens a window onto nothing.
+function listLaunchableApps () {
+	var installed = {};
+	(window.apps || []).forEach(function (entry) {
+		installed[entry.id] = true;
 	});
+
+	var apps = (typeof window.getInstallableApps === 'function' ? window.getInstallableApps() : [])
+		.filter(function (app) {
+			return installed[app.id];
+		})
+		.map(function (app) {
+			return {id: app.id, name: app.name || app.id};
+		});
+
+	Object.keys(SYSTEM_APPS).forEach(function (id) {
+		if (!apps.some(function (app) { return app.id === id; })) {
+			apps.push({id: id, name: SYSTEM_APPS[id].name});
+		}
+	});
+
+	return apps.sort(function (a, b) {
+		return a.name.localeCompare(b.name);
+	});
+}
+
+// Same resolution order as getAppEntryPath: the catalog alone would miss local apps,
+// which are folders the user created under /apps/ and never appear there.
+function getAppName (appId) {
+	if (!appId) {
+		return null;
+	}
+	if (SYSTEM_APPS[appId]) {
+		return SYSTEM_APPS[appId].name;
+	}
+	var app = typeof window.getInstallableApps === 'function'
+		? window.getInstallableApps().find(function (entry) { return entry.id === appId; })
+		: null;
+	if (!app && typeof window.getCatalogApp === 'function') {
+		app = window.getCatalogApp(appId);
+	}
+	return (app && app.name) || appId;
 }
 
 function buildBrowserFsAbsoluteUrl (fsPath) {
@@ -987,30 +1340,6 @@ function buildTranscriberEntryPath (fsPath, appEntryPath) {
 	return base + '?audio=' + encodeURIComponent(audioUrl);
 }
 
-function openTranscriberWindow (paths, title) {
-	window.viewCounter++;
-	var appEntryPath = getAppEntryPath('transcriber') || '/apps/transcriber/index.html';
-	var transcriberEntryPath = buildTranscriberEntryPath(paths[0], appEntryPath);
-	winManager.openWindow({
-		title: title || paths[0],
-		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${transcriberEntryPath}"></iframe>`,
-	});
-}
-
-function openMediaPlayerWindow (paths, title) {
-	window.viewCounter++;
-	var appEntryPath = getAppEntryPath('media-player');
-	var mediaEntryPath = buildMediaPlayerEntryPath(paths, appEntryPath);
-	winManager.openWindow({
-		title: title || (paths.length === 1 ? paths[0] : paths.length + ' media files'),
-		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${mediaEntryPath}"></iframe>`,
-	});
-	var mediaIframe = window['view' + window.viewCounter];
-	mediaIframe.onload = function () {
-		scheduleMediaPlayerAutoplay(mediaIframe);
-	};
-}
-
 function scheduleMediaPlayerAutoplay (iframe) {
 	var attempts = 0;
 	function tryPlay () {
@@ -1030,85 +1359,6 @@ function scheduleMediaPlayerAutoplay (iframe) {
 		}
 	}
 	setTimeout(tryPlay, 200);
-}
-
-async function openFiles (paths, app) {
-	if (!Array.isArray(paths) || !paths.length) {
-		return;
-	}
-	if (paths.length === 1) {
-		return openFile(paths[0], app);
-	}
-	if (!app) {
-		app = 'media-player';
-	}
-	if (app === 'media-player') {
-		openMediaPlayerWindow(paths);
-		return;
-	}
-	for (var i = 0; i < paths.length; i++) {
-		await openFile(paths[i], app);
-	}
-}
-
-async function openFile (path, app) {
-	if (!app) {
-		var defaultApp = await getDefaultAppForPath(path);
-		if (defaultApp) {
-			app = defaultApp;
-		}
-	}
-
-	if (app === 'media-player') {
-		openMediaPlayerWindow([path], path);
-		return;
-	}
-
-	if (app === 'transcriber') {
-		openTranscriberWindow([path], path);
-		return;
-	}
-
-	window.viewCounter++;
-	var appEntryPath = app ? getAppEntryPath(app) : path;
-
-	if (app && !appEntryPath) {
-		throw new Error('App ' + app + ' has no launch path');
-	}
-
-	if (
-		app
-		&& app.match(/tic/)
-	) {
-		var ab = await fetch(`/__browserfs__${path}`).then(r=>r.blob());
-		var b = URL.createObjectURL(ab);
-
-		window.__ticUrl = b;
-
-		winManager.openWindow({
-			title: path,
-			content: `<iframe id="view${window.viewCounter}" src="__browserfs__${appEntryPath}"></iframe>`,
-		});
-
-		return;
-	}
-
-	winManager.openWindow({
-		title: path,
-		content: `<iframe id="view${window.viewCounter}" src="__browserfs__${appEntryPath}"></iframe>`,
-	});
-
-	if (app) {
-		if (app === 'photopea') {
-			window['view'+ window.viewCounter].onload = function () {
-				this.contentWindow.openFile(ab, window.path.basename(path));
-			}
-			return;
-		}
-		window['view'+ window.viewCounter].onload = function () {
-			this.contentWindow.openFile(`/__browserfs__${path}`, window.path.basename(path));
-		}
-	}
 }
 
 async function getDefaultAppForPath (path) {
@@ -1138,7 +1388,10 @@ function getAppEntryPath (appId) {
 	if (!app && typeof window.getCatalogApp === 'function') {
 		app = window.getCatalogApp(appId);
 	}
-	return app ? app.entryPath : null;
+	if (app && app.entryPath) {
+		return app.entryPath;
+	}
+	return SYSTEM_APPS[appId] ? SYSTEM_APPS[appId].entryPath : null;
 }
 
 function blobToBase64(blob) {

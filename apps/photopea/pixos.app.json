@@ -1,12 +1,12 @@
 {
   "id": "photopea",
   "name": "Photopea",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entryPath": "/apps/photopea/index.html",
   "files": [
     {
       "path": "/apps/photopea/index.html",
-      "hash": "sha256:7e1b328ea1f1ba1270366819c15fb39d29aebd391a60fea66dc6ecf42ce3a0d1"
+      "hash": "sha256:4d5242e210931201f52286ca62a97cec3d9f83f190637d44c758a83d1efd141b"
     },
     {
       "path": "/apps/photopea/pixos_supported",
@@ -14,7 +14,7 @@
     },
     {
       "path": "/apps/photopea/pixos.app.json",
-      "hash": "sha256:114c05fdc508707260d09473b54283a76cc0042b3e2a8c2a5cd0bf93eb5c74ce"
+      "hash": "sha256:84355bac6f41be136ecd106f92c6c38d3d8b6fdd42a66cc30ee8cbd90f021fc2"
     }
   ],
   "supported": {
