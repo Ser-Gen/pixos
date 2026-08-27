@@ -5,10 +5,6 @@
   "entryPath": "/apps/jsdosv7.5.0/index.html",
   "files": [
     {
-      "path": "/apps/jsdosv7.5.0/.DS_Store",
-      "hash": "sha256:a23d0adb7ae888e6780970a4a523ff29c4b235cab7f0d1d6fbf5eca759fa232a"
-    },
-    {
       "path": "/apps/jsdosv7.5.0/dosbox.conf",
       "hash": "sha256:cba76f52a1131a369d86c1a8705c84c522a0596741123020eefc7a3dea1d0add"
     },
@@ -38,15 +34,7 @@
     },
     {
       "path": "/apps/jsdosv7.5.0/pixos.app.json",
-      "hash": "sha256:e902de2139232fc45f38ac841a25a9dd57777d04c88f163afbe132375d1b9637"
-    },
-    {
-      "path": "/apps/jsdosv7.5.0/types/.DS_Store",
-      "hash": "sha256:5b7c6baa9fe16f64d62b403689734e1c565ba6c6d842c0f9ca33825eba2de737"
-    },
-    {
-      "path": "/apps/jsdosv7.5.0/types/src/.DS_Store",
-      "hash": "sha256:71243d856be92483e19dc35cc545e24f9cd1cece0393fc920cde56b92ead9e02"
+      "hash": "sha256:a2ce8dc54c52817553acd2df9d4498068052024771abb42a409c5d137eb06ce0"
     },
     {
       "path": "/apps/jsdosv7.5.0/types/src/backend/v7/latency.d.ts",

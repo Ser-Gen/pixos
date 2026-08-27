@@ -1,16 +1,16 @@
 {
   "id": "yaReader",
   "name": "Yandex Book Reader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entryPath": "/apps/ya-book-reader/index.html",
   "files": [
     {
-      "path": "/apps/ya-book-reader/.DS_Store",
-      "hash": "sha256:536614bcf93c944192c4937b91488dde358b252509151c9e223afe8e72c14cbd"
+      "path": "/apps/ya-book-reader/CHANGELOG.md",
+      "hash": "sha256:3ab50b681bba1702dc8728440ec39d57d4cd4f28b8a1f6970f52af78ddb2d311"
     },
     {
-      "path": "/apps/ya-book-reader/elements/.DS_Store",
-      "hash": "sha256:16e69d9de722179488466acb39284323a9b8789229b74785162cfbc6d2f37578"
+      "path": "/apps/ya-book-reader/CLAUDE.md",
+      "hash": "sha256:e4ff4dd65a7daeb2601c43e1e0facbb522ef0e40f13f34956593081c16c579e9"
     },
     {
       "path": "/apps/ya-book-reader/elements/reader_cover/images/book_cover.png",
@@ -109,6 +109,10 @@
       "hash": "sha256:0020967c011459dd30f0be29d73f631ab02255db75c14849b7a8620729929c29"
     },
     {
+      "path": "/apps/ya-book-reader/example.fb2.zip",
+      "hash": "sha256:2be9593987cf9ce5e7f2c81240654b26958a126cd512d7f8bab96afe3850da36"
+    },
+    {
       "path": "/apps/ya-book-reader/extensions/keep_alive.js",
       "hash": "sha256:0bb60ec083129046e4d98f3a4b6696e64ce4b9481dca146748ea91d57c80ec07"
     },
@@ -134,15 +138,15 @@
     },
     {
       "path": "/apps/ya-book-reader/index.css",
-      "hash": "sha256:67c59eedcf31c46956e2f6205dafa13ea99433012ccd948ea88a911249ee35e4"
+      "hash": "sha256:64baeecdf04a3be54f0d7e8280087028c666d53d9d69e57564075568cba50164"
     },
     {
       "path": "/apps/ya-book-reader/index.html",
-      "hash": "sha256:81bc6f64366162a63f4b6be1a78a144e3b74dcf61485557faba1864d6bb14143"
+      "hash": "sha256:6f79009907e6ceea6fb720201b33e46b43d295502a685c51b7f2b697a149b512"
     },
     {
       "path": "/apps/ya-book-reader/index.js",
-      "hash": "sha256:e304b9b7403f8ad106fd5578f3addc2398d70b6f719ed26ff311503f9237d515"
+      "hash": "sha256:a3b36fbe4adfd3f882876c8a57c709b158b9955b05d82835d489b92a5a261ea1"
     },
     {
       "path": "/apps/ya-book-reader/pixos_supported",
@@ -150,11 +154,7 @@
     },
     {
       "path": "/apps/ya-book-reader/pixos.app.json",
-      "hash": "sha256:ed61c3ab4c37ee392a733108e1f623375aeb4aa2a71e821847addff9450f69f3"
-    },
-    {
-      "path": "/apps/ya-book-reader/resources/.DS_Store",
-      "hash": "sha256:d6aadf4c26f6eada566c116778bf3fdb4145a75c4c3c6b740d2e348edcd3daf0"
+      "hash": "sha256:35cf7fd3549293049dcd32f73bf8963c128a6abab59fdd5d453cb3a887886ef4"
     },
     {
       "path": "/apps/ya-book-reader/resources/css/text_defaults.css",

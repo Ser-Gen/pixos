@@ -2702,7 +2702,7 @@ async function openExplorer () {
 			var extensions = items.filter(function (entry) {
 				return !entry.isDirectory;
 			}).map(function (entry) {
-				return getNormalizedExtension(entry.path);
+				return getSpecificExtension(entry.path);
 			}).filter(Boolean);
 			var uniqueExtensions = extensions.filter(function (ext, index) {
 				return extensions.indexOf(ext) === index;
@@ -3872,6 +3872,15 @@ async function openExplorer () {
 		return normalizeExtensionInput(path.extname(filePath));
 	}
 
+	// Most specific extension for a path: 'book.fb2.zip' -> 'fb2.zip'.
+	// Used for app association; mount logic keeps the trailing extension.
+	function getSpecificExtension (filePath) {
+		if (typeof parent.getExtensionCandidates === 'function') {
+			return parent.getExtensionCandidates(filePath)[0] || '';
+		}
+		return getNormalizedExtension(filePath);
+	}
+
 	async function isAppCompatibleWithExtension (appId, extension) {
 		return await isAppCompatibleWithProfile(appId, getCompatibilityProfileForExtension(extension));
 	}
@@ -3880,7 +3889,7 @@ async function openExplorer () {
 		if (typeof parent.getFileCompatibilityProfile === 'function') {
 			return await parent.getFileCompatibilityProfile(itemPath);
 		}
-		return getCompatibilityProfileForExtension(getNormalizedExtension(itemPath));
+		return getCompatibilityProfileForExtension(getSpecificExtension(itemPath));
 	}
 
 	function getCompatibilityProfileForExtension (extension) {

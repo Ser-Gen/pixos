@@ -5,10 +5,6 @@
   "entryPath": "/apps/ruffle/index.html",
   "files": [
     {
-      "path": "/apps/ruffle/.DS_Store",
-      "hash": "sha256:75f7e57a9ebec65818598b2b1d1b7806a30c883861d4ac4d4a1f71131740936d"
-    },
-    {
       "path": "/apps/ruffle/25cc2cbaaa5f41229f38.wasm",
       "hash": "sha256:1f5ddef1c9ab81b00a1ad0ded5246a8399a5d80377a692de32419f3da60e2ae0"
     },
@@ -42,7 +38,7 @@
     },
     {
       "path": "/apps/ruffle/pixos.app.json",
-      "hash": "sha256:db865d0257c3c993369b057284853e2cd4c68b7fc734d7a3cf823e51ae0dfd63"
+      "hash": "sha256:53ad30941b62c40598fdc03a4ba46e08bb61a87b6fdcadd6f7d8926916b494fd"
     },
     {
       "path": "/apps/ruffle/README.md",

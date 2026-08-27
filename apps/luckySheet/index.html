@@ -7,6 +7,13 @@
 <link rel='stylesheet' href='plugins.css' />
 <link rel='stylesheet' href='luckysheet.css' />
 <link rel='stylesheet' href='iconfont.css' />
+<style>
+/* Force a sans-serif UI everywhere. The app sets no font on html/body, so unstyled
+   text falls back to the browser default serif; this makes them inherit sans-serif. */
+html, body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+/* Override the one rule that hard-codes a serif face (placed after luckysheet.css so it wins). */
+.luckysheet-datavisual-content-column-italic { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+</style>
 <script src="plugin.js"></script>
 <script src="luckysheet.umd.js"></script>
 <script>
@@ -23,8 +30,46 @@ $(function () {
 </head>
 <body>
 <div id="lucky-mask-demo" style="position: absolute;z-index: 1000000;left: 0px;top: 0px;bottom: 0px;right: 0px; background: rgba(255, 255, 255, 0.8); text-align: center;font-size: 40px;align-items:center;justify-content: center;display: none;">Downloading</div>
+<div id="drop-hint" style="position:absolute;z-index:1000002;left:0;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(75,137,255,.12);border:3px dashed #4b89ff;color:#4b89ff;font-size:28px;pointer-events:none;">Drop a spreadsheet to open</div>
 <div id="luckysheet" style="margin:0px;padding:0px;position:absolute;width:100%;left: 0px;top: 0;bottom: 0px;outline: none;"></div>
 <script src="luckyexcel.umd.js"></script>
+<script src="xlsx.full.min.js"></script>
+<script src="sheetjs-import.js"></script>
+<script src="exceljs.umd.js"></script>
+<script src="export.js"></script>
+<script src="sheetjs-export.js"></script>
+<div id="export-bar"
+	style="position:absolute;z-index:1000001;right:16px;bottom:16px;display:flex;gap:6px;align-items:center;box-shadow:0 1px 4px rgba(0,0,0,.3);border-radius:4px;">
+	<select id="export-format" title="Export format"
+		style="padding:8px 6px;border:none;border-radius:4px 0 0 4px;background:#fff;color:#333;font-size:14px;cursor:pointer;">
+		<option value="xlsx">xlsx</option>
+		<option value="csv">csv</option>
+		<option value="tsv">tsv</option>
+		<option value="txt">txt</option>
+		<option value="xls">xls</option>
+		<option value="ods">ods</option>
+		<option value="xlsb">xlsb</option>
+	</select>
+	<button id="export-btn" title="Export"
+		style="padding:8px 14px;border:none;border-radius:0 4px 4px 0;background:#4b89ff;color:#fff;font-size:14px;cursor:pointer;">Export</button>
+</div>
+<!-- Shown only under the Pixos shell, for a file opened from its filesystem. -->
+<div id="save-bar"
+	style="position:absolute;z-index:1000001;right:16px;bottom:60px;display:none;align-items:center;gap:8px;">
+	<span id="save-status" style="font-size:13px;color:#333;background:rgba(255,255,255,.9);padding:4px 8px;border-radius:4px;"></span>
+	<button id="save-btn" title="Save to the Pixos filesystem (Ctrl+S)"
+		style="padding:8px 14px;border:none;border-radius:4px;background:#2fa84f;color:#fff;font-size:14px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.3);">Save</button>
+</div>
+<script>
+document.getElementById('export-btn').addEventListener('click', async function () {
+	var fmt = document.getElementById('export-format').value;
+	this.disabled = true;
+	// xlsx keeps full styling via ExcelJS; everything else goes through SheetJS.
+	try { fmt === 'xlsx' ? await window.exportXlsx() : window.exportSheetjs(fmt); }
+	catch (e) { alert('Export failed: ' + e.message); }
+	finally { this.disabled = false; }
+});
+</script>
 <!-- <script type="module">
 import l from './luckyexcel.js';
 console.info('=====',l)
@@ -38,27 +83,207 @@ console.info('=====',l)
 </script> -->
 <script>
 window.onload = async () => {
-	window.openFile = async function (url) {
-		var file = await fetch(url).then(r=>r.blob());
-		LuckyExcel.transformExcelToLucky(file, function(exportJson, luckysheetfile){
-			
-			if(exportJson.sheets==null || exportJson.sheets.length==0){
-				alert("Failed to read the content of the excel file, currently does not support xls files!");
-				return;
-			}
-			// console.log(exportJson, luckysheetfile);
-			window.luckysheet.destroy();
-			
-			window.luckysheet.create({
-				container: 'luckysheet',
-				showinfobar:false,
-				data:exportJson.sheets,
-				title:exportJson.info.name,
-				userInfo:exportJson.info.name.creator,
-				plugins:['chart']
-			});
+	function renderSheets(sheets, title, creator) {
+		window.luckysheet.destroy();
+		window.luckysheet.create({
+			container: 'luckysheet',
+			showinfobar:false,
+			data:sheets,
+			title:title,
+			userInfo:creator,
+			plugins:['chart']
 		});
 	}
+
+	function extOf(url) {
+		return (url.split(/[?#]/)[0].split('.').pop() || '').toLowerCase();
+	}
+	function baseName(url) {
+		try { return decodeURIComponent(url.split(/[?#]/)[0].split('/').pop()); }
+		catch (e) { return url.split(/[?#]/)[0].split('/').pop(); }
+	}
+
+	/*
+	 * Open a tabular file and render it. Dispatches by extension:
+	 *   xlsx/xlsm         -> LuckyExcel (keeps full styling)
+	 *   xls/ods/xlsb      -> SheetJS (values, formulas, merges, sizes)
+	 *   csv/tsv/txt       -> SheetJS text parse; delimiter defaults by extension
+	 *                        (csv=",", tsv/txt="\t") and can be overridden via
+	 *                        opts.delimiter (or the ?delimiter= query param).
+	 */
+	// Preselect the export picker to the format we just opened (if it's an export option).
+	function defaultExportFormat(ext) {
+		var sel = document.getElementById('export-format');
+		if (sel && [].some.call(sel.options, function (o) { return o.value === ext; })) {
+			sel.value = ext;
+		}
+	}
+
+	// Render a blob whose file name carries the extension. Used by both openFile (fetched
+	// from a URL) and the drag & drop handler (a dropped File — itself a Blob with a .name).
+	async function openBlob(blob, name, opts) {
+		opts = opts || {};
+		var ext = extOf(name);
+		defaultExportFormat(ext);
+
+		if (ext === 'xlsx' || ext === 'xlsm') {
+			LuckyExcel.transformExcelToLucky(blob, function (exportJson) {
+				if (exportJson.sheets == null || exportJson.sheets.length == 0) {
+					alert('Failed to read the content of the excel file.');
+					return;
+				}
+				renderSheets(exportJson.sheets, exportJson.info.name, exportJson.info.creator);
+			});
+			return;
+		}
+
+		var sheets;
+		if (ext === 'csv' || ext === 'tsv' || ext === 'txt') {
+			var text = await blob.text();
+			var fs = opts.delimiter || (ext === 'csv' ? ',' : '\t');
+			sheets = window.sheetjsToLucky(XLSX.read(text, { type: 'string', FS: fs, raw: false }));
+		} else if (ext === 'xls' || ext === 'ods' || ext === 'xlsb') {
+			var buf = await blob.arrayBuffer();
+			sheets = window.sheetjsToLucky(XLSX.read(new Uint8Array(buf), { type: 'array' }));
+		} else {
+			alert('Unsupported file format: .' + ext);
+			return;
+		}
+
+		if (!sheets || !sheets.length) { alert('No data found in the file.'); return; }
+		renderSheets(sheets, baseName(name));
+	}
+	window.openBlob = openBlob;
+
+	// Path this workbook was opened from, when it came from the Pixos filesystem.
+	// null for drag & drop and for files fetched from anywhere else -> saving is off.
+	var sourcePath = null;
+
+	// Fetch a URL and open it.
+	// The Pixos shell calls openFile(src, name); direct/?file= callers may pass
+	// openFile(url, opts). Both shapes are accepted.
+	window.openFile = async function (url, nameOrOpts, maybeOpts) {
+		var name = typeof nameOrOpts === 'string' ? nameOrOpts : url;
+		var opts = typeof nameOrOpts === 'string' ? maybeOpts : nameOrOpts;
+		sourcePath = /^\/__browserfs__\//.test(url) ? url : null;
+		var blob = await fetch(url).then(r => r.blob());
+		var result = await openBlob(blob, name, opts);
+		updateSaveBar();
+		return result;
+	}
+
+	// The Pixos shell hosts the app in a same-origin iframe and exposes saveFileLocal
+	// on its window. Standalone (or cross-origin) this returns null and nothing
+	// ever touches BrowserFS.
+	function pixosHost() {
+		try {
+			if (window.parent === window) return null;
+			return typeof window.parent.saveFileLocal === 'function' ? window.parent : null;
+		}
+		catch (e) {
+			return null;   // cross-origin parent
+		}
+	}
+
+	function canSave() { return !!(pixosHost() && sourcePath); }
+
+	function updateSaveBar() {
+		document.getElementById('save-bar').style.display = canSave() ? 'flex' : 'none';
+	}
+
+	// ms = 0 keeps the message up until the next call (used for "Saving...").
+	function flashSaveStatus(text, ms) {
+		var el = document.getElementById('save-status');
+		el.textContent = text;
+		clearTimeout(flashSaveStatus.timer);
+		if (ms !== 0) {
+			flashSaveStatus.timer = setTimeout(function () { el.textContent = ''; }, ms || 3000);
+		}
+	}
+
+	// Write the live workbook back over the file it was opened from, in that file's
+	// own format. Export (download) stays available separately and is unaffected.
+	async function saveToPixos() {
+		var host = pixosHost();
+		if (!host || !sourcePath) return;
+		var ext = extOf(sourcePath);
+		var name = baseName(sourcePath);
+		// xlsm has no distinct writer; ExcelJS emits xlsx bytes under the original name.
+		var blob = (ext === 'xlsx' || ext === 'xlsm')
+			? await window.exportXlsx(name, { download: false })
+			: window.exportSheetjs(ext, name, { download: false });
+		var buf = await blob.arrayBuffer();
+		flashSaveStatus('Saving...', 0);
+		// saveFileLocal writes through BrowserFS, which needs a Buffer, not a Blob.
+		// It resolves once the write lands and rejects on failure; older shells
+		// returned undefined, in which case there is nothing to wait for.
+		var saved = host.saveFileLocal(sourcePath, host.Buffer ? host.Buffer.from(buf) : new Uint8Array(buf));
+		if (saved && typeof saved.then === 'function') await saved;
+		flashSaveStatus('Saved ' + name);
+	}
+	window.saveToPixos = saveToPixos;
+
+	document.getElementById('save-btn').addEventListener('click', async function () {
+		this.disabled = true;
+		try { await saveToPixos(); }
+		catch (e) { flashSaveStatus('Save failed: ' + (e && e.message ? e.message : e)); }
+		finally { this.disabled = false; }
+	});
+
+	// Ctrl/Cmd+S saves under Pixos; standalone it falls through to the browser.
+	window.addEventListener('keydown', function (e) {
+		if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 's') return;
+		if (!canSave()) return;
+		e.preventDefault();
+		saveToPixos().catch(function (err) {
+			flashSaveStatus('Save failed: ' + (err && err.message ? err.message : err));
+		});
+	}, true);
+
+	// Auto-open a file passed via ?file=<url> (used by the Pixos host or directly in a browser).
+	// Optional ?delimiter= overrides the field separator for csv/tsv/txt.
+	var params = new URLSearchParams(location.search);
+	var fileParam = params.get('file');
+	if (fileParam) {
+		window.openFile(fileParam, { delimiter: params.get('delimiter') || undefined });
+	}
+
+	// Drag & drop: open a file dropped anywhere on the page. A depth counter keeps the
+	// hint stable while the cursor moves between child elements (which fire enter/leave).
+	// Listeners run in the CAPTURE phase (3rd arg true) so we handle the event before any
+	// LuckySheet/plugin handler that would otherwise stopPropagation and swallow the drop.
+	var dropHint = document.getElementById('drop-hint');
+	var dragDepth = 0;
+	function hasFiles(e) {
+		return e.dataTransfer && [].indexOf.call(e.dataTransfer.types || [], 'Files') !== -1;
+	}
+	function resetDrop() { dragDepth = 0; dropHint.style.display = 'none'; }
+	window.addEventListener('dragenter', function (e) {
+		if (!hasFiles(e)) return;
+		e.preventDefault();
+		if (++dragDepth === 1) dropHint.style.display = 'flex';
+	}, true);
+	window.addEventListener('dragover', function (e) {
+		if (!hasFiles(e)) return;
+		e.preventDefault();
+		e.dataTransfer.dropEffect = 'copy';
+	}, true);
+	window.addEventListener('dragleave', function (e) {
+		if (!hasFiles(e)) return;
+		if (--dragDepth <= 0) resetDrop();
+	}, true);
+	window.addEventListener('drop', function (e) {
+		if (!hasFiles(e)) return;
+		e.preventDefault();
+		e.stopPropagation();   // own the drop; keep LuckySheet from also handling it
+		resetDrop();
+		var file = e.dataTransfer.files && e.dataTransfer.files[0];
+		if (file) {
+			sourcePath = null;   // a dropped file is not in the Pixos filesystem
+			updateSaveBar();
+			window.openBlob(file, file.name);
+		}
+	}, true);
 }
 </script>
 </body>

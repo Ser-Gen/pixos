@@ -10,15 +10,15 @@
     },
     {
       "path": "/apps/transcriber/audio-url.js",
-      "hash": "sha256:267957f08781d8818cc41c8d9d7952c27c9bdd598c576abc7cbae580c35db911"
+      "hash": "sha256:f9e478f8445e8700734a7c7e6d658916a06bec32725fa678d3af2863b268fa20"
     },
     {
       "path": "/apps/transcriber/editor-controller.js",
-      "hash": "sha256:2e3444c644d04e7e19cbdcdf729aa2f587f8ea35e7cfe4bb29412bdf874aa9b9"
+      "hash": "sha256:f15966581dd59f919a44d2a7f93912529e0e8964664ec0da42fea567f2ef9318"
     },
     {
       "path": "/apps/transcriber/editor.css",
-      "hash": "sha256:bbdd421fac23fd68d176aee76256e205f5ffd534830ba18ac356a961da4a5a3f"
+      "hash": "sha256:de80c209aac0dd0b74bfa7b67cbb7eaeaefd8fae38dfd4fe7a1fb1e4c5460a19"
     },
     {
       "path": "/apps/transcriber/gigaam-transcriber.js",
@@ -26,7 +26,7 @@
     },
     {
       "path": "/apps/transcriber/index.html",
-      "hash": "sha256:6069109debd39bc3dc314779f2ed88663b178b61241f8cab587f0230fc159d0f"
+      "hash": "sha256:3d0b20a9e9c2845f25aa622a0ffddd2f445346523bbf3cd5562aa252f1668ef2"
     },
     {
       "path": "/apps/transcriber/pixos_supported",
@@ -34,11 +34,11 @@
     },
     {
       "path": "/apps/transcriber/pixos.app.json",
-      "hash": "sha256:d6089f97c92af1b3005807dd0b933cb6a3b683ee753eba2283e00e66042a1ae0"
+      "hash": "sha256:133ed372e4e4ca92acb55d07609ea89adfcf9081f1c391176be038dcc0d058ce"
     },
     {
       "path": "/apps/transcriber/README.md",
-      "hash": "sha256:635469206ac167765a6e34d8ce78a0e6faab30e9f28c4fe24401f50c98bda10b"
+      "hash": "sha256:031276b56bc94d9c27b67fc59789959073c5fb53424009e14ec47924d7a43bad"
     },
     {
       "path": "/apps/transcriber/recognizer-worker.js",
@@ -50,7 +50,7 @@
     },
     {
       "path": "/apps/transcriber/service-worker-register.js",
-      "hash": "sha256:8dc3c3f0f899ea4de64626632f16028ee24f9b73d8eb18b262a9691f8b85827c"
+      "hash": "sha256:66c06b60118a114f7d77b84759324a2653783dea7a7e69e72c79903807fb15ee"
     },
     {
       "path": "/apps/transcriber/service-worker.js",
@@ -82,7 +82,7 @@
     },
     {
       "path": "/apps/transcriber/sw-readiness.js",
-      "hash": "sha256:b9d7b5e72bba375b969b61ac3df4862dc1b7c36150068d374c75030097c55101"
+      "hash": "sha256:77144fb64ce850d1ecb8c34dbbbf7e37db308cc64365bcfef178ca4603d3e8df"
     },
     {
       "path": "/apps/transcriber/transcriber-config.js",

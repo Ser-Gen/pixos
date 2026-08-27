@@ -16,7 +16,12 @@ class ReaderLoadTimeData extends LoadTimeData {
 		super();
 		this.promise_ = new Promise((e => {
 			// return yandex.reader.getStrings((t => e(t)))
-			return 'kek'
+			e({
+				bookmarkDefault: "Bookmark",
+				pageNumber: "$1 of $2",
+				tooltipMessageBookmarkActive: "Remove bookmark",
+				tooltipMessageBookmarkInactive: "Add bookmark"
+			})
 		})).then((e => {
 			return this.data = e;
 		}))
@@ -26,6 +31,17 @@ class ReaderLoadTimeData extends LoadTimeData {
 	}
 }
 const readerLoadTimeData = new ReaderLoadTimeData;
+const READER_DARK_BOOK_CSS = `
+html, body {
+	background-color: #1c1b1a !important;
+	color: #cfc9c1 !important;
+	--text-color: #cfc9c1 !important;
+	--text-color-rgb: 207, 201, 193 !important;
+}
+a, a:link { color: #7bb0ff !important; }
+a:visited { color: #b98bff !important; }
+img { filter: brightness(0.85); }
+`;
 // Copyright 2017 Yandex LLC. All rights reserved.
 var BookFormat;
 (function(e) {
@@ -224,7 +240,8 @@ var StorageField;
 	e["FONT_SIZE"] = "fontSize";
 	e["IS_MIGRATED"] = "isMigrated";
 	e["POSITION"] = "position";
-	e["RENDER_MODE"] = "renderMode"
+	e["RENDER_MODE"] = "renderMode";
+	e["THEME"] = "theme"
 })(StorageField || (StorageField = {}));
 class StorageHandler {
 	constructor(e) {
@@ -252,6 +269,12 @@ class StorageHandler {
 	setRenderMode(e) {
 		return this.setParam_(StorageField.RENDER_MODE, e)
 	}
+	getTheme() {
+		return this.getParam_(StorageField.THEME)
+	}
+	setTheme(e) {
+		return this.setParam_(StorageField.THEME, e)
+	}
 	getBookmarks() {
 		return this.getParam_(StorageField.BOOKMARKS)
 	}
@@ -264,15 +287,37 @@ class StorageHandler {
 	setIsMigrated(e) {
 		return this.setParam_(StorageField.IS_MIGRATED, e)
 	}
+	static hasChromeStorage_() {
+		return typeof chrome !== "undefined" && chrome.storage && chrome.storage.local
+	}
 	getFromStorageAsync_(e) {
-		return new Promise((t => {
-			chrome.storage.local.get(e, t)
-		}))
+		if (StorageHandler.hasChromeStorage_()) {
+			return new Promise((t => {
+				chrome.storage.local.get(e, t)
+			}))
+		}
+		const t = Array.isArray(e) ? e : [e];
+		const o = {};
+		t.forEach((e => {
+			const t = window.localStorage.getItem(e);
+			if (t !== null) {
+				try {
+					o[e] = JSON.parse(t)
+				} catch (a) {}
+			}
+		}));
+		return Promise.resolve(o)
 	}
 	setToStorageAsync_(e) {
-		return new Promise((t => {
-			chrome.storage.local.set(e, t)
-		}))
+		if (StorageHandler.hasChromeStorage_()) {
+			return new Promise((t => {
+				chrome.storage.local.set(e, t)
+			}))
+		}
+		Object.keys(e).forEach((t => {
+			window.localStorage.setItem(t, JSON.stringify(e[t]))
+		}));
+		return Promise.resolve()
 	}
 	async getParam_(e) {
 		const t = this.bid_ + ".settings";
@@ -442,7 +487,7 @@ const readerBookmarksTemplate = html`
 
 <dom-if if="[[!bookmarks.length]]" restamp>
 	<template>
-		<div class="no-bookmarks-stub">Здесь появятся закладки, которые вы добавите. Пока их нет.</div>
+		<div class="no-bookmarks-stub">Bookmarks you add will appear here. There are none yet.</div>
 	</template>
 </dom-if>
 `;
@@ -670,6 +715,25 @@ const readerMenuTemplate = html`
 	display: none;
 }
 
+.reader-menu__control_action_theme::before {
+	content: "";
+	display: block;
+	width: 16px;
+	height: 16px;
+	margin: 12px auto 0;
+
+	border-radius: 50%;
+	box-shadow: inset -4px -1px 0 0 #4a4a4a;
+}
+
+.reader-menu__control_action_theme:hover {
+	background-color: rgba(127, 127, 127, 0.75);
+}
+
+.reader-menu__control_action_theme:hover::before {
+	box-shadow: inset -4px -1px 0 0 #000;
+}
+
 .reader-menu__control-delimiter {
 	height: 1px;
 
@@ -712,6 +776,11 @@ const readerMenuTemplate = html`
 			 title="Оглавление и закладки"
 			 on-click="handleNavigationButtonClick_">
 	</div>
+	<div class="reader-menu__control-delimiter"></div>
+	<div class="reader-menu__control reader-menu__control_action_theme"
+			 title="Toggle dark theme"
+			 on-click="handleThemeButtonClick_">
+	</div>
 </div>
 `;
 // Copyright 2016 Yandex LLC. All rights reserved.
@@ -740,6 +809,9 @@ class ReaderMenu extends PolymerElement {
 		this.dispatchEvent(new CustomEvent("action-mode", {
 			detail: "scroll"
 		}))
+	}
+	handleThemeButtonClick_() {
+		this.dispatchEvent(new Event("action-theme"))
 	}
 }
 ReaderMenu.is = "reader-menu";
@@ -1219,6 +1291,11 @@ const readerPageTemplate = html`
 	bottom: 20px;
 }
 
+:host([theme="dark"]) .book-title,
+:host([theme="dark"]) .book-progress {
+	color: rgba(255, 255, 255, 0.7);
+}
+
 .bookmark-label {
 	position: absolute;
 	top: -1px;
@@ -1238,6 +1315,14 @@ const readerPageTemplate = html`
 .bookmark-label_active,
 .bookmark-label_active:hover {
 	background: url("elements/reader_page/images/bookmark_icon_active.png");
+}
+
+:host([theme="dark"]) .bookmark-label {
+	filter: invert(1) brightness(1.6);
+}
+
+:host([theme="dark"]) .bookmark-label_active {
+	filter: none;
 }
 
 .book-wrapper {
@@ -1361,6 +1446,7 @@ const readerPageTemplate = html`
 						 on-action-minus="handleMenuActionMinus_"
 						 on-action-navigation="handleMenuActionNavigation_"
 						 on-action-mode="handleMenuActionMode_"
+						 on-action-theme="handleMenuActionTheme_"
 						 hidden>
 </reader-menu>
 
@@ -1459,10 +1545,8 @@ class ReaderPage extends PolymerElement {
 		this.core_ = await ReaderPage.createCore_(t, this.$["book-container"]);
 		await this.updateMeta_();
 		this.showCover_();
-		// this.storage_ = await StorageHandler.create(this.core_, this.format_);
-		// this.bookmarks_ = await BookmarksHandler.create(this.core_, this.storage_);
-		this.storage_ = {};
-		this.bookmarks_ = {};
+		this.storage_ = await StorageHandler.create(this.core_, this.format_);
+		this.bookmarks_ = await BookmarksHandler.create(this.core_, this.storage_);
 		this.statistic_ = new StatisticHandler(this.format_, e);
 		this.statistic_.readerInitiated();
 		this.core_.addEventListener("progressChanged", (e => this.handleReaderCoreProgressChanged_(e)));
@@ -1471,21 +1555,18 @@ class ReaderPage extends PolymerElement {
 		this.core_.addEventListener("navigateExternal", (e => this.handleReaderCoreNavigateExternal_(e)));
 		this.core_.addEventListener("bookKeydown", (e => this.handleBookKeydown_(e)));
 		this.addEventListener("keydown", (e => this.handleBookKeydown_(e)));
-		// const o = await this.storage_.getRenderMode();
-		const o = null;
+		const o = await this.storage_.getRenderMode();
 		if (o !== null) {
 			await this.core_.setRenderMode(o)
 		}
 		this.$["reader-menu"].mode = this.core_.getRenderMode();
-		// const a = await this.storage_.getFontSize();
-		const a = null;
+		const a = await this.storage_.getFontSize();
 		if (a !== null) {
 			await this.core_.updatePresentationOptions({
 				fontSize: a
 			})
 		}
-		// const r = await this.storage_.getPosition();
-		const r = null;
+		const r = await this.storage_.getPosition();
 		if (r) {
 			try {
 				await this.core_.navigateCfi(r)
@@ -1495,6 +1576,8 @@ class ReaderPage extends PolymerElement {
 		} else {
 			await this.core_.navigateBookStart()
 		}
+		const s = await this.storage_.getTheme();
+		this.applyTheme_(s || (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
 		await Promise.all([this.updateArrowVisibility_(), this.updateBookmarkLabelActivity_()]);
 		this.shadowRoot?.querySelector("#book-throbber")?.remove();
 		this.$["reader-menu"].hidden = false;
@@ -1530,6 +1613,31 @@ class ReaderPage extends PolymerElement {
 		} else {
 			this.deactivateBookmarkLabel_()
 		}
+	}
+	applyTheme_(e) {
+		this.theme = e;
+		document.body.setAttribute("theme", e);
+		this.injectBookTheme_()
+	}
+	injectBookTheme_() {
+		const e = this.$["book-container"].querySelector("iframe");
+		const t = e && e.contentDocument;
+		if (!t || !t.head) {
+			return
+		}
+		let o = t.getElementById("reader-color-theme");
+		if (!o) {
+			o = t.createElement("style");
+			o.id = "reader-color-theme";
+			o.classList.add("renderer-injected-styles")
+		}
+		o.textContent = this.theme === "dark" ? READER_DARK_BOOK_CSS : "";
+		t.head.appendChild(o)
+	}
+	async handleMenuActionTheme_() {
+		const e = this.theme === "dark" ? "light" : "dark";
+		this.applyTheme_(e);
+		await this.storage_.setTheme(e)
 	}
 	async updateArrowVisibility_() {
 		const {
@@ -1617,6 +1725,7 @@ class ReaderPage extends PolymerElement {
 		const t = e.detail;
 		this.$["reader-menu"].mode = t;
 		await this.core_.setRenderMode(t);
+		this.injectBookTheme_();
 		await this.storage_.setRenderMode(t)
 	}
 	async handleTocTreeNavigateTocItem_(e) {
@@ -1642,11 +1751,13 @@ class ReaderPage extends PolymerElement {
 	}
 	async handleReaderCorePageChanged_() {
 		this.statistic_.readerPageChanged();
+		this.injectBookTheme_();
 		await this.updateArrowVisibility_();
 		await this.updateBookmarkLabelActivity_();
 		await this.storage_.setPosition(await this.core_.getCurrentCfi())
 	}
 	async handleReaderCoreDocumentChanged_() {
+		this.injectBookTheme_();
 		this.statistic_.readerDocumentChanged()
 	}
 	handleBookKeydown_(e) {
@@ -1721,6 +1832,10 @@ ReaderPage.properties = {
 	},
 	showCover: {
 		type: Boolean,
+		reflectToAttribute: true
+	},
+	theme: {
+		type: String,
 		reflectToAttribute: true
 	}
 };

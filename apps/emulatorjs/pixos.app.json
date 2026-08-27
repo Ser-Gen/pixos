@@ -5,10 +5,6 @@
   "entryPath": "/apps/emulatorjs/index.html",
   "files": [
     {
-      "path": "/apps/emulatorjs/.DS_Store",
-      "hash": "sha256:08368e202fed41dc588251a018547c5cc4a528192706e9e5aa238adb5f3b0dfe"
-    },
-    {
       "path": "/apps/emulatorjs/index.html",
       "hash": "sha256:284fbb97af7450af988bb5be9171de16f77ede4b204baeb66ebd1c0cc22fc8c1"
     },
@@ -18,7 +14,7 @@
     },
     {
       "path": "/apps/emulatorjs/pixos.app.json",
-      "hash": "sha256:a25f613a79afef221c42091998cfb78793ab191edd1841e708715574ebf70cc1"
+      "hash": "sha256:c6ff2c15e5dacc1bea5afc1d1f92f1b1da2e00d689fdb594e16a00b5fd49dd0c"
     }
   ],
   "supported": {

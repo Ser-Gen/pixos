@@ -1,12 +1,12 @@
 {
   "id": "luckySheet",
   "name": "luckySheet",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entryPath": "/apps/luckySheet/index.html",
   "files": [
     {
-      "path": "/apps/luckySheet/.DS_Store",
-      "hash": "sha256:63fa2a2f0790743485fc4cee2b18b496255cf47b82c7df6ce11a04f2b78e273a"
+      "path": "/apps/luckySheet/CHANGELOG.md",
+      "hash": "sha256:74e3c65f244c1d5b37adccd152fab3c699917a99fd4140a679162e562fdae18a"
     },
     {
       "path": "/apps/luckySheet/chartmix.css",
@@ -15,6 +15,10 @@
     {
       "path": "/apps/luckySheet/chartmix.umd.min.js",
       "hash": "sha256:fd32adf065d097fd4d9bb7495a414ccd11d7a95c97bdb7b0d48f5fa23b528683"
+    },
+    {
+      "path": "/apps/luckySheet/CLAUDE.md",
+      "hash": "sha256:9de200ada922e2980f19e5101a1ac24f8874512ac8a0d02322142bc614b8a8d7"
     },
     {
       "path": "/apps/luckySheet/echarts@4.8.0__dist__echarts.min.js",
@@ -29,8 +33,12 @@
       "hash": "sha256:6c77054732e2287e9fd3579bce6318c3c8499586aecaca283010e864428eae14"
     },
     {
-      "path": "/apps/luckySheet/file.png",
-      "hash": "sha256:5967ed749d075b40f37dc5e80317c46c01f0c0ed0e0fe348160d38e37a4a45b0"
+      "path": "/apps/luckySheet/exceljs.umd.js",
+      "hash": "sha256:7e49da68588e250dbb8bba190d2caa8ab3787cc0284bda1d8b2f805c4df742c9"
+    },
+    {
+      "path": "/apps/luckySheet/export.js",
+      "hash": "sha256:1b143dab14b399306bf37160eaf6f259b0c4018869edee661b846c8e647e30e8"
     },
     {
       "path": "/apps/luckySheet/fontawesome-webfont.woff2",
@@ -42,7 +50,7 @@
     },
     {
       "path": "/apps/luckySheet/index.html",
-      "hash": "sha256:d7918c848641d86fa931f5d3a348e54773c1432e8b2fe37651f7d3f5c4c1b77d"
+      "hash": "sha256:b638fd9608aed76ca181d1fe36266ccf8ea510369e1fbe2a0da4cce9ea66341e"
     },
     {
       "path": "/apps/luckySheet/luckyexcel.umd.js",
@@ -58,11 +66,11 @@
     },
     {
       "path": "/apps/luckySheet/pixos_supported",
-      "hash": "sha256:07e5c5a20574ea8e41d69ed7a19f2d1d970ed4ae7d9193fc284e5f2699e3335c"
+      "hash": "sha256:20cc38965cad2df4253254656483c4b16952874a350670d77ba153aa20397119"
     },
     {
       "path": "/apps/luckySheet/pixos.app.json",
-      "hash": "sha256:5583e0004fd8c52b9fe20a8005004c83fa1f74ae9ba41629509127b5bc522724"
+      "hash": "sha256:4143034ee0e3aef316408a6f02f31a9ae7372630f1199f07a94cfdb4da334661"
     },
     {
       "path": "/apps/luckySheet/plugin.js",
@@ -75,6 +83,14 @@
     {
       "path": "/apps/luckySheet/pluginsCss.css",
       "hash": "sha256:c5d129fc3406acfa16316aa9b988a0bbefc343c6823654a99e3b09d447b2f4a5"
+    },
+    {
+      "path": "/apps/luckySheet/sheetjs-export.js",
+      "hash": "sha256:7c25bb6554facdebcc94f86af0cf6985b70a2951ce186eaa98828f2cfcbee73a"
+    },
+    {
+      "path": "/apps/luckySheet/sheetjs-import.js",
+      "hash": "sha256:46b1d5307221a261cd097538414dcea95060085b84ff7905d4a40967f8ab491a"
     },
     {
       "path": "/apps/luckySheet/unpkg.com__vuex@3.4.0__dist__vuex.min.js",
@@ -91,11 +107,22 @@
     {
       "path": "/apps/luckySheet/waffle_sprite.png",
       "hash": "sha256:5b2f8581f3db2de166cbcbadf3e4256167ffb43d897d22e327840f9cd1d16405"
+    },
+    {
+      "path": "/apps/luckySheet/xlsx.full.min.js",
+      "hash": "sha256:c9506197caf809a075b6dee1da0d36fb19da7158ffe8a88e7b0c96c5d8623c99"
     }
   ],
   "supported": {
     "extensions": [
-      "xlsx"
+      "xlsx",
+      "xlsm",
+      "xls",
+      "csv",
+      "tsv",
+      "txt",
+      "ods",
+      "xlsb"
     ]
   }
 }

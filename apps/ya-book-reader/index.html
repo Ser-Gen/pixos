@@ -8,21 +8,167 @@
   <!-- Stylesheets -->
   <link rel="stylesheet" href="resources/css/text_defaults.css">
   <link rel="stylesheet" href="index.css">
+
+  <style>
+    .empty-state {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 32px;
+      padding: 24px;
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      background: #f4f3f2;
+      color: #3a3936;
+      text-align: center;
+    }
+    .empty-state[hidden] { display: none; }
+    .empty-state__card {
+      max-width: 460px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    .empty-state__icon { font-size: 56px; line-height: 1; }
+    .empty-state__title { margin: 0; font-size: 24px; font-weight: 600; }
+    .empty-state__text { margin: 0; font-size: 15px; line-height: 1.5; }
+    .empty-state__text b { font-weight: 600; }
+    .empty-state__text_muted { color: #8a8781; font-size: 13px; }
+    .empty-state__text code {
+      font-family: "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(0, 0, 0, 0.06);
+    }
+    .empty-state__button {
+      appearance: none;
+      border: none;
+      cursor: pointer;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 500;
+      padding: 11px 22px;
+      border-radius: 10px;
+      color: #fff;
+      background: #3778f2;
+      transition: background 0.15s ease;
+    }
+    .empty-state__button:hover { background: #2f68d8; }
+
+    @media (prefers-color-scheme: dark) {
+      .empty-state { background: #1c1b1a; color: #cfc9c1; }
+      .empty-state__text_muted { color: #8b857c; }
+      .empty-state__text code { background: rgba(255, 255, 255, 0.09); }
+    }
+  </style>
 </head>
 <body>
-  <!-- <reader-page src="1.epub"></reader-page> -->
-  <!-- <reader-page src="2.fb2.zip"></reader-page> -->
-  <!-- <reader-page src="1.fb2"></reader-page> -->
+  <div id="empty-state" class="empty-state" hidden>
+    <div class="empty-state__card">
+      <div class="empty-state__icon">📖</div>
+      <h1 class="empty-state__title">Open a book</h1>
+      <p class="empty-state__text">
+        Drag &amp; drop an <b>.epub</b>, <b>.fb2</b>, or <b>.fb2.zip</b> file
+        anywhere on this window.
+      </p>
+      <p class="empty-state__text empty-state__text_muted">
+        Or pass a URL parameter: <code>?src=&lt;url&gt;</code>
+      </p>
+    </div>
+    <button id="open-example" class="empty-state__button" type="button">
+      Open example book
+    </button>
+  </div>
 
   <script type="module" src="index.js"></script>
 
   <script>
-    function openFile (src) {
-      var type = src.match(/fb2\.zip$/) ? 'fb2.zip' : src.split(/\//).slice(-1)[0].split(/\./).slice(-1)[0];
-      
-      document.querySelector('reader-page')?.remove();
-      document.body.insertAdjacentHTML('afterbegin', `<reader-page id="kek" src="${src}" type="${type}"></reader-page>`);
-    }
+    (function () {
+      var EXAMPLE_SRC = 'example.fb2.zip';
+      var EXAMPLE_TYPE = 'fb2.zip';
+
+      // Map a file name (or URL) to the reader's book type.
+      function detectType(name) {
+        if (/\.fb2\.zip$/i.test(name)) return 'fb2.zip';
+        if (/\.epub$/i.test(name)) return 'epub';
+        if (/\.fb2$/i.test(name)) return 'fb2';
+        return '';
+      }
+
+      function emptyState() { return document.getElementById('empty-state'); }
+
+      // Show the "no book open" screen.
+      function showEmptyState() {
+        document.querySelector('reader-page')?.remove();
+        emptyState().hidden = false;
+      }
+
+      // Escape a string for safe use inside a double-quoted HTML attribute.
+      function esc(s) {
+        return String(s)
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
+      // Swap in a fresh <reader-page> for the given book source.
+      // Uses insertAdjacentHTML (parser path) because <reader-page>'s
+      // constructor sets an attribute, which document.createElement forbids.
+      function openBook(src, type) {
+        emptyState().hidden = true;
+        document.querySelector('reader-page')?.remove();
+        var typeAttr = type ? ' type="' + esc(type) + '"' : '';
+        document.body.insertAdjacentHTML(
+          'afterbegin',
+          '<reader-page src="' + esc(src) + '"' + typeAttr + '></reader-page>'
+        );
+      }
+
+      // Open a dropped/selected File via an in-memory blob URL.
+      function openLocalFile(file) {
+        openBook(URL.createObjectURL(file), detectType(file.name));
+      }
+
+      // Pixos entry point: the shell opens the app in an iframe and then calls
+      // openFile(src, name) with a /__browserfs__/... path. The type comes from
+      // `name` (the real basename), since `src` may carry no usable extension.
+      window.openFile = function (src, name) {
+        openBook(src, detectType(name || src));
+      };
+
+      // Open from a URL parameter: ?src= (aliases ?file=, ?url=).
+      // Optional ?type= overrides extension-based detection.
+      var params = new URLSearchParams(window.location.search);
+      var srcParam = params.get('src') || params.get('file') || params.get('url');
+      if (srcParam) {
+        openBook(srcParam, params.get('type') || detectType(srcParam));
+      } else {
+        showEmptyState();
+      }
+
+      // Example button.
+      document.getElementById('open-example')
+        .addEventListener('click', function () {
+          openBook(EXAMPLE_SRC, EXAMPLE_TYPE);
+        });
+
+      // Open by dragging a book file anywhere onto the window.
+      window.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      });
+      window.addEventListener('drop', function (e) {
+        e.preventDefault();
+        var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (file) openLocalFile(file);
+      });
+    })();
   </script>
 </body>
 </html>

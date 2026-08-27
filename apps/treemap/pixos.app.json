@@ -21,12 +21,12 @@
       "hash": "sha256:bbc6878c4d036631df8bc3497a6ec6899f08a952e0e599d269aface957547265"
     },
     {
-      "path": "/apps/treemap/js/open-file.js",
-      "hash": "sha256:fc3b1c63a896c8614246cddbfe220ee16f7acc82ca5a98e9b9cb8d10c0520264"
-    },
-    {
       "path": "/apps/treemap/js/format.js",
       "hash": "sha256:2f9bd95af4fad8a0618b06f4739d11ddeab7e5208de2d184803a901153bfe750"
+    },
+    {
+      "path": "/apps/treemap/js/open-file.js",
+      "hash": "sha256:fc3b1c63a896c8614246cddbfe220ee16f7acc82ca5a98e9b9cb8d10c0520264"
     },
     {
       "path": "/apps/treemap/js/render.js",
@@ -46,7 +46,7 @@
     },
     {
       "path": "/apps/treemap/pixos.app.json",
-      "hash": "sha256:34d3d4b4bcdf7808c529d1dd300b182c187506188c1e4f9b8a7af758fed92980"
+      "hash": "sha256:cba328b71f123a2120d47214f9b28f3763e051faa75f4bc442199b5910777d39"
     },
     {
       "path": "/apps/treemap/test-data/readme.txt",

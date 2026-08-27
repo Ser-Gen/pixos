@@ -5,10 +5,6 @@
   "entryPath": "/apps/ppt/index.html",
   "files": [
     {
-      "path": "/apps/ppt/.DS_Store",
-      "hash": "sha256:6e5ea03869b43525c910c46a8c2a79124e8470db7e947869e2b31121d4ed44a3"
-    },
-    {
       "path": "/apps/ppt/css/nv.d3.min.css",
       "hash": "sha256:d0821b9917df9978a8b377746ada4c15c311c83b1e44bcdfe812809ec5f51bd7"
     },
@@ -78,7 +74,7 @@
     },
     {
       "path": "/apps/ppt/pixos.app.json",
-      "hash": "sha256:3cb859644fb17156a6b851d96b1dd9a2e1be9d88be880a1c6d40e21eaa9de624"
+      "hash": "sha256:68773c7ab30b47c804b96aca988198260470d69281c043e49e34e7e56d852560"
     },
     {
       "path": "/apps/ppt/README.md",

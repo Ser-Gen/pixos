@@ -5,10 +5,6 @@
   "entryPath": "/apps/photopea/index.html",
   "files": [
     {
-      "path": "/apps/photopea/.DS_Store",
-      "hash": "sha256:63fb202cd58b2aee90c60e03305b719e1f24f89494a878262bbbbea3411cf233"
-    },
-    {
       "path": "/apps/photopea/index.html",
       "hash": "sha256:7e1b328ea1f1ba1270366819c15fb39d29aebd391a60fea66dc6ecf42ce3a0d1"
     },
@@ -18,7 +14,7 @@
     },
     {
       "path": "/apps/photopea/pixos.app.json",
-      "hash": "sha256:b02fd2eb0e4b82d12885928e394a191f36918ab5dcd85465ae5824758df4a41b"
+      "hash": "sha256:114c05fdc508707260d09473b54283a76cc0042b3e2a8c2a5cd0bf93eb5c74ce"
     }
   ],
   "supported": {

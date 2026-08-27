@@ -8,9 +8,30 @@ body {
   padding: 0;
 }
 
+html,
+body {
+  background: var(--body-background-color);
+}
+
 body {
   --body-background-color: #f4f3f2;
-  background: var(--body-background-color);
+}
+
+/* Match the OS scheme on first paint so opening a book doesn't flash white
+   before JS applies the saved theme. */
+@media (prefers-color-scheme: dark) {
+  body {
+    --body-background-color: #1c1b1a;
+  }
+}
+
+/* An explicit theme choice always wins over the OS default. */
+body[theme="light"] {
+  --body-background-color: #f4f3f2;
+}
+
+body[theme="dark"] {
+  --body-background-color: #1c1b1a;
 }
 
 reader-page {

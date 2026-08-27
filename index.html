@@ -310,13 +310,24 @@ function fsOnInit () {
 		})
 	}
 
+	// Returns a Promise resolving to the written path, rejecting with the BrowserFS
+	// error. Callers that ignore the result keep the old fire-and-forget behaviour:
+	// the internal no-op catch marks a rejection handled, so a failed write logs to
+	// the console instead of raising an unhandled rejection.
 	window.saveFileLocal = function (path, content) {
 		path = path.replace('/__browserfs__', '');
-		fs.writeFile(path, content, function (e) {
-			if (e) {
-				console.error(e);
-			}
+		var saved = new Promise(function (resolve, reject) {
+			fs.writeFile(path, content, function (e) {
+				if (e) {
+					console.error(e);
+					reject(e);
+					return;
+				}
+				resolve(path);
+			});
 		});
+		saved.catch(function () {});
+		return saved;
 	}
 
 	PixosAppRegistry.init({
@@ -414,6 +425,8 @@ function fsOnInit () {
 
 	window.getFileCompatibilityProfile = getFileCompatibilityProfile;
 	window.getExtensionCompatibilityProfile = getExtensionCompatibilityProfile;
+	window.getExtensionCandidates = getExtensionCandidates;
+	window.normalizeExtensionCandidates = normalizeExtensionCandidates;
 	window.isAppCompatibleWithProfile = isAppCompatibleWithProfile;
 
 	window.getDefaultAppForExtension = function (ext) {
@@ -653,6 +666,35 @@ function fsOnInit () {
 		return String(ext || '').trim().replace(/^\./, '').toLowerCase();
 	}
 
+	// Expand an extension into match candidates, most specific first:
+	// 'fb2.zip' -> ['fb2.zip', 'zip'], 'txt' -> ['txt']. Compound extensions
+	// let an app claim a compound type without hijacking the trailing one.
+	function normalizeExtensionCandidates (ext) {
+		var normalized = normalizeExtension(ext);
+		if (!normalized) {
+			return [];
+		}
+		var parts = normalized.split('.');
+		if (parts.length < 2) {
+			return [normalized];
+		}
+		return [normalized, parts[parts.length - 1]];
+	}
+
+	// Candidates for a path: 'book.fb2.zip' -> ['fb2.zip', 'zip'].
+	// Dotfiles ('.bashrc') stay extension-less, as path.extname reports them.
+	function getExtensionCandidates (filePath) {
+		var single = normalizeExtension(window.path.extname(filePath || ''));
+		if (!single) {
+			return [];
+		}
+		var parts = window.path.basename(String(filePath || '')).split('.');
+		if (parts.length > 2 && parts[0] !== '') {
+			return normalizeExtensionCandidates(parts.slice(-2).join('.'));
+		}
+		return [single];
+	}
+
 	function normalizeMimeType (mimeType) {
 		return String(mimeType || '').trim().toLowerCase();
 	}
@@ -665,12 +707,13 @@ function fsOnInit () {
 
 	function getFileCompatibilityProfile (filePath) {
 		return new Promise(async function (resolve) {
-			var extension = normalizeExtension(window.path.extname(filePath || ''));
+			var extensions = getExtensionCandidates(filePath);
 			var head = await readFileHead(filePath, 4096);
 			var mimeType = await detectMimeType(head);
-			var fallbackProfile = getExtensionCompatibilityProfile(extension);
+			var fallbackProfile = getExtensionCompatibilityProfile(extensions[0]);
 			resolve({
-				extension: extension,
+				extension: extensions[0] || '',
+				extensions: extensions,
 				mimeType: mimeType || fallbackProfile.mimeType || null,
 				isText: detectTextBytes(head, fallbackProfile.isText)
 			});
@@ -678,20 +721,30 @@ function fsOnInit () {
 	}
 
 	function getExtensionCompatibilityProfile (ext) {
-		var extension = normalizeExtension(ext);
-		var mimeType = guessMimeTypeFromExtension(extension);
+		var extensions = normalizeExtensionCandidates(ext);
+		var mimeType = null;
+		for (var i = 0; i < extensions.length && !mimeType; i++) {
+			mimeType = guessMimeTypeFromExtension(extensions[i]);
+		}
 		return {
-			extension: extension,
+			extension: extensions[0] || '',
+			extensions: extensions,
 			mimeType: mimeType,
-			isText: isLikelyTextExtension(extension, mimeType)
+			isText: extensions.some(function (item) {
+				return isLikelyTextExtension(item, mimeType);
+			})
 		};
 	}
 
 	async function isAppCompatibleWithProfile (appId, profile) {
 		var app = getAppRecord(appId);
 		if (!app || !profile) return false;
-		var supportedExtensions = profile.extension ? await ensureAppSupportedExtensions(appId) : (app.supportedExtensions || []);
-		if (profile.extension && supportedExtensions.indexOf(profile.extension) > -1) {
+		// Profiles built elsewhere may carry only the single `extension`.
+		var candidates = Array.isArray(profile.extensions) && profile.extensions.length
+			? profile.extensions
+			: normalizeExtensionCandidates(profile.extension);
+		var supportedExtensions = candidates.length ? await ensureAppSupportedExtensions(appId) : (app.supportedExtensions || []);
+		if (candidates.some(function (ext) { return supportedExtensions.indexOf(ext) > -1; })) {
 			return true;
 		}
 		if (profile.mimeType && app.supportedMimeTypes.indexOf(profile.mimeType) > -1) {
@@ -1059,11 +1112,15 @@ async function openFile (path, app) {
 }
 
 async function getDefaultAppForPath (path) {
-	var ext = window.path.extname(path || '').replace(/^\./, '').toLowerCase();
-	if (!ext || typeof window.getDefaultAppForExtension !== 'function') {
+	if (typeof window.getExtensionCandidates !== 'function' || typeof window.getDefaultAppForExtension !== 'function') {
 		return null;
 	}
-	var appId = window.getDefaultAppForExtension(ext);
+	// Most specific first, so a 'fb2.zip' association beats a plain 'zip' one.
+	var candidates = window.getExtensionCandidates(path);
+	var appId = null;
+	for (var i = 0; i < candidates.length && !appId; i++) {
+		appId = window.getDefaultAppForExtension(candidates[i]);
+	}
 	if (!appId) {
 		return null;
 	}

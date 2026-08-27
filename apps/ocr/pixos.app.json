@@ -5,10 +5,6 @@
   "entryPath": "/apps/ocr/index.html",
   "files": [
     {
-      "path": "/apps/ocr/.DS_Store",
-      "hash": "sha256:d65165279105ca6773180500688df4bdc69a2c7b771752f0a46ef120b7fd8ec3"
-    },
-    {
       "path": "/apps/ocr/index.html",
       "hash": "sha256:b2bfb5c0730a524146c2bfa544f018658b0a9e619f85e7dce98078fb25c437dd"
     },
@@ -18,7 +14,7 @@
     },
     {
       "path": "/apps/ocr/pixos.app.json",
-      "hash": "sha256:d0732199632769306d1ebf07fc0f7c16139647d7a4a89df0f61ce425d04b84b5"
+      "hash": "sha256:c5bfea46293901df7b1ea3cba500a46be233a2ea05326e277e3f29410c8a3e51"
     },
     {
       "path": "/apps/ocr/tesseract-core-simd-lstm.js",
