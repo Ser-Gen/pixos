@@ -46,7 +46,17 @@ class El {
 			&& (value === undefined || child.dataset[key] === value));
 	}
 	querySelector (selector) {
+		if (selector === '#root') {
+			return layoutRoot;
+		}
+		if (selector === '#windows') {
+			return windowsRoot;
+		}
 		return this.querySelectorAll(selector)[0] || null;
+	}
+	replaceChildren () {
+		this.children.forEach(child => { child.parentNode = null; });
+		this.children = [];
 	}
 	getBoundingClientRect () {
 		return {top: 0, left: 0, width: 100, height: 100};
@@ -56,17 +66,34 @@ class El {
 	}
 }
 
-const windowsRoot = new El('div');
-const layoutRoot = new El('div');
-const bodyRoot = new El('body');
-
 // A real document contains the layout, the windows layer and the drag proxy's home in
 // document.body -- the sweep has to see all three.
+let windowsRoot;
+let layoutRoot;
+let bodyRoot;
 const documentRoot = new El('html');
-documentRoot.append(layoutRoot, windowsRoot, bodyRoot);
+documentRoot.createElement = tag => new El(tag);
 globalThis.document = documentRoot;
 
+// Each independent WM gets a clean document. Sharing one let a stale placeholder from an
+// earlier instance answer a later instance's lookup, which is exactly how the bug that
+// deleted every restored window got through this file.
+function resetDom () {
+	windowsRoot = new El('div');
+	layoutRoot = new El('div');
+	bodyRoot = new El('body');
+	documentRoot.replaceChildren();
+	documentRoot.append(layoutRoot, windowsRoot, bodyRoot);
+}
+resetDom();
+
 globalThis.$ = function (arg) {
+	// The WM wraps a workspace's own element, not just a selector.
+	if (arg instanceof El) {
+		const wrapper = [arg];
+		wrapper.append = node => arg.append(node[0] || node);
+		return wrapper;
+	}
 	if (typeof arg === 'string' && arg.charAt(0) === '<') {
 		const element = new El(arg.match(/^<(\w+)/)[1]);
 		const wrapper = [element];
@@ -88,6 +115,7 @@ class Item {
 		this.layout = layout;
 		this.parent = parent;
 		this.contentItems = [];
+		this.isComponent = config && config.type === 'component';
 	}
 	addChild (config) {
 		const item = new Item(config, this.layout, this);
@@ -98,7 +126,9 @@ class Item {
 				html: () => {
 					item.holder = new El('div');
 					item.holder.dataset.goldenlayoutWinid = String(config.componentState.winID);
-					layoutRoot.append(item.holder);
+					// Placeholders live inside their own desktop's element, which is what
+					// makes an inactive desktop's windows measurable as hidden.
+					(this.layout.container || layoutRoot).append(item.holder);
 				}
 			})
 		}, config.componentState);
@@ -125,15 +155,28 @@ class Item {
 }
 
 globalThis.GoldenLayout = class {
-	constructor () {
+	constructor (config, $container) {
 		this.handlers = {};
+		this.container = $container && $container[0];
+		this.config = config;
 		this.root = new Item({}, this, null);
 		this.root.contentItems.push(new Item({type: 'row'}, this, this.root));
+		// A saved layout arrives as content the factory has to be run over, which is how
+		// restored windows find their items.
+		this.pendingContent = (config && config.content && config.content[0]
+			&& config.content[0].content) || [];
+	}
+	destroy () {
+		this.destroyed = true;
+	}
+	toConfig () {
+		return {content: [{type: 'row', content: this.root.contentItems[0].contentItems.map(i => i.config)}]};
 	}
 	registerComponent (name, fn) {
 		this.factory = fn;
 	}
 	init () {
+		this.pendingContent.forEach(child => this.root.contentItems[0].addChild(child));
 		this.emit('initialised');
 	}
 	on (event, cb) {
@@ -200,19 +243,149 @@ check('a throwing listener does not break openWindow', wm.count(), 1);
 wm.focusWindow(c.id);
 check('focus is recorded', wm.getWindow(c.id).active, true);
 
-// Shell shortcuts have to survive an app having focus.
+// Shell shortcuts and click-away have to survive an app having focus. Driven through
+// the iframe's load event rather than by calling bridgeInput() directly: an earlier
+// version of this test called the method itself and passed while the load path was
+// throwing, so no window ever got a bridge.
 const forwarded = [];
-wm.on('keydown', e => forwarded.push(e.code));
-const listeners = [];
-const sameOriginFrame = {contentDocument: {addEventListener: (evt, fn) => listeners.push(fn)}};
-wm.bridgeHotkeys(sameOriginFrame);
-wm.bridgeHotkeys(sameOriginFrame);
-check('the hotkey bridge is installed once per document', listeners.length, 1);
-listeners[0]({code: 'KeyD'});
-check('a key pressed inside an app is republished', forwarded, ['KeyD']);
+wm.on('keydown', e => forwarded.push('key:' + e.code));
+wm.on('mousedown', () => forwarded.push('click'));
+
+const appDoc = {listeners: {}, addEventListener (evt, fn) { (this.listeners[evt] = this.listeners[evt] || []).push(fn); }};
+const framed = wm.openWindow({title: 'app', content: '<iframe id="view9"></iframe>'});
+wm.getFrame(framed.id).contentDocument = appDoc;
+wm.getFrame(framed.id).dispatch('load');
+
+check('loading a window installs the bridge', Object.keys(appDoc.listeners).sort(), ['keydown', 'mousedown']);
+appDoc.listeners.keydown[0]({code: 'KeyK'});
+appDoc.listeners.mousedown[0]({});
+check('input inside an app is republished to the shell', forwarded, ['key:KeyK', 'click']);
+
+wm.getFrame(framed.id).dispatch('load');
+check('a second load does not double-subscribe', appDoc.listeners.keydown.length, 1);
 
 const crossOriginFrame = {get contentDocument () { throw new Error('cross-origin'); }};
-wm.bridgeHotkeys(crossOriginFrame);
-check('a cross-origin frame is skipped without throwing', forwarded, ['KeyD']);
+wm.bridgeInput(crossOriginFrame);
+check('a cross-origin frame is skipped without throwing', forwarded.length, 2);
+
+// --- desktops -------------------------------------------------------------------
+//
+// The property under test throughout: a window changes desktop, or its desktop is
+// closed, without its iframe ever leaving the shared container. Anything that moved the
+// iframe in the DOM would reload the app and lose whatever was in it.
+
+resetDom();
+const desk = new WM({root: '#root', windowsRoot: '#windows', workspaceName: 'Work'});
+check('a WM starts with one desktop', desk.listWorkspaces().map(w => w.name), ['Work']);
+check('which is active', desk.getActiveWorkspace(), desk.listWorkspaces()[0].id);
+
+const work = desk.getActiveWorkspace();
+const w1 = desk.openWindow({title: 'a.txt', appId: 'ace', path: '/a.txt', content: '<iframe id="v1"></iframe>', launch: {appId: 'ace', paths: ['/a.txt']}});
+const media = desk.createWorkspace({name: 'Media'});
+
+check('a new desktop does not steal focus', desk.getActiveWorkspace(), work);
+check('windows belong to the desktop they were opened on', desk.getWindow(w1.id).workspace, work);
+check('listWindows can be narrowed to one desktop', desk.listWindows(media.id).length, 0);
+check('and unfiltered it still sees everything', desk.listWindows().length, 1);
+
+const iframeBefore = desk.getFrame(w1.id);
+desk.moveWindow(w1.id, media.id);
+check('moving a window changes its desktop', desk.getWindow(w1.id).workspace, media.id);
+check('the window still exists', desk.count(), 1);
+// The whole design rests on this: same element, same parent, so no reload.
+check('the iframe is the very same element', desk.getFrame(w1.id) === iframeBefore, true);
+check('and never left the windows container', desk.getFrame(w1.id).parentNode === windowsRoot, true);
+
+desk.switchTo(media.id);
+check('switching desktops works', desk.getActiveWorkspace(), media.id);
+check('the taskbar sees the window on the active desktop', desk.listWindows(media.id).length, 1);
+
+desk.renameWorkspace(media.id, 'Video');
+check('desktops can be renamed', desk.listWorkspaces().find(w => w.id === media.id).name, 'Video');
+check('a blank name is refused', desk.renameWorkspace(media.id, '   '), false);
+
+// Closing a desktop must never cost you the windows on it.
+const beforeClose = desk.getFrame(w1.id);
+desk.closeWorkspace(media.id);
+check('closing a desktop removes it', desk.listWorkspaces().length, 1);
+check('its windows survive', desk.count(), 1);
+check('they move to the neighbour', desk.getWindow(w1.id).workspace, work);
+check('and their iframes are untouched', desk.getFrame(w1.id) === beforeClose, true);
+check('the survivor becomes active', desk.getActiveWorkspace(), work);
+check('the last desktop cannot be closed', desk.closeWorkspace(work), false);
+check('count() can be narrowed to one desktop', desk.count(desk.getActiveWorkspace()), 1);
+check('and unfiltered counts them all', desk.count(), 1);
+
+// --- session ---------------------------------------------------------------------
+
+const snapshot = desk.serialize();
+check('a snapshot names the active desktop', snapshot.activeWorkspace, work);
+check('and carries one entry per desktop', snapshot.workspaces.length, 1);
+check('with the launch descriptor needed to reopen each window',
+	snapshot.workspaces[0].windows[0].launch, {appId: 'ace', paths: ['/a.txt']});
+check('and the window id, so the saved layout still points at it',
+	snapshot.workspaces[0].windows[0].id, w1.id);
+
+// Restore: records first, layout second. Reversing that leaves every item unattached.
+resetDom();
+const fresh = new WM({root: '#root', windowsRoot: '#windows'});
+const target = fresh.getActiveWorkspace();
+const saved = snapshot.workspaces[0];
+saved.windows.forEach(win => {
+	fresh.openWindow({
+		id: win.id, workspace: target, detached: true,
+		title: win.title, appId: win.appId, path: win.path, launch: win.launch,
+		content: '<iframe id="restored"></iframe>'
+	});
+});
+// The regression: openWindow ends in syncGeometry, whose orphan sweep deletes any
+// container without a placeholder -- which a detached window deliberately does not have
+// yet. Every restored window used to be created and reaped in the same breath.
+check('a detached window exists before any placeholder does', fresh.count(), 1);
+fresh.syncGeometry();
+check('and survives a geometry sweep with no placeholder', fresh.count(), 1);
+check('its iframe is still reachable, which is what launch() needs', !!fresh.getFrame(w1.id), true);
+check('its id is the saved one, not a fresh one', fresh.listWindows()[0].id, w1.id);
+check('and the next new window will not collide with it', fresh.winID > w1.id, true);
+
+fresh.applySavedLayout(target, saved.layout);
+fresh.finishRestore();
+check('rebuilding the layout binds the record to its pane', !!fresh.windows.get(w1.id).item, true);
+check('and the window is no longer exempt from the sweep', fresh.windows.get(w1.id).detached, false);
+
+// A desktop whose layout could not be serialised still has to show its windows.
+resetDom();
+const noLayout = new WM({root: '#root', windowsRoot: '#windows'});
+noLayout.openWindow({id: 4, workspace: noLayout.getActiveWorkspace(), detached: true, title: 'orphan', content: '<iframe id="o"></iframe>'});
+noLayout.finishRestore();
+check('a window with no saved layout still gets a pane', !!noLayout.windows.get(4).item, true);
+noLayout.syncGeometry();
+check('and is not swept away afterwards', noLayout.count(), 1);
+
+// A saved layout can name a window whose app is gone; the empty pane must not remain.
+resetDom();
+const stale = new WM({root: '#root', windowsRoot: '#windows'});
+stale.applySavedLayout(stale.getActiveWorkspace(), saved.layout);
+check('a pane with no window behind it is dropped', stale.count(), 0);
+
+// Rebuilding a layout destroys every content item, and each one announces itself on the
+// way out. Without the rebuild guard that is indistinguishable from the user closing
+// them all, and the iframes would be deleted along with the panes.
+resetDom();
+const rebuilt = new WM({root: '#root', windowsRoot: '#windows'});
+const keep = rebuilt.openWindow({title: 'keep', appId: 'ace', content: '<iframe id="keep"></iframe>'});
+const keepFrame = rebuilt.getFrame(keep.id);
+rebuilt.buildLayout(rebuilt.workspaces.get(rebuilt.getActiveWorkspace()));
+check('rebuilding a layout does not close its windows', rebuilt.count(), 1);
+check('and does not touch their iframes', rebuilt.getFrame(keep.id) === keepFrame, true);
+
+// The wallpaper and the desktop menu key off this: an empty desktop beside a busy one.
+resetDom();
+const twoDesks = new WM({root: '#root', windowsRoot: '#windows'});
+twoDesks.openWindow({title: 'busy', content: '<iframe id="busy"></iframe>'});
+const spare = twoDesks.createWorkspace({name: 'Spare'});
+twoDesks.switchTo(spare.id);
+check('an empty desktop reports empty even when another has windows',
+	twoDesks.count(twoDesks.getActiveWorkspace()), 0);
 
 process.exit(report('wm') ? 1 : 0);

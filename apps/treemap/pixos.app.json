@@ -50,7 +50,7 @@
     },
     {
       "path": "/apps/treemap/pixos.app.json",
-      "hash": "sha256:46b08b837798039923f398aaff5e4f38af262f4ff41f4c516f1a8c475a341e8b"
+      "hash": "sha256:5a7031f73e2d44dd7fe2d9da7b9ef4f1ed03a32ec0dc46f7922772543ca248fc"
     },
     {
       "path": "/apps/treemap/test-data/readme.txt",
@@ -68,5 +68,6 @@
       "path": "/apps/treemap/test-data/subdir/nested/deep.json",
       "hash": "sha256:2396099c6c084fa4b9beac9f0d52cf3be9cf8d47040ef127883d532b5790cd74"
     }
-  ]
+  ],
+  "icon": "/apps/treemap/favicon.svg"
 }

@@ -6,6 +6,10 @@
       "manifestPath": "/apps/ace/pixos.app.json"
     },
     {
+      "id": "bookmarks",
+      "manifestPath": "/apps/bookmarks/pixos.app.json"
+    },
+    {
       "id": "djvujs",
       "manifestPath": "/apps/djvujs/pixos.app.json"
     },
@@ -28,6 +32,10 @@
     {
       "id": "luckySheet",
       "manifestPath": "/apps/luckySheet/pixos.app.json"
+    },
+    {
+      "id": "markdown-viewer",
+      "manifestPath": "/apps/markdown-viewer/pixos.app.json"
     },
     {
       "id": "media-player",

@@ -1,0 +1,50 @@
+{
+  "version": 1,
+
+  "_comment": [
+    "What a fresh PixOS needs before it can boot. Read over HTTP from the served repo,",
+    "not from BrowserFS, because on a first boot BrowserFS is empty.",
+    "",
+    "files   copied into BrowserFS. `refresh: true` re-copies on every boot -- for the",
+    "        system apps and the generated registry, which must track the served copy.",
+    "        Everything else is copied only when it is missing, so local edits survive.",
+    "apps    installed from the catalog the first time only, and remembered in",
+    "        /settings/preinstalled.json, so uninstalling one does not bring it back.",
+    "seed    user files, copied once and never overwritten.",
+    "defaultApps  extension -> app id, applied only to extensions with no default yet."
+  ],
+
+  "files": [
+    {"path": "/apps/jquery-1.11.1.min.js"},
+    {"path": "/apps/jszip.3.10.1.min.js"},
+    {"path": "/apps/file-type.19.0.0.js"},
+    {"path": "/apps/qrcode.js"},
+    {"path": "/apps/fix-webm-duration.js"},
+
+    {"path": "/apps/explorer/index.html", "refresh": true},
+    {"path": "/apps/explorer/favicon.svg", "refresh": true},
+
+    {"path": "/apps/app-manager/index.html", "refresh": true},
+    {"path": "/apps/app-manager/favicon.svg", "refresh": true},
+
+    {"path": "/apps/ace/index.html"},
+    {"path": "/apps/ace/pixos_supported"},
+
+    {"path": "/apps/7z/main.js"},
+    {"path": "/apps/7z/7zz.wasm"},
+    {"path": "/apps/7z/7zz.es6.min.js"},
+
+    {"path": "/apps/app-catalog.js", "refresh": true},
+    {"path": "/apps/registry.json", "refresh": true}
+  ],
+
+  "apps": ["bookmarks", "markdown-viewer"],
+
+  "seed": [
+    {"path": "/home/about.md", "from": "/templates/about.md"}
+  ],
+
+  "defaultApps": {
+    "md": "markdown-viewer"
+  }
+}

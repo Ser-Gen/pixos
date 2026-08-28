@@ -1,0 +1,25 @@
+{
+  "id": "bookmarks",
+  "name": "Bookmarks",
+  "version": "1.0.0",
+  "entryPath": "/apps/bookmarks/index.html",
+  "files": [
+    {
+      "path": "/apps/bookmarks/favicon.svg",
+      "hash": "sha256:c7319c99bed08fce1d62902eaed1b5c56563a1ee813f684aa5f9e742d8194bbf"
+    },
+    {
+      "path": "/apps/bookmarks/index.html",
+      "hash": "sha256:bafd43c1a696048488c5f3cf57d1245951c029f03c3d0b2761d2409156ebb5f2"
+    },
+    {
+      "path": "/apps/bookmarks/js/links.js",
+      "hash": "sha256:4ba511e152f9d24785133e8f209b2dba6624e61ba12ed18e7b73ceeb44300836"
+    },
+    {
+      "path": "/apps/bookmarks/pixos.app.json",
+      "hash": "sha256:ef08bc050a524706035019d18e273b40a89d8a7d09bc568241f076c75b75bde3"
+    }
+  ],
+  "icon": "/apps/bookmarks/favicon.svg"
+}

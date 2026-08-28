@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Markdown Viewer</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+	:root {
+		--bg: #14171c;
+		--panel: #1b1f26;
+		--line: rgba(255, 255, 255, .09);
+		--text: #dfe3ea;
+		--muted: #939caa;
+		--accent: #6fb3ff;
+	}
+
+	* { box-sizing: border-box; }
+
+	html, body {
+		height: 100%;
+		margin: 0;
+	}
+
+	body {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg);
+		color: var(--text);
+		font: 14px/1.6 -apple-system, "Segoe UI", Arial, Helvetica, sans-serif;
+	}
+
+	#bar {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: 0 0 auto;
+		padding: 8px 14px;
+		border-bottom: 1px solid var(--line);
+		background: var(--panel);
+	}
+
+	#name {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--muted);
+		font-size: 12px;
+	}
+
+	button {
+		font: inherit;
+		font-size: 12px;
+		padding: 5px 11px;
+		color: var(--text);
+		background: rgba(255, 255, 255, .06);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		cursor: pointer;
+	}
+
+	button:hover { background: rgba(255, 255, 255, .12); }
+	button[hidden] { display: none; }
+
+	#body {
+		flex: 1 1 auto;
+		display: flex;
+		min-height: 0;
+	}
+
+	#outline {
+		flex: 0 0 220px;
+		overflow: auto;
+		padding: 18px 10px 40px;
+		border-right: 1px solid var(--line);
+		background: rgba(0, 0, 0, .15);
+	}
+
+	#outline[hidden] { display: none; }
+
+	#outline a {
+		display: block;
+		padding: 4px 10px;
+		color: var(--muted);
+		text-decoration: none;
+		font-size: 12px;
+		border-left: 2px solid transparent;
+	}
+
+	#outline a:hover {
+		color: var(--text);
+		border-left-color: var(--accent);
+	}
+
+	#outline a.lvl3 { padding-left: 24px; }
+	#outline a.lvl4, #outline a.lvl5, #outline a.lvl6 { padding-left: 38px; }
+
+	#scroll {
+		flex: 1 1 auto;
+		overflow: auto;
+		padding: 30px 40px 80px;
+	}
+
+	#doc {
+		max-width: 780px;
+		margin: 0 auto;
+	}
+
+	#meta {
+		margin-bottom: 28px;
+		padding-bottom: 20px;
+		border-bottom: 1px solid var(--line);
+	}
+
+	#meta[hidden] { display: none; }
+	#meta h1 { margin: 0 0 4px; font-size: 30px; }
+	#meta .tagline { color: var(--muted); }
+
+	#meta .links {
+		margin-top: 12px;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 8px;
+	}
+
+	#meta .links a {
+		padding: 4px 10px;
+		font-size: 12px;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		color: var(--text);
+		text-decoration: none;
+	}
+
+	#meta .links a:hover { border-color: var(--accent); color: var(--accent); }
+
+	#doc h1, #doc h2, #doc h3, #doc h4, #doc h5, #doc h6 {
+		line-height: 1.3;
+		margin: 1.6em 0 .6em;
+	}
+
+	#doc h1 { font-size: 26px; }
+	#doc h2 { font-size: 21px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+	#doc h3 { font-size: 17px; }
+	#doc h4, #doc h5, #doc h6 { font-size: 14px; color: var(--muted); }
+	#doc > :first-child { margin-top: 0; }
+
+	#doc a { color: var(--accent); }
+	#doc img { max-width: 100%; }
+	#doc hr { border: 0; border-top: 1px solid var(--line); margin: 2em 0; }
+
+	#doc code {
+		font-family: "SF Mono", Menlo, Consolas, monospace;
+		font-size: .88em;
+		padding: 2px 5px;
+		background: rgba(255, 255, 255, .08);
+		border-radius: 3px;
+	}
+
+	#doc pre {
+		overflow: auto;
+		padding: 14px 16px;
+		background: #0f1216;
+		border: 1px solid var(--line);
+		border-radius: 4px;
+	}
+
+	#doc pre code { padding: 0; background: none; }
+
+	#doc blockquote {
+		margin: 1em 0;
+		padding: 2px 16px;
+		border-left: 3px solid var(--accent);
+		color: var(--muted);
+	}
+
+	#doc table {
+		border-collapse: collapse;
+		width: 100%;
+		margin: 1em 0;
+	}
+
+	#doc th, #doc td {
+		padding: 7px 11px;
+		border: 1px solid var(--line);
+		text-align: left;
+	}
+
+	#doc th { background: rgba(255, 255, 255, .05); }
+	#doc li { margin: .25em 0; }
+
+	#empty {
+		max-width: 480px;
+		margin: 90px auto;
+		text-align: center;
+		color: var(--muted);
+	}
+
+	#empty[hidden] { display: none; }
+	#empty strong { display: block; margin-bottom: 8px; color: var(--text); font-size: 16px; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+	<span id="name">No document</span>
+	<button id="reload" hidden>Reload</button>
+	<button id="edit" hidden>Edit</button>
+</div>
+
+<div id="body">
+	<nav id="outline" hidden></nav>
+	<div id="scroll">
+		<div id="empty">
+			<strong>Markdown Viewer</strong>
+			Open a <code>.md</code> file from Explorer, or from the PixOS command palette.
+		</div>
+		<article id="doc">
+			<header id="meta" hidden></header>
+			<div id="content"></div>
+		</article>
+	</div>
+</div>
+
+<script type="module">
+import {render, parseFrontmatter, escapeHtml, safeUrl} from './js/markdown.js';
+
+var ui = {
+	name: document.getElementById('name'),
+	reload: document.getElementById('reload'),
+	edit: document.getElementById('edit'),
+	outline: document.getElementById('outline'),
+	scroll: document.getElementById('scroll'),
+	empty: document.getElementById('empty'),
+	meta: document.getElementById('meta'),
+	content: document.getElementById('content')
+};
+
+// The shell hands over a /__browserfs__ URL plus the real basename. Standalone, the same
+// app is useful with ?path=, so both routes end in load().
+var shell = null;
+try {
+	shell = (window.parent !== window && window.parent.openPath) ? window.parent : null;
+}
+catch (err) {
+	shell = null;
+}
+
+var current = {src: null, name: null};
+
+window.openFile = function (src, name) {
+	load(src, name);
+};
+
+document.title = 'Markdown Viewer';
+
+ui.reload.addEventListener('click', function () {
+	if (current.src) {
+		load(current.src, current.name);
+	}
+});
+
+ui.edit.addEventListener('click', function () {
+	if (shell && current.src) {
+		shell.openFile(toFsPath(current.src), 'ace');
+	}
+});
+
+// A link into the filesystem opens through the shell rather than navigating this frame,
+// which would replace the viewer with a raw file.
+ui.content.addEventListener('click', function (e) {
+	var link = e.target.closest ? e.target.closest('a[data-pixos-path]') : null;
+	if (!link) {
+		return;
+	}
+	e.preventDefault();
+	var target = resolve(link.getAttribute('data-pixos-path'));
+	if (!shell) {
+		return;
+	}
+	if (/\.md$/i.test(target)) {
+		load('/__browserfs__' + target, target.split('/').pop());
+	}
+	else if (target.endsWith('/')) {
+		shell.openPath(target);
+	}
+	else {
+		// openFile, not openPath: openPath always lands in Explorer, which would show
+		// the containing folder rather than opening the file that was linked.
+		shell.openFile(target);
+	}
+});
+
+function toFsPath (src) {
+	return String(src).replace(/^.*\/__browserfs__/, '').replace(/\?.*$/, '');
+}
+
+function resolve (target) {
+	if (target.startsWith('/')) {
+		return target;
+	}
+	var dir = toFsPath(current.src || '/').replace(/\/[^/]*$/, '');
+	var parts = (dir + '/' + target).split('/');
+	var out = [];
+	parts.forEach(function (part) {
+		if (part === '..') {
+			out.pop();
+		}
+		else if (part && part !== '.') {
+			out.push(part);
+		}
+	});
+	return '/' + out.join('/');
+}
+
+async function load (src, name) {
+	current = {src: src, name: name || String(src).split('/').pop()};
+	ui.name.textContent = toFsPath(src) || current.name;
+	ui.reload.hidden = false;
+	ui.edit.hidden = !shell;
+	document.title = current.name;
+
+	var text;
+	try {
+		var response = await fetch(src, {cache: 'no-store'});
+		if (!response.ok) {
+			throw new Error(response.status + ' ' + response.statusText);
+		}
+		text = await response.text();
+	}
+	catch (err) {
+		ui.empty.hidden = true;
+		ui.meta.hidden = true;
+		ui.outline.hidden = true;
+		ui.content.innerHTML = '<p>Could not read <code>' + escapeHtml(toFsPath(src)) + '</code>: '
+			+ escapeHtml(err.message) + '</p>';
+		return;
+	}
+
+	draw(text);
+}
+
+function draw (text) {
+	var parsed = parseFrontmatter(text);
+	ui.empty.hidden = true;
+	drawMeta(parsed.data);
+	ui.content.innerHTML = render(parsed.body);
+	drawOutline();
+	ui.scroll.scrollTop = 0;
+}
+
+function drawMeta (data) {
+	var title = data.title || data.name;
+	if (!title && !data.tagline) {
+		ui.meta.hidden = true;
+		return;
+	}
+	ui.meta.hidden = false;
+	ui.meta.innerHTML = '';
+
+	if (title) {
+		var h1 = document.createElement('h1');
+		h1.textContent = title;
+		ui.meta.append(h1);
+	}
+	if (data.tagline) {
+		var tagline = document.createElement('div');
+		tagline.className = 'tagline';
+		tagline.textContent = data.tagline;
+		ui.meta.append(tagline);
+	}
+
+	var links = (data.links || []).filter(function (link) {
+		return link && typeof link === 'object' && safeUrl(link.url);
+	});
+	if (!links.length) {
+		return;
+	}
+	var row = document.createElement('div');
+	row.className = 'links';
+	links.forEach(function (link) {
+		var a = document.createElement('a');
+		a.href = safeUrl(link.url);
+		a.textContent = link.title || link.url;
+		if (/^(https?:|mailto:)/i.test(a.href)) {
+			a.target = '_blank';
+			a.rel = 'noopener noreferrer';
+		}
+		row.append(a);
+	});
+	ui.meta.append(row);
+}
+
+function drawOutline () {
+	var headings = Array.from(ui.content.querySelectorAll('h2, h3, h4, h5, h6'));
+	ui.outline.innerHTML = '';
+	// Two entries is a list; one is just the document's own title repeated.
+	if (headings.length < 2) {
+		ui.outline.hidden = true;
+		return;
+	}
+	ui.outline.hidden = false;
+	headings.forEach(function (heading) {
+		var link = document.createElement('a');
+		link.href = '#' + heading.id;
+		link.className = 'lvl' + heading.tagName[1];
+		link.textContent = heading.textContent;
+		link.addEventListener('click', function (e) {
+			e.preventDefault();
+			heading.scrollIntoView({behavior: 'smooth', block: 'start'});
+		});
+		ui.outline.append(link);
+	});
+}
+
+var fromQuery = new URLSearchParams(location.search).get('path');
+if (fromQuery) {
+	load('/__browserfs__' + fromQuery, fromQuery.split('/').pop());
+}
+</script>
+
+</body>
+</html>

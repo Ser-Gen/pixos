@@ -1,0 +1,8 @@
+{
+	"name": "pixos",
+	"private": true,
+	"scripts": {
+		"generate-apps": "node scripts/generate-apps-catalog.js",
+		"test": "node tests/run.mjs"
+	}
+}

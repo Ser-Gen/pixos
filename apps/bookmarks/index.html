@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Bookmarks</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+	:root {
+		--bg: #14171c;
+		--panel: #1b1f26;
+		--card: #212630;
+		--line: rgba(255, 255, 255, .09);
+		--text: #dfe3ea;
+		--muted: #939caa;
+		--accent: #6fb3ff;
+		--danger: #ff6b5e;
+	}
+
+	* { box-sizing: border-box; }
+
+	html, body { height: 100%; margin: 0; }
+
+	body {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg);
+		color: var(--text);
+		font: 14px/1.5 -apple-system, "Segoe UI", Arial, Helvetica, sans-serif;
+	}
+
+	#bar {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex: 0 0 auto;
+		padding: 9px 14px;
+		border-bottom: 1px solid var(--line);
+		background: var(--panel);
+	}
+
+	#search {
+		flex: 1 1 auto;
+		min-width: 0;
+		padding: 6px 10px;
+		font: inherit;
+		font-size: 13px;
+		color: var(--text);
+		background: rgba(0, 0, 0, .3);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+	}
+
+	#search:focus { outline: none; border-color: var(--accent); }
+
+	button {
+		font: inherit;
+		font-size: 12px;
+		padding: 6px 11px;
+		color: var(--text);
+		background: rgba(255, 255, 255, .06);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	button:hover { background: rgba(255, 255, 255, .12); }
+	button.primary { background: #2b5f9e; border-color: #3476c4; }
+	button.primary:hover { background: #326fb8; }
+	button.link { background: none; border: none; color: var(--muted); padding: 4px 6px; }
+	button.link:hover { color: var(--text); background: rgba(255, 255, 255, .08); }
+	button.danger:hover { color: var(--danger); }
+
+	#banner {
+		flex: 0 0 auto;
+		padding: 8px 14px;
+		font-size: 12px;
+		color: #ffd9a0;
+		background: rgba(255, 182, 72, .12);
+		border-bottom: 1px solid var(--line);
+	}
+
+	#banner[hidden] { display: none; }
+
+	#groups {
+		flex: 1 1 auto;
+		overflow: auto;
+		padding: 18px 18px 80px;
+	}
+
+	.group { margin-bottom: 26px; }
+
+	.group__head {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		margin-bottom: 10px;
+		padding-bottom: 6px;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.group__name {
+		flex: 1 1 auto;
+		font-size: 13px;
+		font-weight: bold;
+		letter-spacing: .04em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+
+	.group__count { font-size: 11px; color: var(--muted); }
+
+	.cards {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+		gap: 10px;
+	}
+
+	.card {
+		position: relative;
+		display: flex;
+		background: var(--card);
+		border: 1px solid var(--line);
+		border-radius: 5px;
+	}
+
+	/* A real anchor, so middle-click and "open in new tab" work; the action buttons are
+	   its siblings rather than its children, which nesting inside an <a> would be. */
+	.card__link {
+		flex: 1 1 auto;
+		min-width: 0;
+		display: flex;
+		gap: 11px;
+		align-items: flex-start;
+		padding: 11px 12px;
+		text-decoration: none;
+		color: inherit;
+		cursor: pointer;
+	}
+
+	.card:hover { border-color: var(--accent); }
+	.card--dragging { opacity: .35; }
+	.card--over { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+
+	.card__tile {
+		flex: 0 0 34px;
+		height: 34px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border-radius: 5px;
+		font-weight: bold;
+		font-size: 13px;
+		color: #fff;
+		overflow: hidden;
+	}
+
+	.card__tile img { width: 100%; height: 100%; object-fit: contain; }
+
+	.card__body { flex: 1 1 auto; min-width: 0; }
+
+	.card__title {
+		font-size: 13px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.card__host, .card__note {
+		font-size: 11px;
+		color: var(--muted);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.card__note { margin-top: 3px; }
+
+	.card__badge {
+		font-size: 9px;
+		text-transform: uppercase;
+		letter-spacing: .06em;
+		color: var(--accent);
+	}
+
+	.card__actions {
+		position: absolute;
+		top: 5px;
+		right: 5px;
+		display: none;
+		gap: 2px;
+		background: var(--card);
+	}
+
+	.card:hover .card__actions { display: flex; }
+	.card__actions button { padding: 2px 6px; font-size: 11px; }
+
+	#empty {
+		max-width: 460px;
+		margin: 80px auto;
+		text-align: center;
+		color: var(--muted);
+	}
+
+	#empty[hidden] { display: none; }
+
+	dialog {
+		width: min(440px, 92vw);
+		padding: 0;
+		color: var(--text);
+		background: var(--panel);
+		border: 1px solid var(--line);
+		border-radius: 6px;
+	}
+
+	dialog::backdrop { background: rgba(0, 0, 0, .55); }
+
+	.dialog__body { padding: 18px 20px; }
+	.dialog__body h2 { margin: 0 0 14px; font-size: 16px; }
+
+	label {
+		display: block;
+		margin-bottom: 12px;
+		font-size: 12px;
+		color: var(--muted);
+	}
+
+	label input[type=text], label select {
+		display: block;
+		width: 100%;
+		margin-top: 4px;
+		padding: 7px 9px;
+		font: inherit;
+		font-size: 13px;
+		color: var(--text);
+		background: rgba(0, 0, 0, .3);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+	}
+
+	label.inline {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+	}
+
+	label.inline input { margin: 0; }
+
+	.dialog__foot {
+		display: flex;
+		justify-content: flex-end;
+		gap: 8px;
+		padding: 12px 20px;
+		border-top: 1px solid var(--line);
+		background: rgba(0, 0, 0, .18);
+	}
+
+	.hint { font-size: 11px; color: var(--muted); margin: -6px 0 12px; }
+	.error { color: var(--danger); font-size: 12px; margin-bottom: 10px; min-height: 16px; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+	<input id="search" type="search" placeholder="Search bookmarks" autocomplete="off">
+	<button id="add" class="primary">Add link</button>
+	<button id="addGroup">Add group</button>
+	<button id="favicons" title="Fetch each site's own favicon">Favicons: off</button>
+</div>
+
+<div id="banner" hidden></div>
+
+<div id="groups"></div>
+<div id="empty" hidden>Nothing matches that.</div>
+
+<dialog id="editor">
+	<form method="dialog">
+		<div class="dialog__body">
+			<h2 id="editorTitle">Add link</h2>
+			<div class="error" id="editorError"></div>
+			<label>Title<input type="text" id="fTitle" autocomplete="off"></label>
+			<label>URL<input type="text" id="fUrl" autocomplete="off" placeholder="example.com, /home/about.md, or /home/ for a folder"></label>
+			<label>Note<input type="text" id="fNote" autocomplete="off"></label>
+			<label>Group<select id="fGroup"></select></label>
+			<label class="inline" id="fFrameLabel"><input type="checkbox" id="fFrame"> Open inside PixOS</label>
+			<div class="hint" id="fFrameHint">
+				Off by default: most sites refuse to be shown in a frame, and open in a new
+				browser tab instead.
+			</div>
+		</div>
+		<div class="dialog__foot">
+			<button value="cancel">Cancel</button>
+			<button value="save" class="primary" id="editorSave">Save</button>
+		</div>
+	</form>
+</dialog>
+
+<script type="module">
+import * as links from './js/links.js';
+
+var ui = {
+	search: document.getElementById('search'),
+	add: document.getElementById('add'),
+	addGroup: document.getElementById('addGroup'),
+	favicons: document.getElementById('favicons'),
+	banner: document.getElementById('banner'),
+	groups: document.getElementById('groups'),
+	empty: document.getElementById('empty'),
+	editor: document.getElementById('editor'),
+	editorTitle: document.getElementById('editorTitle'),
+	editorError: document.getElementById('editorError'),
+	fTitle: document.getElementById('fTitle'),
+	fUrl: document.getElementById('fUrl'),
+	fNote: document.getElementById('fNote'),
+	fGroup: document.getElementById('fGroup'),
+	fFrame: document.getElementById('fFrame'),
+	fFrameLabel: document.getElementById('fFrameLabel'),
+	fFrameHint: document.getElementById('fFrameHint')
+};
+
+var FILE = '/settings/links.json';
+
+// The same feature-detect the other PixOS apps use. Without a shell there is nothing to
+// save to, so the app shows the bundled document and says it is read-only rather than
+// letting edits vanish on reload.
+var shell = null;
+try {
+	shell = (window.parent !== window && window.parent.saveFileLocal) ? window.parent : null;
+}
+catch (err) {
+	shell = null;
+}
+
+var doc = links.normalize(links.DEFAULT_DOC);
+var editing = null;
+var dragging = null;
+
+boot();
+
+async function boot () {
+	if (!shell) {
+		banner('Running outside PixOS — showing the bundled bookmarks, read-only.');
+		draw();
+		return;
+	}
+
+	// Three outcomes, and only one of them may write: a 404 means there is no file yet,
+	// anything else that fails means there is a file this app could not read -- and
+	// redrawing the defaults over it would look exactly like the bookmarks were deleted.
+	var response;
+	try {
+		response = await fetch('/__browserfs__' + FILE + '?' + Date.now(), {cache: 'no-store'});
+	}
+	catch (err) {
+		banner('Could not read ' + FILE + ': ' + (err && err.message ? err.message : err)
+			+ ' — nothing has been overwritten.');
+		draw();
+		return;
+	}
+
+	if (response.status === 404) {
+		// First run: write the bundled document out so there is a real file to edit.
+		doc = links.normalize(links.DEFAULT_DOC);
+		draw();
+		save();
+		return;
+	}
+
+	if (!response.ok) {
+		banner('Could not read ' + FILE + ' (' + response.status + ') — nothing has been overwritten.');
+		draw();
+		return;
+	}
+
+	try {
+		doc = links.normalize(await response.json());
+	}
+	catch (err) {
+		banner('Could not read ' + FILE + ' — it is not valid JSON. Nothing has been overwritten.');
+	}
+	draw();
+}
+
+function banner (text) {
+	ui.banner.hidden = !text;
+	ui.banner.textContent = text || '';
+}
+
+async function save () {
+	if (!shell) {
+		return;
+	}
+	try {
+		await shell.saveFileLocal(FILE, shell.Buffer.from(links.serialize(doc)));
+		banner('');
+	}
+	catch (err) {
+		banner('Could not save ' + FILE + ': ' + (err && err.message ? err.message : err));
+	}
+}
+
+// --- drawing ----------------------------------------------------------------------
+
+function draw () {
+	ui.favicons.textContent = 'Favicons: ' + (doc.favicons ? 'on' : 'off');
+	var visible = links.search(doc, ui.search.value);
+
+	ui.groups.innerHTML = '';
+	visible.forEach(function (group) {
+		ui.groups.append(drawGroup(group));
+	});
+	ui.empty.hidden = visible.length > 0;
+	if (!visible.length) {
+		ui.empty.textContent = ui.search.value.trim()
+			? 'Nothing matches that.'
+			: 'No bookmarks yet — use Add link.';
+	}
+}
+
+function drawGroup (group) {
+	var node = document.createElement('section');
+	node.className = 'group';
+	node.dataset.group = group.id;
+
+	var head = document.createElement('div');
+	head.className = 'group__head';
+
+	var name = document.createElement('div');
+	name.className = 'group__name';
+	name.textContent = group.name;
+
+	var count = document.createElement('span');
+	count.className = 'group__count';
+	count.textContent = group.links.length + (group.links.length === 1 ? ' link' : ' links');
+
+	head.append(name, count);
+
+	if (shell) {
+		head.append(
+			action('Rename', function () {
+				var next = prompt('Group name', group.name);
+				if (next != null) {
+					links.renameGroup(doc, group.id, next);
+					draw();
+					save();
+				}
+			}),
+			action('Delete', function () {
+				if (group.links.length && !confirm('Delete "' + group.name + '" and its '
+					+ group.links.length + ' link(s)?')) {
+					return;
+				}
+				if (!links.removeGroup(doc, group.id)) {
+					alert('The last group cannot be deleted.');
+					return;
+				}
+				draw();
+				save();
+			}, 'danger')
+		);
+	}
+
+	node.append(head);
+
+	var cards = document.createElement('div');
+	cards.className = 'cards';
+	group.links.forEach(function (link) {
+		cards.append(drawCard(link, group));
+	});
+	// Dropping onto the empty space below a group appends to it, which is the only way
+	// to move a link into a group that has none.
+	cards.addEventListener('dragover', function (e) {
+		if (dragging) {
+			e.preventDefault();
+		}
+	});
+	cards.addEventListener('drop', function (e) {
+		if (!dragging) {
+			return;
+		}
+		e.preventDefault();
+		links.moveLink(doc, dragging, group.id, group.links.length);
+		dragging = null;
+		draw();
+		save();
+	});
+
+	node.append(cards);
+	return node;
+}
+
+function action (label, run, extra) {
+	var button = document.createElement('button');
+	button.className = 'link' + (extra ? ' ' + extra : '');
+	button.textContent = label;
+	button.addEventListener('click', run);
+	return button;
+}
+
+function drawCard (link, group) {
+	var card = document.createElement('div');
+	card.className = 'card';
+	card.dataset.link = link.id;
+
+	var anchor = document.createElement('a');
+	anchor.className = 'card__link';
+	anchor.href = link.url;
+	if (links.isExternal(link.url) && !link.frame) {
+		anchor.target = '_blank';
+		anchor.rel = 'noopener noreferrer';
+	}
+
+	var tile = document.createElement('div');
+	tile.className = 'card__tile';
+	var look = links.tileFor(link);
+	tile.style.background = look.color;
+	tile.textContent = look.label;
+
+	if (doc.favicons) {
+		var iconUrl = links.faviconUrl(link);
+		if (iconUrl) {
+			var img = document.createElement('img');
+			img.src = iconUrl;
+			img.alt = '';
+			img.addEventListener('load', function () {
+				tile.textContent = '';
+				tile.style.background = 'rgba(255,255,255,.06)';
+				tile.append(img);
+			});
+		}
+	}
+
+	var body = document.createElement('div');
+	body.className = 'card__body';
+
+	var title = document.createElement('div');
+	title.className = 'card__title';
+	title.textContent = link.title;
+
+	var host = document.createElement('div');
+	host.className = 'card__host';
+	host.textContent = links.hostOf(link.url);
+
+	body.append(title, host);
+
+	if (link.note) {
+		var note = document.createElement('div');
+		note.className = 'card__note';
+		note.textContent = link.note;
+		body.append(note);
+	}
+	if (link.frame && links.isExternal(link.url)) {
+		var badge = document.createElement('div');
+		badge.className = 'card__badge';
+		badge.textContent = 'opens in PixOS';
+		body.append(badge);
+	}
+
+	anchor.append(tile, body);
+	card.append(anchor);
+
+	if (shell) {
+		var actions = document.createElement('div');
+		actions.className = 'card__actions';
+		actions.append(
+			action('Edit', function (e) {
+				e.preventDefault();
+				e.stopPropagation();
+				openEditor(link, group);
+			}),
+			action('✕', function (e) {
+				e.preventDefault();
+				e.stopPropagation();
+				links.removeLink(doc, link.id);
+				draw();
+				save();
+			}, 'danger')
+		);
+		card.append(actions);
+
+		card.draggable = true;
+		card.addEventListener('dragstart', function (e) {
+			dragging = link.id;
+			card.classList.add('card--dragging');
+			e.dataTransfer.effectAllowed = 'move';
+			// Firefox will not start a drag without data on the transfer.
+			e.dataTransfer.setData('text/plain', link.id);
+		});
+		card.addEventListener('dragend', function () {
+			dragging = null;
+			card.classList.remove('card--dragging');
+		});
+		card.addEventListener('dragover', function (e) {
+			if (!dragging || dragging === link.id) {
+				return;
+			}
+			e.preventDefault();
+			e.stopPropagation();
+			card.classList.add('card--over');
+		});
+		card.addEventListener('dragleave', function () {
+			card.classList.remove('card--over');
+		});
+		card.addEventListener('drop', function (e) {
+			if (!dragging) {
+				return;
+			}
+			e.preventDefault();
+			e.stopPropagation();
+			card.classList.remove('card--over');
+			var target = links.findLink(doc, link.id);
+			links.moveLink(doc, dragging, group.id, target ? target.index : 0);
+			dragging = null;
+			draw();
+			save();
+		});
+	}
+
+	anchor.addEventListener('click', function (e) {
+		open(e, link);
+	});
+
+	return card;
+}
+
+// Three destinations, and the choice is the link's, not the app's:
+//   a filesystem path            -> the shell opens it in its default app
+//   external, "open inside"      -> a PixOS window
+//   external, the default        -> a new browser tab
+//
+// A trailing slash is what marks a bookmark as a folder: openPath always lands in
+// Explorer, so sending a file through it would open the directory instead of the file.
+function open (e, link) {
+	if (!links.isExternal(link.url)) {
+		e.preventDefault();
+		if (!shell) {
+			return;
+		}
+		if (link.url.endsWith('/')) {
+			shell.openPath(link.url);
+		}
+		else {
+			shell.openFile(link.url);
+		}
+		return;
+	}
+	if (link.frame && shell && shell.openUrl) {
+		e.preventDefault();
+		shell.openUrl(link.url, link.title);
+	}
+	// Otherwise the anchor's own target="_blank" does the work.
+}
+
+// --- editing ----------------------------------------------------------------------
+
+function openEditor (link, group) {
+	editing = link ? link.id : null;
+	ui.editorTitle.textContent = link ? 'Edit link' : 'Add link';
+	ui.editorError.textContent = '';
+	ui.fTitle.value = link ? link.title : '';
+	ui.fUrl.value = link ? link.url : '';
+	ui.fNote.value = link ? link.note : '';
+	ui.fFrame.checked = !!(link && link.frame);
+
+	ui.fGroup.innerHTML = '';
+	doc.groups.forEach(function (candidate) {
+		var option = document.createElement('option');
+		option.value = candidate.id;
+		option.textContent = candidate.name;
+		ui.fGroup.append(option);
+	});
+	ui.fGroup.value = (group || doc.groups[0]).id;
+
+	syncFrameField();
+	ui.editor.showModal();
+	ui.fTitle.focus();
+}
+
+// The toggle only means something for a site. A filesystem path has nowhere else to open,
+// so rather than leave an enabled checkbox that does nothing, the field greys out and
+// says why -- which is what the checkbox appearing to be ignored actually was.
+function syncFrameField () {
+	var external = links.isExternal(links.normalizeUrl(ui.fUrl.value) || '');
+	ui.fFrame.disabled = !external;
+	ui.fFrameLabel.style.opacity = external ? '' : '.5';
+	if (!external) {
+		ui.fFrame.checked = false;
+	}
+	ui.fFrameHint.textContent = external
+		? 'Off by default: most sites refuse to be shown in a frame, and open in a new '
+			+ 'browser tab instead. A framed site also gets no cookies, so one you are '
+			+ 'signed in to will render signed out.'
+		: 'Only applies to http(s) links. A path in the filesystem always opens in PixOS, '
+			+ 'in whichever app handles it.';
+}
+
+ui.fUrl.addEventListener('input', syncFrameField);
+
+ui.editor.addEventListener('close', function () {
+	if (ui.editor.returnValue !== 'save') {
+		return;
+	}
+
+	var url = links.normalizeUrl(ui.fUrl.value);
+	if (!url) {
+		// Reopening rather than discarding: the typed values are still in the fields.
+		// Deferred by a tick because reopening a dialog from inside its own close event
+		// is not something every browser allows.
+		setTimeout(function () {
+			ui.editor.showModal();
+			ui.editorError.textContent = 'That is not a usable address. Use http(s), a bare '
+				+ 'hostname, or a path starting with /.';
+		}, 0);
+		return;
+	}
+
+	var patch = {
+		title: ui.fTitle.value,
+		url: url,
+		note: ui.fNote.value,
+		frame: ui.fFrame.checked
+	};
+
+	if (editing) {
+		var found = links.findLink(doc, editing);
+		links.updateLink(doc, editing, patch);
+		// Changing the group is a move, and moveLink is the only thing that knows how.
+		if (found && found.group.id !== ui.fGroup.value) {
+			links.moveLink(doc, editing, ui.fGroup.value);
+		}
+	}
+	else {
+		links.addLink(doc, ui.fGroup.value, patch);
+	}
+	editing = null;
+	draw();
+	save();
+});
+
+ui.add.addEventListener('click', function () {
+	if (!shell) {
+		banner('Running outside PixOS — showing the bundled bookmarks, read-only.');
+		return;
+	}
+	openEditor(null, doc.groups[0]);
+});
+
+ui.addGroup.addEventListener('click', function () {
+	if (!shell) {
+		return;
+	}
+	var name = prompt('Group name', 'New group');
+	if (name == null) {
+		return;
+	}
+	links.addGroup(doc, name);
+	draw();
+	save();
+});
+
+ui.favicons.addEventListener('click', function () {
+	if (!doc.favicons && !confirm(
+		'Fetching favicons asks every bookmarked site for its icon, which tells each of '
+		+ 'them that you opened this app — and needs a network connection.\n\nTurn it on?')) {
+		return;
+	}
+	doc.favicons = !doc.favicons;
+	draw();
+	save();
+});
+
+ui.search.addEventListener('input', draw);
+ui.search.addEventListener('keydown', function (e) {
+	if (e.key === 'Escape' && ui.search.value) {
+		e.stopPropagation();
+		ui.search.value = '';
+		draw();
+	}
+});
+</script>
+
+</body>
+</html>

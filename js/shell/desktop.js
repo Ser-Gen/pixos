@@ -7,6 +7,9 @@
 
 import * as wallpaper from './wallpaper.js';
 import * as menu from './context-menu.js';
+import * as widgets from './widgets.js';
+// Imported for its side effect: registering the 'shader' provider with wallpaper.js.
+import * as shader from './wallpaper-shader.js';
 
 var STYLE_ID = 'pixos-desktop-style';
 
@@ -37,40 +40,6 @@ var CSS = `
 	border-radius: 3px;
 	padding: 1px 5px;
 	margin: 0 2px;
-}
-
-.PixPeekZone {
-	position: fixed;
-	right: 0;
-	bottom: 0;
-	width: 132px;
-	height: 10px;
-	z-index: 200;
-	cursor: pointer;
-}
-
-.PixPeekChip {
-	position: fixed;
-	right: 10px;
-	bottom: 10px;
-	z-index: 201;
-	padding: 5px 11px;
-	font-family: Arial, Helvetica, sans-serif;
-	font-size: 11px;
-	color: #d8dce3;
-	background: rgba(24, 27, 32, .82);
-	border: 1px solid rgba(255, 255, 255, .14);
-	cursor: pointer;
-	opacity: 0;
-	transition: opacity 160ms ease;
-	pointer-events: none;
-}
-
-.PixPeekZone:hover + .PixPeekChip,
-.PixPeekChip:hover,
-.PixShell--peek .PixPeekChip {
-	opacity: 1;
-	pointer-events: auto;
 }
 
 .PixDialog {
@@ -204,6 +173,7 @@ var hintEl = null;
 var wm = null;
 var buildMenu = function () { return []; };
 var persist = function () { return Promise.resolve(); };
+var onPeekChange = function () {};
 var config = {wallpaper: null};
 var peeking = false;
 
@@ -224,6 +194,7 @@ export function init (cfg) {
 	wm = cfg.wm;
 	buildMenu = cfg.buildMenu || buildMenu;
 	persist = cfg.persist || persist;
+	onPeekChange = cfg.onPeekChange || onPeekChange;
 
 	ensureStyle();
 	menu.setHost(overlaysEl);
@@ -236,20 +207,13 @@ export function init (cfg) {
 
 	hintEl = document.createElement('div');
 	hintEl.className = 'PixDesktop__hint';
+	// Deliberately not advertising Ctrl+Alt+D: the chord is taken by the OS on at least
+	// macOS, so the taskbar's corner button is the reliable route to the desktop.
 	hintEl.innerHTML = 'PixOS<br>Right-click for applications<br>'
-		+ '<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> shows the desktop';
+		+ 'The strip at the far right of the taskbar shows the desktop';
 	desktopEl.append(hintEl);
 
-	var zone = document.createElement('div');
-	zone.className = 'PixPeekZone';
-	zone.title = 'Show desktop';
-	zone.onclick = togglePeek;
-
-	var chip = document.createElement('div');
-	chip.className = 'PixPeekChip';
-	chip.textContent = 'Show desktop';
-	chip.onclick = togglePeek;
-	shellEl.append(zone, chip);
+	widgets.mount(desktopEl, cfg.widgets);
 
 	// One listener covers both cases. With no windows the layout is click-through, and
 	// while peeking so are the windows, so in either case the right-click lands here.
@@ -260,8 +224,20 @@ export function init (cfg) {
 
 	if (wm) {
 		wm.on('changed', refresh);
-		// Keys pressed while an app has focus, forwarded out of its iframe by the WM.
+		wm.on('workspaces-changed', refresh);
+		// A window arriving ends the peek. You asked to see the desktop for a moment, and
+		// launching something is the end of that moment -- without this, anything opened
+		// from the desktop menu, a launcher or a widget lands behind the peek and looks
+		// like a click that did nothing.
+		wm.on('opened', function () {
+			if (peeking) {
+				setPeek(false);
+			}
+		});
+		// Input while an app has focus, forwarded out of its iframe by the WM.
 		wm.on('keydown', onKeyDown);
+		// A click inside an app is a click outside the menu.
+		wm.on('mousedown', menu.close);
 	}
 
 	apply(cfg.wallpaper);
@@ -296,6 +272,7 @@ export function setPeek (on) {
 	if (peeking) {
 		menu.close();
 	}
+	onPeekChange(peeking);
 	refresh();
 }
 
@@ -306,7 +283,9 @@ export function togglePeek () {
 // Nothing above the fold decides this: the wallpaper renders only when it can actually
 // be seen. Phase 2's shader provider turns this into real battery savings.
 function refreshWallpaperActivity () {
-	var covered = !!(wm && wm.count() > 0) && !peeking;
+	// The active desktop's windows, not every window: an empty desktop next to a busy
+	// one still shows its wallpaper, and would otherwise sit frozen.
+	var covered = !!(wm && wm.count(wm.getActiveWorkspace()) > 0) && !peeking;
 	if (document.hidden || covered) {
 		wallpaper.pause();
 	}
@@ -316,13 +295,14 @@ function refreshWallpaperActivity () {
 }
 
 function refresh () {
-	var empty = !wm || wm.count() === 0;
+	var empty = !wm || wm.count(wm.getActiveWorkspace()) === 0;
 	if (shellEl) {
 		shellEl.classList.toggle('PixShell--empty', empty);
 	}
 	if (hintEl) {
 		hintEl.style.opacity = (empty || peeking) ? '1' : '0';
 	}
+	widgets.setVisible(empty || peeking);
 	refreshWallpaperActivity();
 }
 
@@ -381,11 +361,27 @@ export function openWallpaperPicker () {
 		}), close)
 	);
 
+	body.append(buildSwatchSection('Shaders', Object.keys(shader.BUILT_IN).map(function (key) {
+		return {
+			title: shader.BUILT_IN[key].label + ' (animated)',
+			css: 'linear-gradient(150deg, #101a2b, #241a33)',
+			active: current.type === 'shader' && current.value === key,
+			config: {type: 'shader', value: key}
+		};
+	}), close));
+
+	var shaderNote = document.createElement('p');
+	shaderNote.className = 'PixDialog__note';
+	shaderNote.textContent = 'Animated backgrounds stop rendering entirely while a window '
+		+ 'covers them, so they cost nothing when you are not looking. A .glsl file in the '
+		+ 'filesystem works too — Shadertoy-style mainImage(), set it from the field below.';
+	body.append(shaderNote);
+
 	var imageSection = document.createElement('div');
 	imageSection.className = 'PixDialog__section';
-	imageSection.innerHTML = '<span class="PixDialog__label">Image from the filesystem</span>'
+	imageSection.innerHTML = '<span class="PixDialog__label">A file from the filesystem</span>'
 		+ '<div class="PixDialog__row">'
-		+ '<input type="text" placeholder="/home/pictures/sea.jpg">'
+		+ '<input type="text" placeholder="/home/pictures/sea.jpg or /home/plasma.glsl">'
 		+ '<select><option value="cover">Cover</option><option value="contain">Contain</option>'
 		+ '<option value="center">Center</option><option value="tile">Tile</option></select>'
 		+ '<button class="PixButton">Set</button></div>'
@@ -399,10 +395,13 @@ export function openWallpaperPicker () {
 		fit.value = (current.options && current.options.fit) || 'cover';
 	}
 	imageSection.querySelector('button').onclick = function () {
-		if (!input.value.trim()) {
+		var value = input.value.trim();
+		if (!value) {
 			return;
 		}
-		setWallpaper({type: 'image', value: input.value.trim(), options: {fit: fit.value}});
+		setWallpaper(/\.(glsl|frag)$/i.test(value)
+			? {type: 'shader', value: value}
+			: {type: 'image', value: value, options: {fit: fit.value}});
 		close();
 	};
 	body.append(imageSection);

@@ -1,0 +1,37 @@
+{
+  "id": "markdown-viewer",
+  "name": "Markdown Viewer",
+  "version": "1.0.0",
+  "entryPath": "/apps/markdown-viewer/index.html",
+  "files": [
+    {
+      "path": "/apps/markdown-viewer/favicon.svg",
+      "hash": "sha256:9f30980daef1f63a12dd55c8febd8d9873183ee70bb0e8020835bd90ef1d21be"
+    },
+    {
+      "path": "/apps/markdown-viewer/index.html",
+      "hash": "sha256:b516cee9c8a8f7d7d6e62dfb20f13723d5ae1583e601da2dd8e96656b2cdef61"
+    },
+    {
+      "path": "/apps/markdown-viewer/js/markdown.js",
+      "hash": "sha256:3a4923dc2b4e44069c2673015119a377fc4f0fe7e3d3b828cc30f8d3a68a8df4"
+    },
+    {
+      "path": "/apps/markdown-viewer/pixos_supported",
+      "hash": "sha256:0eee160b6a3871cd9cca4d1fac71a4552148d15e4cf53a385784421165fc67c5"
+    },
+    {
+      "path": "/apps/markdown-viewer/pixos.app.json",
+      "hash": "sha256:407f03ec2dc4861eb20ea80e72b4c5913cb145a7d879163568b718275f705152"
+    }
+  ],
+  "icon": "/apps/markdown-viewer/favicon.svg",
+  "supported": {
+    "extensions": [
+      "md",
+      "markdown",
+      "mdown",
+      "mkd"
+    ]
+  }
+}

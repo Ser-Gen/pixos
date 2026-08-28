@@ -198,6 +198,13 @@ function buildManifestBody (appDir, stub, config) {
 		entryPath: stub.entryPath,
 		files: fileEntries
 	};
+	// An icon a hand-written stub declares wins; otherwise take the conventional
+	// filename if the app has one. Either way it has to be among the files above, or
+	// installing the app would not copy it and the launcher would show a broken image.
+	var icon = stub.icon || detectAppIcon(appDir);
+	if (icon && fileEntries.some(function (entry) { return entry.path === icon; })) {
+		manifest.icon = icon;
+	}
 	if (extensions.length) {
 		manifest.supported = { extensions: extensions };
 	}
@@ -211,6 +218,19 @@ function buildManifestBody (appDir, stub, config) {
 		manifest.update = stub.update;
 	}
 	return { manifest: manifest, manifestPath: manifestPath, manifestWebPath: manifestWebPath, fileEntries: fileEntries };
+}
+
+var ICON_FILE_NAMES = ['favicon.svg', 'icon.svg', 'favicon.png', 'icon.png'];
+
+// Most-preferred first: SVG scales to whatever size the taskbar and the launcher want.
+function detectAppIcon (appDir) {
+	for (var i = 0; i < ICON_FILE_NAMES.length; i++) {
+		var candidate = path.join(appDir, ICON_FILE_NAMES[i]);
+		if (fs.existsSync(candidate)) {
+			return toWebPath(candidate);
+		}
+	}
+	return null;
 }
 
 function sortFileEntries (entries) {

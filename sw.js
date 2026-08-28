@@ -402,7 +402,7 @@ self.addEventListener('fetch', function (event) {
                 askClient({type: 'readFile', path: decodedPath}).then(function(data) {
                     resolve(makeFileResponse(new Uint8Array(data.buffer), path));
                 }).catch(function() {
-                    resolve(textResponse(error404Page(path)));
+                    resolve(notFoundResponse(path));
                 });
             }
             function sendFile(path) {
@@ -430,7 +430,7 @@ self.addEventListener('fetch', function (event) {
                         askClient({type: 'readFile', path: decodedPath}).then(function(d) {
                             resolve(makeFileResponse(new Uint8Array(d.buffer), path));
                         }).catch(function() {
-                            resolve(textResponse(error404Page(path)));
+                            resolve(notFoundResponse(path));
                         });
                     } else if (data.isDirectory) {
                         if (path.substr(-1, 1) !== '/') {
@@ -443,11 +443,11 @@ self.addEventListener('fetch', function (event) {
                                 resolve(textResponse(fileListingPage(path, d.list)));
                             }
                         }).catch(function() {
-                            resolve(textResponse(error404Page(path)));
+                            resolve(notFoundResponse(path));
                         });
                     }
                 }).catch(function() {
-                    resolve(textResponse(error404Page(path)));
+                    resolve(notFoundResponse(path));
                 });
             }
             function serve(path) {
@@ -475,11 +475,11 @@ self.addEventListener('fetch', function (event) {
                                         resolve(textResponse(fileListingPage(path, data.list)));
                                     }
                                 }).catch(function() {
-                                    resolve(textResponse(error404Page(path)));
+                                    resolve(notFoundResponse(path));
                                 });
                             }
                         }).catch(function() {
-                            resolve(textResponse(error404Page(path)));
+                            resolve(notFoundResponse(path));
                         });
                         return;
                     }
@@ -548,15 +548,25 @@ function listDirectory({fs, path, list}) {
 }
 
 // -----------------------------------------------------------------------------
-function textResponse(string, filename) {
+function textResponse(string, status) {
     var blob = new Blob([string], {
         type: 'text/html'
     });
     return new Response(blob, {
+        status: status || 200,
+        statusText: status === 404 ? 'Not Found' : 'OK',
         headers: isolationHeaders({
             'Content-Type': 'text/html'
         })
     });
+}
+
+// A missing file has to answer with a real 404. It used to answer 200 with the page
+// below as the body, which meant every fetch() of a filesystem path saw response.ok ===
+// true and then tried to parse an HTML error page as its own content -- a first-run
+// "file does not exist yet" was indistinguishable from a corrupt file.
+function notFoundResponse(path) {
+    return textResponse(error404Page(path), 404);
 }
 
 // -----------------------------------------------------------------------------

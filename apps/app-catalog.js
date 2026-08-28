@@ -287,6 +287,27 @@
 			"/apps/pico8/zoot_talking.gif",
 		],
 	},
+	bookmarks: {
+		name: 'Bookmarks',
+		entryPath: '/apps/bookmarks/index.html',
+		files: [
+			'/apps/bookmarks/favicon.svg',
+			'/apps/bookmarks/index.html',
+			'/apps/bookmarks/js/links.js',
+			'/apps/bookmarks/pixos.app.json',
+		],
+	},
+	'markdown-viewer': {
+		name: 'Markdown Viewer',
+		entryPath: '/apps/markdown-viewer/index.html',
+		files: [
+			'/apps/markdown-viewer/favicon.svg',
+			'/apps/markdown-viewer/index.html',
+			'/apps/markdown-viewer/js/markdown.js',
+			'/apps/markdown-viewer/pixos_supported',
+			'/apps/markdown-viewer/pixos.app.json',
+		],
+	},
 	jsdos: {
 		name: 'JS-DOS',
 		entryPath: '/apps/jsdosv7.5.0/index.html',

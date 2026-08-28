@@ -64,9 +64,12 @@
 		z-index: 0;
 		overflow: hidden;
 	}
+	/* The bottom inset is the taskbar's height, published by taskbar.js so the number
+	   lives in one place. GoldenLayout lays windows out inside this box and the iframe
+	   rects follow from it, so nothing ends up underneath the bar. */
 	#root {
 		position: absolute;
-		inset: 0;
+		inset: 0 0 var(--pixos-taskbar-height, 38px) 0;
 		z-index: 10;
 	}
 	#windows {
@@ -74,6 +77,11 @@
 		inset: 0;
 		z-index: 100;
 		pointer-events: none;
+	}
+	#taskbar {
+		position: fixed;
+		inset: auto 0 0 0;
+		z-index: 200;
 	}
 	#overlays {
 		position: fixed;
@@ -84,6 +92,13 @@
 	#windows > *,
 	#overlays > * {
 		pointer-events: auto;
+	}
+
+	/* One layout per desktop, stacked in the same box; only the active one is shown.
+	   Hiding rather than detaching is what keeps every iframe alive across a switch. */
+	#root > .PixWorkspace {
+		position: absolute;
+		inset: 0;
 	}
 
 	[data-goldenlayout-contid] {
@@ -128,6 +143,56 @@
 		background-color: #1b1e23;
 		box-sizing: border-box;
 	}
+
+	/* A window showing an external site. Most sites refuse to be framed and there is no
+	   way to detect that from here -- a blocked frame still fires load -- so the bar is
+	   always there rather than appearing after a guess about what went wrong. */
+	.PixWebView {
+		display: flex;
+		flex-direction: column;
+		border: 1px solid #000;
+		background: #1b1e23;
+		box-sizing: border-box;
+	}
+
+	.PixWebView iframe {
+		flex: 1 1 auto;
+		width: 100%;
+		border: 0;
+	}
+
+	.PixWebView__bar {
+		flex: 0 0 auto;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		padding: 5px 8px;
+		font: 11px/1.4 Arial, Helvetica, sans-serif;
+		color: #98a0ac;
+		background: #171a20;
+		border-bottom: 1px solid rgba(255, 255, 255, .08);
+	}
+
+	.PixWebView__url {
+		flex: 1 1 auto;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.PixWebView__bar button {
+		flex: none;
+		font: inherit;
+		padding: 3px 8px;
+		color: #dfe3ea;
+		background: rgba(255, 255, 255, .07);
+		border: 1px solid rgba(255, 255, 255, .12);
+		border-radius: 3px;
+		cursor: pointer;
+	}
+
+	.PixWebView__bar button:hover { background: rgba(255, 255, 255, .14); }
 	#omg {
 		position: fixed;
 		top: 0;
@@ -140,12 +205,19 @@
 	<div id="desktop"></div>
 	<div id="root"></div>
 	<div id="windows"></div>
+	<div id="taskbar"></div>
 	<div id="overlays"></div>
 </div>
 
 <script type="module">
 import WM from "./js/shell/wm.js";
 import * as desktop from "./js/shell/desktop.js";
+import * as taskbar from "./js/shell/taskbar.js";
+import * as appsModel from "./js/shell/apps-model.js";
+import * as contextMenu from "./js/shell/context-menu.js";
+import * as session from "./js/shell/session.js";
+import * as startMenu from "./js/shell/start-menu.js";
+import * as palette from "./js/shell/command-palette.js";
 
 var winManager = new WM({
 	root: '#root',
@@ -271,81 +343,227 @@ function fsOnInit () {
 		});
 	}
 
-	Promise.all([
+	// The preload list is data, not code: settings/preinstall.json says which files a
+	// fresh system needs, which catalog apps to install, which user files to seed and
+	// which extensions get a default app. It is fetched over HTTP from the served repo
+	// rather than read from BrowserFS, because on a first boot BrowserFS is empty.
+	//
+	// A boot must survive that file being unreachable, so FALLBACK_PREINSTALL below is
+	// the minimum that still produces a usable system: the shell's own two apps and the
+	// registry they need.
+	var FALLBACK_PREINSTALL = {
+		files: [
+			{path: '/apps/explorer/index.html', refresh: true},
+			{path: '/apps/explorer/favicon.svg', refresh: true},
+			{path: '/apps/app-manager/index.html', refresh: true},
+			{path: '/apps/app-manager/favicon.svg', refresh: true},
+			{path: '/apps/app-catalog.js', refresh: true},
+			{path: '/apps/registry.json', refresh: true}
+		],
+		apps: [],
+		seed: [],
+		defaultApps: {}
+	};
 
-		// COMMON
-		'/apps/jquery-1.11.1.min.js',
-		'/apps/jszip.3.10.1.min.js',
-		'/apps/file-type.19.0.0.js',
-		'/apps/qrcode.js',
-		'/apps/fix-webm-duration.js',
+	var preinstall = FALLBACK_PREINSTALL;
 
-		// EXPLORER
-		'/apps/explorer/index.html',
+	function fetchServed (filePath) {
+		return fetch(path.join(scope, filePath) + '?' + Math.random());
+	}
 
-		// ACE EDITOR
-		'/apps/ace/index.html',
-		'/apps/ace/pixos_supported',
+	async function loadPreinstallConfig () {
+		try {
+			var response = await fetchServed('/settings/preinstall.json');
+			if (!response.ok) {
+				throw new Error(response.status + ' ' + response.statusText);
+			}
+			var config = await response.json();
+			return {
+				files: Array.isArray(config.files) ? config.files : [],
+				apps: Array.isArray(config.apps) ? config.apps : [],
+				seed: Array.isArray(config.seed) ? config.seed : [],
+				defaultApps: (config.defaultApps && typeof config.defaultApps === 'object') ? config.defaultApps : {}
+			};
+		}
+		catch (err) {
+			console.error('settings/preinstall.json could not be read; '
+				+ 'booting with the built-in minimum', err);
+			return FALLBACK_PREINSTALL;
+		}
+	}
 
-		// 7ZIP
-		'/apps/7z/main.js',
-		'/apps/7z/7zz.wasm',
-		'/apps/7z/7zz.es6.min.js',
-
-		// APP MANAGER
-		'/apps/app-manager/index.html',
-		'/apps/app-catalog.js',
-		'/apps/registry.json',
-	]
-	.map(item=>{
-		return new Promise(function (resolve) {
-			fs.stat(item, function (e, stats) {
-				if (
-					!stats
-					|| item.startsWith('/apps/explorer/')
-					|| item.startsWith('/apps/app-manager/')
-					|| item.startsWith('/apps/app-catalog.js')
-				) {
-					fetch(path.join(scope, item) +'?'+Math.random())
-						.then(function (r) { return r.arrayBuffer(); })
-						.then(function (ab) {
-							return new Promise(function (writeResolve) {
-								writeFile(item, Buffer.from(ab), function () {
-									writeResolve(item);
-								});
-							});
-						})
-						.then(function () {
-							resolve(item);
-						})
-						.catch(function (err) {
-							console.error(err);
-							resolve(item);
-						});
+	// `refresh` files are re-copied on every boot -- the shell's own apps and the
+	// generated registry, which have to track the served copy or an update never
+	// arrives. Everything else is copied only when missing, so a local edit survives.
+	async function copyPreinstallFiles (entries) {
+		await Promise.all(entries.map(async function (entry) {
+			var item = typeof entry === 'string' ? {path: entry} : entry;
+			if (!item || !item.path) {
+				return;
+			}
+			if (!item.refresh && await stat(item.path)) {
+				return;
+			}
+			try {
+				var response = await fetchServed(item.path);
+				if (!response.ok) {
+					throw new Error(response.status + ' ' + response.statusText);
 				}
-				else {
-					resolve(item);
+				await writeFilePromise(item.path, Buffer.from(await response.arrayBuffer()));
+			}
+			catch (err) {
+				// One missing file must not stop the boot: the rest of the system is
+				// still worth having, and App Manager can repair an app later.
+				console.error('Preloading ' + item.path + ' failed', err);
+			}
+		}));
+	}
+
+	// What preinstall has already done, so it never does it twice. One rule covers both
+	// halves: anything the user removes afterwards stays removed. A preinstall list that
+	// puts back what you deleted is worse than no preinstall list at all.
+	//
+	// The file used to be a bare array of app ids; that form is still read.
+	async function readPreinstallState () {
+		var raw = await readJsonFile('/settings/preinstalled.json', null);
+		if (Array.isArray(raw)) {
+			return {apps: raw.slice(), seeded: []};
+		}
+		return {
+			apps: Array.isArray(raw && raw.apps) ? raw.apps.slice() : [],
+			seeded: Array.isArray(raw && raw.seeded) ? raw.seeded.slice() : []
+		};
+	}
+
+	function writePreinstallState (state) {
+		return writeFilePromise('/settings/preinstalled.json', Buffer.from(JSON.stringify(state, null, 2)));
+	}
+
+	// User files, copied from a template exactly once and never refreshed: /home/about.md
+	// is yours the moment it exists, and a boot that overwrote it would be a bug you only
+	// noticed after losing something. Recorded once written, so deleting the file is a
+	// decision the next boot respects rather than undoes.
+	async function seedUserFiles (entries, state) {
+		var changed = false;
+
+		for (var i = 0; i < entries.length; i++) {
+			var entry = entries[i];
+			if (!entry || !entry.path || !entry.from) {
+				continue;
+			}
+			if (state.seeded.indexOf(entry.path) !== -1 || await stat(entry.path)) {
+				// Already seeded once, or already there. Record the second case too, so a
+				// system that predates this bookkeeping does not re-seed after a delete.
+				if (state.seeded.indexOf(entry.path) === -1) {
+					state.seeded.push(entry.path);
+					changed = true;
 				}
-			});
+				continue;
+			}
+			try {
+				var response = await fetchServed(entry.from);
+				if (!response.ok) {
+					throw new Error(response.status + ' ' + response.statusText);
+				}
+				await writeFilePromise(entry.path, Buffer.from(await response.arrayBuffer()));
+				state.seeded.push(entry.path);
+				changed = true;
+			}
+			catch (err) {
+				// Not recorded, so the next boot tries again: a template that failed to
+				// download is not the user deciding they do not want the file.
+				console.error('Seeding ' + entry.path + ' failed', err);
+			}
+		}
+
+		return changed;
+	}
+
+	// Catalog apps that should be there on a fresh system, installed once and recorded.
+	async function installPreinstallApps (ids, state) {
+		var changed = false;
+
+		for (var i = 0; i < ids.length; i++) {
+			var id = ids[i];
+			if (state.apps.indexOf(id) !== -1) {
+				continue;
+			}
+			try {
+				await window.installAppById(id);
+			}
+			catch (err) {
+				console.error('Preinstalling ' + id + ' failed', err);
+				// Not recorded, so the next boot tries again: a failure here is usually a
+				// file that had not been generated yet, not a decision.
+				continue;
+			}
+			state.apps.push(id);
+			changed = true;
+		}
+
+		return changed;
+	}
+
+	// Only extensions with no default yet: this is a suggestion for a fresh system, not
+	// a preference the shell gets to reassert over the user's own choice.
+	async function seedDefaultApps (map) {
+		var extensions = Object.keys(map || {});
+		if (!extensions.length) {
+			return;
+		}
+		var associations = window.defaultAppAssociations || {};
+		var changed = false;
+		extensions.forEach(function (extension) {
+			var key = normalizeExtension(extension);
+			if (associations[key] || !isInstalledApp(map[extension])) {
+				return;
+			}
+			associations[key] = map[extension];
+			changed = true;
 		});
-	}))
-	.then(function () {
-		return loadDefaultAppAssociations();
-	})
-	.then(function () {
-		return initDesktop();
-	})
-	.then(function () {
-		window.apps = [];
-		openApp('explorer').catch(function (err) {
-			console.error('Failed to open Explorer', err);
+		if (changed) {
+			window.defaultAppAssociations = associations;
+			await persistDefaultAppAssociations();
+		}
+	}
+
+	var preinstallState = {apps: [], seeded: []};
+
+	loadPreinstallConfig()
+		.then(function (config) {
+			preinstall = config;
+			return copyPreinstallFiles(config.files);
+		})
+		.then(async function () {
+			preinstallState = await readPreinstallState();
+			return seedUserFiles(preinstall.seed, preinstallState);
+		})
+		.then(function () {
+			return loadDefaultAppAssociations();
+		})
+		.then(function () {
+			return initDesktop();
+		})
+		.then(async function () {
+			window.apps = [];
+			// Awaited, unlike before: restoring a session needs to resolve each window's
+			// app to an entry path, and that is only possible once the registry is built.
+			try {
+				await window.refreshInstalledAppsRegistry();
+				scheduleInstalledAppSupportHydration();
+			}
+			catch (err) {
+				console.error('refreshInstalledAppsRegistry failed', err);
+			}
+			// After the registry, because installing reads it; before the session,
+			// because restoring a window has to be able to resolve its app.
+			await installPreinstallApps(preinstall.apps, preinstallState);
+			// One write for both halves, at the end: a crash mid-boot leaves the state as
+			// it was, and the next boot repeats work rather than skipping it.
+			await writePreinstallState(preinstallState);
+			await seedDefaultApps(preinstall.defaultApps);
+			await initSession();
 		});
-		window.refreshInstalledAppsRegistry().then(function () {
-			scheduleInstalledAppSupportHydration();
-		}).catch(function (err) {
-			console.error('refreshInstalledAppsRegistry failed', err);
-		});
-	})
 
 	function writeFile(filePath, contents, cb) {
 		fs.stat(path.dirname(filePath), async function (e, stats) {
@@ -752,15 +970,271 @@ function fsOnInit () {
 	// still leaves a surface with a working right-click menu.
 	async function initDesktop () {
 		var settings = await readJsonFile('/settings/desktop.json', {});
+
+		appsModel.init({
+			listApps: listLaunchableApps,
+			readRecents: function () {
+				return readJsonFile('/settings/recent-apps.json', []);
+			},
+			writeRecents: function (ids) {
+				return writeFilePromise('/settings/recent-apps.json', Buffer.from(JSON.stringify(ids, null, 2)));
+			}
+		});
+		await appsModel.load();
+
 		desktop.init({
 			shell: document.getElementById('shell'),
 			desktop: document.getElementById('desktop'),
 			overlays: document.getElementById('overlays'),
 			wm: winManager,
 			wallpaper: settings.wallpaper,
+			widgets: settings.widgets,
 			buildMenu: buildDesktopMenu,
-			persist: persistDesktopSettings
+			persist: persistDesktopSettings,
+			onPeekChange: function (peeking) {
+				taskbar.setPeeking(peeking);
+			}
 		});
+		startMenu.init({
+			host: document.getElementById('overlays'),
+			openApp: openApp,
+			actions: [
+				{label: 'App Manager', run: function () { openApp('app-manager'); }},
+				{label: 'Wallpaper...', run: function () { desktop.openWallpaperPicker(); }},
+				{label: 'Show desktop', run: function () { desktop.togglePeek(); }}
+			],
+			onClose: function () {
+				taskbar.setStartOpen(false);
+			}
+		});
+
+		palette.init({
+			host: document.getElementById('overlays'),
+			wm: winManager,
+			getApp: getLaunchableApp,
+			openApp: openApp,
+			openFile: openFile,
+			openPath: openPath,
+			listFiles: listDirectoryEntries,
+			commands: buildShellCommands
+		});
+
+		taskbar.init({
+			host: document.getElementById('taskbar'),
+			isMenuOpen: startMenu.isOpen,
+			onCloseMenu: startMenu.close,
+			wm: winManager,
+			getApp: getLaunchableApp,
+			onStart: function (anchorRect, anchorElement) {
+				startMenu.open(anchorRect, anchorElement);
+			},
+			onPeek: function () {
+				desktop.togglePeek();
+			},
+			// Clicking a window button while peeking is a request to see that window, so
+			// it ends the peek as well as selecting the tab.
+			onShowWindow: function (id) {
+				desktop.setPeek(false);
+				winManager.focusWindow(id);
+			},
+			onDesktopMenu: openDesktopContextMenu
+		});
+
+		window.addEventListener('keydown', onShellHotkey, true);
+		// The same handler for keys pressed while an app iframe has focus.
+		winManager.on('keydown', onShellHotkey);
+		// Clicking into an app dismisses the launchers, the same as clicking the desktop.
+		// Their own window listeners cannot see it: the event never leaves the iframe.
+		winManager.on('mousedown', function () {
+			startMenu.close();
+			palette.close();
+		});
+	}
+
+	async function initSession () {
+		session.init({
+			wm: winManager,
+			clean: new URLSearchParams(location.search).get('clean') === '1',
+			read: function () {
+				return readJsonFile('/settings/session.json', null);
+			},
+			write: function (data) {
+				return writeFilePromise('/settings/session.json', Buffer.from(JSON.stringify(data, null, 2)));
+			},
+			writeAside: function (data) {
+				return writeFilePromise('/settings/session-failed.json', Buffer.from(JSON.stringify(data, null, 2)));
+			},
+			launch: launch
+		});
+
+		// A session file that cannot be restored at all must not wedge the boot: log it,
+		// start empty, and carry on to opening Explorer below.
+		var result = {restored: 0, reason: null};
+		try {
+			result = await session.restore();
+		}
+		catch (err) {
+			console.error('Restoring the session failed', err);
+			result = {restored: 0, reason: 'the saved session could not be read'};
+		}
+		// Otherwise every later reload of this tab would keep starting clean, because the
+		// flag is in the URL rather than in anything the user meant to make permanent.
+		if (location.search.indexOf('clean=1') > -1 && window.history && history.replaceState) {
+			history.replaceState(null, '', location.pathname);
+		}
+		if (result.reason) {
+			console.log('PixOS session: starting clean (' + result.reason + ')');
+		}
+		// A restore that brought nothing back still needs somewhere to start.
+		if (!result.restored) {
+			openApp('explorer').catch(function (err) {
+				console.error('Failed to open Explorer', err);
+			});
+		}
+		// Only now: autosaving any earlier would write the empty mid-restore state over
+		// the session being restored.
+		session.start();
+	}
+
+	window.startCleanSession = async function () {
+		await session.clear();
+		location.href = location.pathname + '?clean=1';
+	};
+
+	function writeFilePromise (filePath, contents) {
+		return new Promise(function (resolve) {
+			writeFile(filePath, contents, function () {
+				resolve();
+			});
+		});
+	}
+
+	// Typing in the palette walks one directory at a time, and usually the same one for
+	// several keystrokes in a row, so the last listing is worth keeping -- but only
+	// briefly, or a file created while the palette is open would never show up.
+	var LISTING_TTL = 5000;
+	var lastListing = {path: null, entries: null, at: 0};
+
+	function listDirectoryEntries (dirPath) {
+		if (lastListing.path === dirPath && Date.now() - lastListing.at < LISTING_TTL) {
+			return Promise.resolve(lastListing.entries);
+		}
+		return new Promise(function (resolve) {
+			fs.readdir(dirPath, function (err, names) {
+				if (err || !names) {
+					resolve([]);
+					return;
+				}
+				Promise.all(names.slice(0, 500).map(function (name) {
+					return new Promise(function (done) {
+						fs.stat(path.join(dirPath, name), function (statErr, stats) {
+							done({name: name, isDirectory: !!(stats && stats.isDirectory())});
+						});
+					});
+				})).then(function (entries) {
+					lastListing = {path: dirPath, entries: entries, at: Date.now()};
+					resolve(entries);
+				});
+			});
+		});
+	}
+
+	function openDesktopContextMenu (workspace, x, y, rename) {
+		var onlyOne = winManager.listWorkspaces().length < 2;
+		contextMenu.open([
+			{label: 'Rename', action: rename},
+			{
+				label: 'Close desktop',
+				// Closing moves the windows to the neighbour; with no neighbour there is
+				// nowhere for them to go, so the last desktop stays.
+				disabled: onlyOne,
+				hint: onlyOne ? 'last one' : 'windows move over',
+				action: function () { winManager.closeWorkspace(workspace.id); }
+			},
+			{separator: true},
+			{
+				label: 'New desktop',
+				action: function () {
+					var created = winManager.createWorkspace({name: 'Desktop ' + (winManager.listWorkspaces().length + 1)});
+					winManager.switchTo(created.id);
+				}
+			}
+		], x, y);
+	}
+
+	function buildShellCommands () {
+		var commands = winManager.listWorkspaces()
+			.filter(function (workspace) {
+				return !workspace.active;
+			})
+			.map(function (workspace) {
+				return {
+					title: 'Desktop: ' + workspace.name,
+					subtitle: workspace.windowCount + (workspace.windowCount === 1 ? ' window' : ' windows'),
+					run: function () { winManager.switchTo(workspace.id); }
+				};
+			});
+
+		return commands.concat([
+			{
+				title: 'New desktop',
+				subtitle: 'Add a desktop and switch to it',
+				run: function () {
+					var created = winManager.createWorkspace({name: 'Desktop ' + (winManager.listWorkspaces().length + 1)});
+					winManager.switchTo(created.id);
+				}
+			},
+			{
+				title: 'Start clean session',
+				subtitle: 'Forget the saved desktops and windows, then reload. No files are touched',
+				run: function () { window.startCleanSession(); }
+			},
+			{title: 'Show desktop', subtitle: 'Hide every window without closing it', run: function () { desktop.togglePeek(); }},
+			{title: 'Wallpaper...', subtitle: 'Change the desktop background', run: function () { desktop.openWallpaperPicker(); }},
+			{title: 'New Explorer', subtitle: 'Open a file manager window', run: function () { openApp('explorer'); }},
+			{title: 'App Manager', subtitle: 'Install and update applications', run: function () { openApp('app-manager'); }},
+			{
+				title: 'Rescan applications',
+				subtitle: 'Rebuild the registry from the filesystem',
+				run: function () {
+					window.refreshInstalledAppsRegistry().catch(function (err) {
+						console.error('Rescan failed', err);
+					});
+				}
+			}
+		]);
+	}
+
+	// Cmd/Ctrl+K is the web's command-palette idiom and is unclaimed in Chrome; Ctrl+Space
+	// is the second binding for anyone who prefers it, though macOS may take it for
+	// switching input sources. The palette is reachable without either: the start menu's
+	// search field and the desktop menu both lead to the same list.
+	function isPaletteChord (e) {
+		if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK') {
+			return true;
+		}
+		return e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Space';
+	}
+
+	function onShellHotkey (e) {
+		if (isPaletteChord(e)) {
+			e.preventDefault();
+			e.stopPropagation();
+			startMenu.close();
+			palette.toggle();
+			return;
+		}
+		// Ctrl+1..9 switches desktops. If the OS claims it the way it claims Ctrl+Space,
+		// the taskbar strip and the palette's "Desktop: ..." entries still work.
+		if (e.ctrlKey && !e.metaKey && !e.altKey && /^Digit[1-9]$/.test(e.code)) {
+			var workspaces = winManager.listWorkspaces();
+			var target = workspaces[Number(e.code.slice(5)) - 1];
+			if (target) {
+				e.preventDefault();
+				e.stopPropagation();
+				winManager.switchTo(target.id);
+			}
+		}
 	}
 
 	async function persistDesktopSettings (patch) {
@@ -998,6 +1472,7 @@ window.openPath = openPath;
 window.openFile = openFile;
 window.openFiles = openFiles;
 window.openApp = openApp;
+window.openUrl = openUrl;
 window.launch = launch;
 window.listLaunchableApps = listLaunchableApps;
 
@@ -1006,8 +1481,8 @@ window.viewCounter = 0;
 // Explorer and App Manager are preloaded before the registry exists, so the launcher
 // has to know where they are without asking it.
 var SYSTEM_APPS = {
-	explorer: {name: 'Explorer', entryPath: '/apps/explorer/index.html'},
-	'app-manager': {name: 'App Manager', entryPath: '/apps/app-manager/index.html'}
+	explorer: {name: 'Explorer', entryPath: '/apps/explorer/index.html', icon: '/apps/explorer/favicon.svg'},
+	'app-manager': {name: 'App Manager', entryPath: '/apps/app-manager/index.html', icon: '/apps/app-manager/favicon.svg'}
 };
 
 // Per-app launch quirks live in this table rather than as branches inside openFile().
@@ -1018,6 +1493,65 @@ var SYSTEM_APPS = {
 //   prepare(descriptor)                runs before the window opens; result goes to deliver
 //   deliver(frame, descriptor, ready)  runs on iframe load, instead of the default
 //                                      contentWindow.openFile(path, name)
+// Not an app: the launcher for a window whose content is a web page rather than a file.
+// `launch({url})` selects it, and it is the one launcher whose src is used verbatim
+// instead of being resolved under /__browserfs__.
+//
+// Most interesting sites refuse to be framed, and there is no way to find out from here
+// -- a blocked frame still fires `load`, and its document is cross-origin -- so instead
+// of guessing, the window says up front where the escape hatch is.
+//
+// `credentialless` is not optional. sw.js stamps Cross-Origin-Embedder-Policy on every
+// response, and COEP is inherited by nested frames: without it *every* cross-origin site
+// is blocked before it loads, whether or not it would have allowed being framed. The
+// attribute is the per-frame exemption, and it is why apps/photopea works. Its cost is
+// that the frame gets no cookies -- a site you are signed in to renders signed out.
+var WEB_VIEW = {
+	content: function (frameId, src, descriptor) {
+		return '<div class="PixWebView">'
+			+ '<div class="PixWebView__bar">'
+			+ '<span class="PixWebView__url"></span>'
+			+ '<button data-action="tab">Open in a browser tab</button>'
+			+ '</div>'
+			+ '<iframe id="' + frameId + '" credentialless src="' + escapeAttribute(src) + '"></iframe>'
+			+ '</div>';
+	},
+	decorate: function (frame, descriptor) {
+		var element = frame.parentElement;
+		var label = element.querySelector('.PixWebView__url');
+		if (label) {
+			label.textContent = descriptor.url;
+			label.title = descriptor.url;
+		}
+		var button = element.querySelector('[data-action="tab"]');
+		if (button) {
+			button.addEventListener('click', function () {
+				window.open(descriptor.url, '_blank', 'noopener');
+			});
+		}
+	},
+	deliver: function () {}
+};
+
+// Only http(s) ever becomes a window: openUrl is reachable from any app in an iframe,
+// and a javascript: or data: src would run in the shell's own origin.
+function toWebViewUrl (raw) {
+	var text = String(raw == null ? '' : raw).trim();
+	if (!/^https?:\/\//i.test(text)) {
+		return null;
+	}
+	try {
+		return new URL(text).href;
+	}
+	catch (err) {
+		return null;
+	}
+}
+
+function escapeAttribute (value) {
+	return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
 var APP_LAUNCHERS = {
 	explorer: {
 		iframeAttrs: 'allow="file-system-access"',
@@ -1091,20 +1625,27 @@ var APP_LAUNCHERS = {
 // Every window in the system is opened through here, including windows with no file at
 // all. The descriptor is also what a session restore will replay, so anything a window
 // needs in order to come back has to be expressible in it.
-async function launch (descriptor) {
+// `restore` is only passed by session.js: it pins the window's id and desktop and says
+// the placeholder is already in the layout about to be rebuilt around it.
+async function launch (descriptor, restore) {
 	descriptor = Object.assign({paths: []}, descriptor);
 	descriptor.paths = (descriptor.paths || []).filter(Boolean);
 
-	var appId = descriptor.appId || null;
-	var launcher = (appId && APP_LAUNCHERS[appId]) || {};
+	// A url descriptor is a web page in a window, and takes precedence over everything
+	// else: there is no app and no file, so none of the resolution below applies.
+	descriptor.url = descriptor.url ? toWebViewUrl(descriptor.url) : null;
+	var external = !!descriptor.url;
+
+	var appId = external ? null : (descriptor.appId || null);
+	var launcher = external ? WEB_VIEW : ((appId && APP_LAUNCHERS[appId]) || {});
 	// Without an app the path is the window: that is how Explorer opens a bare html file.
-	var entryPath = appId ? getAppEntryPath(appId) : descriptor.paths[0];
+	var entryPath = external ? descriptor.url : (appId ? getAppEntryPath(appId) : descriptor.paths[0]);
 
 	if (appId && !entryPath) {
 		throw new Error('App ' + appId + ' has no launch path');
 	}
 	if (!entryPath) {
-		throw new Error('launch() needs an app or a path');
+		throw new Error('launch() needs an app, a path or a url');
 	}
 
 	// A failed prepare must not swallow the whole launch: an app that opens empty is at
@@ -1123,16 +1664,31 @@ async function launch (descriptor) {
 	window.viewCounter++;
 	var frameId = 'view' + window.viewCounter;
 	var attributes = launcher.iframeAttrs ? ' ' + launcher.iframeAttrs : '';
+	var src = external ? url : '__browserfs__' + url;
 
 	var record = winManager.openWindow({
-		title: descriptor.title || defaultWindowTitle(descriptor),
+		title: (restore && restore.title) || descriptor.title || defaultWindowTitle(descriptor),
 		appId: appId,
 		path: descriptor.paths[0] || null,
-		launch: {appId: appId, paths: descriptor.paths.slice(), title: descriptor.title || null},
-		content: '<iframe id="' + frameId + '"' + attributes + ' src="__browserfs__' + url + '"></iframe>'
+		launch: {
+			appId: appId,
+			paths: descriptor.paths.slice(),
+			url: descriptor.url,
+			title: descriptor.title || null
+		},
+		content: launcher.content
+			? launcher.content(frameId, src, descriptor)
+			: '<iframe id="' + frameId + '"' + attributes + ' src="' + src + '"></iframe>',
+		id: restore ? restore.id : undefined,
+		workspace: restore ? restore.workspace : undefined,
+		detached: restore ? restore.detached : false
 	});
 
 	var frame = winManager.getFrame(record.id);
+
+	if (launcher.decorate) {
+		launcher.decorate(frame, descriptor);
+	}
 	frame.onload = function () {
 		if (launcher.deliver) {
 			launcher.deliver(frame, descriptor, prepared);
@@ -1155,6 +1711,9 @@ function deliverFile (frame, descriptor) {
 }
 
 function defaultWindowTitle (descriptor) {
+	if (descriptor.url) {
+		return descriptor.url.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split(/[/?#]/)[0];
+	}
 	if (descriptor.paths.length > 1) {
 		return descriptor.paths.length + ' files';
 	}
@@ -1165,6 +1724,9 @@ function defaultWindowTitle (descriptor) {
 }
 
 function openApp (appId) {
+	// Recorded here rather than in each launcher, so every route -- menu, start panel,
+	// palette, Explorer -- feeds the same recents list.
+	appsModel.noteLaunch(appId);
 	return launch({appId: appId});
 }
 
@@ -1193,6 +1755,13 @@ async function openFiles (paths, appId) {
 	}
 }
 
+// A web page in a PixOS window. Reachable from any app through `parent.openUrl` --
+// Bookmarks uses it for links flagged "open inside PixOS" -- so the url is validated in
+// launch() rather than trusted here.
+function openUrl (url, title) {
+	return launch({url: url, title: title || null});
+}
+
 // 'new explorer' is what Explorer's own menu still calls this.
 async function openPath (dirPath, appId) {
 	if (!appId || appId === 'new explorer') {
@@ -1202,22 +1771,22 @@ async function openPath (dirPath, appId) {
 }
 
 function buildDesktopMenu () {
-	var apps = listLaunchableApps();
+	var groups = appsModel.ordered();
+	var submenu = [];
+
+	// Recents on top, separated -- the same ordering the start menu uses.
+	if (groups.recent.length) {
+		submenu = submenu.concat(groups.recent.map(appMenuItem), [{separator: true}]);
+	}
+	submenu = submenu.concat(groups.rest.map(appMenuItem));
+
+	if (!submenu.length) {
+		submenu = [{label: 'No applications installed', disabled: true}];
+	}
 
 	return [
-		{
-			label: 'Applications',
-			submenu: apps.length
-				? apps.map(function (app) {
-					return {
-						label: app.name,
-						action: function () {
-							openApp(app.id);
-						}
-					};
-				})
-				: [{label: 'No applications installed', disabled: true}]
-		},
+		{label: 'Applications', submenu: submenu},
+		{label: 'Search...', hint: 'Ctrl+K', action: function () { palette.open(); }},
 		{separator: true},
 		{label: 'New Explorer', action: function () { openApp('explorer'); }},
 		{label: 'App Manager', action: function () { openApp('app-manager'); }},
@@ -1225,10 +1794,19 @@ function buildDesktopMenu () {
 		{label: 'Wallpaper...', action: function () { desktop.openWallpaperPicker(); }},
 		{
 			label: desktop.isPeeking() ? 'Show windows' : 'Show desktop',
-			hint: 'Ctrl+Alt+D',
 			action: function () { desktop.togglePeek(); }
 		}
 	];
+}
+
+function appMenuItem (app) {
+	return {
+		label: app.name,
+		icon: app,
+		action: function () {
+			openApp(app.id);
+		}
+	};
 }
 
 // Only apps whose files are actually in BrowserFS: the catalog also lists apps that are
@@ -1244,12 +1822,13 @@ function listLaunchableApps () {
 			return installed[app.id];
 		})
 		.map(function (app) {
-			return {id: app.id, name: app.name || app.id};
+			// App Manager's records call it `label`; the manifest calls it `name`.
+			return {id: app.id, name: app.name || app.label || app.id, icon: app.icon || null};
 		});
 
 	Object.keys(SYSTEM_APPS).forEach(function (id) {
 		if (!apps.some(function (app) { return app.id === id; })) {
-			apps.push({id: id, name: SYSTEM_APPS[id].name});
+			apps.push({id: id, name: SYSTEM_APPS[id].name, icon: SYSTEM_APPS[id].icon || null});
 		}
 	});
 
@@ -1260,6 +1839,25 @@ function listLaunchableApps () {
 
 // Same resolution order as getAppEntryPath: the catalog alone would miss local apps,
 // which are folders the user created under /apps/ and never appear there.
+// One record per app for anything that has to draw it: id, name and icon path.
+function getLaunchableApp (appId) {
+	if (!appId) {
+		return null;
+	}
+	var app = typeof window.getInstallableApps === 'function'
+		? window.getInstallableApps().find(function (entry) { return entry.id === appId; })
+		: null;
+	if (!app && typeof window.getCatalogApp === 'function') {
+		app = window.getCatalogApp(appId);
+	}
+	if (app) {
+		return {id: app.id, name: app.name || app.label || app.id, icon: app.icon || null};
+	}
+	return SYSTEM_APPS[appId]
+		? {id: appId, name: SYSTEM_APPS[appId].name, icon: SYSTEM_APPS[appId].icon || null}
+		: null;
+}
+
 function getAppName (appId) {
 	if (!appId) {
 		return null;
@@ -1273,7 +1871,7 @@ function getAppName (appId) {
 	if (!app && typeof window.getCatalogApp === 'function') {
 		app = window.getCatalogApp(appId);
 	}
-	return (app && app.name) || appId;
+	return (app && (app.name || app.label)) || appId;
 }
 
 function buildBrowserFsAbsoluteUrl (fsPath) {

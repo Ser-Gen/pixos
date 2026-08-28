@@ -42,9 +42,10 @@
     },
     {
       "path": "/apps/media-player/pixos.app.json",
-      "hash": "sha256:b5d611790eed54dd10652fbe251aa6cd10f113cf220c462b88493f5459181277"
+      "hash": "sha256:43b6f6b6623a18604949a75a8e0071f3318c35e7fc88ffdd65f5be7b5d5c35a4"
     }
   ],
+  "icon": "/apps/media-player/favicon.svg",
   "supported": {
     "extensions": [
       "mp4",

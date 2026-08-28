@@ -5,6 +5,8 @@
 // itself against the wrong viewport. This is a port, not an extraction -- keep the two
 // in sync by hand if the look changes.
 
+import * as icons from './app-icons.js';
+
 var STYLE_ID = 'pixos-context-menu-style';
 
 var CSS = `
@@ -53,6 +55,13 @@ var CSS = `
 	opacity: .6;
 }
 
+.PixMenu__label {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	min-width: 0;
+}
+
 .PixMenu__separator {
 	height: 1px;
 	background: #424750;
@@ -80,6 +89,10 @@ var CSS = `
 
 var host = null;
 var current = null;
+// The element that opened the menu, if any. A mousedown on it must not count as a click
+// outside, or the toggle that opened the menu can never be the one that closes it.
+var anchor = null;
+var onClose = null;
 
 function ensureStyle () {
 	if (document.getElementById(STYLE_ID)) {
@@ -104,11 +117,18 @@ export function close () {
 	if (!current) {
 		return;
 	}
+	var notify = onClose;
 	current.remove();
 	current = null;
+	anchor = null;
+	onClose = null;
+	if (notify) {
+		notify();
+	}
 }
 
-export function open (items, x, y) {
+// options: {anchor, onClose}
+export function open (items, x, y, options) {
 	if (!host) {
 		throw new Error('context menu has no host, call setHost first');
 	}
@@ -116,6 +136,9 @@ export function open (items, x, y) {
 	if (!items || !items.length) {
 		return null;
 	}
+	options = options || {};
+	anchor = options.anchor || null;
+	onClose = options.onClose || null;
 
 	var menu = document.createElement('div');
 	menu.className = 'PixMenu';
@@ -163,7 +186,13 @@ function buildList (items) {
 		li.className = 'PixMenu__item' + (item.disabled ? ' PixMenu__item--disabled' : '');
 
 		var label = document.createElement('span');
-		label.textContent = item.label;
+		label.className = 'PixMenu__label';
+		if (item.icon) {
+			label.append(icons.render(item.icon, 16));
+		}
+		var text = document.createElement('span');
+		text.textContent = item.label;
+		label.append(text);
 		li.append(label);
 
 		if (item.submenu && item.submenu.length) {
@@ -227,7 +256,7 @@ function positionSubmenu (submenu, parentItem) {
 // A click inside an app iframe never reaches this document, so `blur` is the only
 // signal that focus left the shell while a menu was open.
 window.addEventListener('mousedown', function (e) {
-	if (current && !current.contains(e.target)) {
+	if (current && !current.contains(e.target) && !(anchor && anchor.contains(e.target))) {
 		close();
 	}
 }, true);
