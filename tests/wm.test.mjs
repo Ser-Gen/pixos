@@ -214,6 +214,37 @@ check('containers land in the windows root', windowsRoot.children.length, 2);
 wm.setTitle(0, 'renamed.txt');
 check('setTitle updates the record', wm.getWindow(0).title, 'renamed.txt');
 
+// --- unsaved work ------------------------------------------------------------------------
+//
+// Reported by the app, never guessed at: the shell cannot see inside an editor, and a
+// guess would either nag about nothing or stay quiet about something. The whole value of
+// the browser's close warning is that it only appears when there is a reason.
+
+check('a new window is not dirty', wm.getWindow(0).dirty, false);
+check('and nothing is waiting to be saved', wm.listDirty(), []);
+
+check('marking it dirty reports a change', wm.setDirty(0, true), true);
+check('the window says so', wm.getWindow(0).dirty, true);
+check('and it can be listed without walking every window',
+	wm.listDirty().map(w => w.id), [0]);
+check('the pane title carries a dot', wm.windows.get(0).item.config.title, '\u25cf renamed.txt');
+
+check('marking it dirty again changes nothing', wm.setDirty(0, false), true);
+check('an app that reports on every keystroke does not redraw the world',
+	wm.setDirty(0, false), false);
+check('and the dot comes off', wm.windows.get(0).item.config.title, 'renamed.txt');
+
+wm.setDirty(0, true);
+wm.setTitle(0, 'saved-as.txt');
+check('renaming a dirty window keeps its dot',
+	wm.windows.get(0).item.config.title, '\u25cf saved-as.txt');
+wm.setDirty(0, false);
+wm.setTitle(0, 'renamed.txt');
+check('an unknown window cannot be marked', wm.setDirty(99, true), false);
+
+check('the focused window can be identified, which is what Cmd+W closes',
+	wm.getActiveWindow().id, 1);
+
 wm.closeWindow(0);
 check('closing drops the window', wm.count(), 1);
 check('closing removes its container', windowsRoot.children.length, 1);
@@ -264,9 +295,99 @@ check('input inside an app is republished to the shell', forwarded, ['key:KeyK',
 wm.getFrame(framed.id).dispatch('load');
 check('a second load does not double-subscribe', appDoc.listeners.keydown.length, 1);
 
-const crossOriginFrame = {get contentDocument () { throw new Error('cross-origin'); }};
+const crossOriginFrame = {
+	addEventListener () {},
+	get contentDocument () { throw new Error('cross-origin'); }
+};
 wm.bridgeInput(crossOriginFrame);
 check('a cross-origin frame is skipped without throwing', forwarded.length, 2);
+
+// --- an app's own iframes ---------------------------------------------------------
+//
+// tinymce edits inside a nested same-origin iframe it builds itself. A keystroke there
+// reaches neither the app's document nor the shell, so every shell chord was dead in that
+// one editor -- the bridge has to follow the frame down, and keep following, because the
+// frame is created long after load and rebuilt whenever the editor is.
+
+function fakeDoc () {
+	var doc = {
+		listeners: {},
+		frames: [],
+		documentElement: {},
+		addEventListener (evt, fn) { (this.listeners[evt] = this.listeners[evt] || []).push(fn); },
+		querySelectorAll () { return doc.frames; }
+	};
+	return doc;
+}
+
+function fakeFrame (doc) {
+	return {addEventListener () {}, contentDocument: doc};
+}
+
+const observers = [];
+globalThis.MutationObserver = class {
+	constructor (callback) { this.callback = callback; observers.push(this); }
+	observe () { this.observing = true; }
+	disconnect () {}
+};
+
+const editorDoc = fakeDoc();
+const innerDoc = fakeDoc();
+editorDoc.frames = [fakeFrame(innerDoc)];
+
+const editor = wm.openWindow({title: 'tinymce', content: '<iframe id="view10"></iframe>'});
+wm.getFrame(editor.id).contentDocument = editorDoc;
+wm.getFrame(editor.id).dispatch('load');
+
+check('a nested same-origin frame is bridged too',
+	Object.keys(innerDoc.listeners).sort(), ['keydown', 'mousedown']);
+innerDoc.listeners.keydown[0]({code: 'KeyK'});
+check('so a keystroke in the document you are typing into reaches the shell',
+	forwarded[forwarded.length - 1], 'key:KeyK');
+
+// The one that actually bit: the editor iframe does not exist when the app loads.
+check('the app document is watched for frames added later', observers.length > 0, true);
+const lateDoc = fakeDoc();
+observers[observers.length - 1].callback([{addedNodes: [
+	{nodeType: 1, tagName: 'IFRAME', addEventListener () {}, contentDocument: lateDoc}
+]}]);
+check('a frame created after load is bridged when it appears',
+	Object.keys(lateDoc.listeners).sort(), ['keydown', 'mousedown']);
+
+const buriedDoc = fakeDoc();
+const wrapper = {
+	nodeType: 1,
+	tagName: 'DIV',
+	querySelectorAll () { return [fakeFrame(buriedDoc)]; }
+};
+observers[observers.length - 1].callback([{addedNodes: [wrapper]}]);
+check('and so is one added inside a wrapper element',
+	Object.keys(buriedDoc.listeners).sort(), ['keydown', 'mousedown']);
+
+observers[observers.length - 1].callback([{addedNodes: [{nodeType: 3}]}]);
+check('a text node -- which is most of what an editor adds -- is ignored',
+	forwarded.length > 0, true);
+
+// --- which window is the focused one ------------------------------------------------
+//
+// Two panes side by side are both visible, so selecting one tab and then typing in the
+// other left the shell naming the wrong window. "Close window" then closed it.
+
+wm.focusWindow(framed.id);
+check('the tab selection is the starting point', wm.getActiveWindow().id, framed.id);
+
+innerDoc.listeners.mousedown[0]({});
+check('clicking into another window makes that one active', wm.getActiveWindow().id, editor.id);
+
+appDoc.listeners.keydown[0]({code: 'KeyA'});
+check('and so does typing in it', wm.getActiveWindow().id, framed.id);
+
+const focusEvents = [];
+wm.on('focused', win => focusEvents.push(win.id));
+appDoc.listeners.keydown[0]({code: 'KeyB'});
+appDoc.listeners.keydown[0]({code: 'KeyC'});
+check('a keystroke in the window that is already active changes nothing',
+	focusEvents, []);
 
 // --- desktops -------------------------------------------------------------------
 //

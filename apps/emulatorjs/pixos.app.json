@@ -1,7 +1,7 @@
 {
   "id": "emulatorjs",
   "name": "EmulatorJS",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "entryPath": "/apps/emulatorjs/index.html",
   "files": [
     {
@@ -14,7 +14,7 @@
     },
     {
       "path": "/apps/emulatorjs/pixos.app.json",
-      "hash": "sha256:c6ff2c15e5dacc1bea5afc1d1f92f1b1da2e00d689fdb594e16a00b5fd49dd0c"
+      "hash": "sha256:8a5ef2246ec3ba1040835018aef9fd2fd8d7c4a995332dc122738f46430fee52"
     }
   ],
   "supported": {
@@ -49,5 +49,6 @@
       "gen",
       "zip"
     ]
-  }
+  },
+  "needsNetwork": true
 }

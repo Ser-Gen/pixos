@@ -130,4 +130,32 @@ check('a first ever boot is not an error', result, {restored: 0, reason: 'nothin
 result = await session.restore();
 check('an emptied session is treated the same', result.restored, 0);
 
+// --- only one tab writes ------------------------------------------------------------------
+//
+// Two tabs of PixOS share this file and both save on their own schedule, so the second one
+// to write wins — which is how arranging your windows in one tab and closing the other
+// silently reverts them. The election lives in js/shell/tabs.js; this is the gate it opens.
+
+let owner = true;
+({wm, written} = setup(null, {canWrite: () => owner}));
+session.start();
+await session.save();
+check('the tab that owns the session writes it', written.length, 1);
+
+owner = false;
+await session.save();
+check('a follower does not', written.length, 1);
+
+owner = true;
+await session.save();
+check('and writes again once it takes over', written.length, 2);
+session.stop();
+
+// The gate is optional: a caller that does not pass one is the only tab there is.
+({wm, written} = setup(null));
+session.start();
+await session.save();
+check('with no gate at all the session is still saved', written.length, 1);
+session.stop();
+
 process.exit(report('session') ? 1 : 0);

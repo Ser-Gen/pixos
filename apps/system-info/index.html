@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>System Info</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+	:root {
+		--bg: #14171c;
+		--panel: #1b1f26;
+		--card: #212630;
+		--line: rgba(255, 255, 255, .09);
+		--text: #dfe3ea;
+		--muted: #939caa;
+		--faint: #5d6675;
+		--accent: #6fb3ff;
+		--warn: #ffb648;
+	}
+
+	* { box-sizing: border-box; }
+
+	html, body { height: 100%; margin: 0; }
+
+	body {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg);
+		color: var(--text);
+		font: 14px/1.5 -apple-system, "Segoe UI", Arial, Helvetica, sans-serif;
+	}
+
+	#bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex: 0 0 auto;
+		padding: 9px 14px;
+		border-bottom: 1px solid var(--line);
+		background: var(--panel);
+	}
+
+	#bar h1 { font-size: 15px; margin: 0 auto 0 0; font-weight: 600; }
+
+	button {
+		font: inherit;
+		font-size: 12px;
+		padding: 5px 10px;
+		color: var(--text);
+		background: rgba(255, 255, 255, .06);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+
+	button:hover { background: rgba(255, 255, 255, .12); }
+
+	#body { flex: 1 1 auto; overflow: auto; padding: 14px 14px 20px; }
+
+	#notice {
+		padding: 10px 12px;
+		margin-bottom: 14px;
+		font-size: 12px;
+		color: var(--muted);
+		background: var(--card);
+		border: 1px solid var(--line);
+		border-left: 3px solid var(--accent);
+	}
+
+	#status {
+		margin-bottom: 14px;
+		font-size: 12px;
+		color: var(--faint);
+		min-height: 18px;
+	}
+
+	section {
+		margin-bottom: 16px;
+		background: var(--card);
+		border: 1px solid var(--line);
+	}
+
+	section > h2 {
+		margin: 0;
+		padding: 9px 12px;
+		font-size: 12px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: .07em;
+		color: var(--muted);
+		border-bottom: 1px solid var(--line);
+	}
+
+	section > .sectionNote {
+		padding: 8px 12px 0;
+		font-size: 12px;
+		color: var(--faint);
+	}
+
+	dl { margin: 0; padding: 6px 12px 12px; }
+
+	.row {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px 14px;
+		padding: 6px 0;
+		border-bottom: 1px solid rgba(255, 255, 255, .05);
+	}
+
+	.row:last-child { border-bottom: none; }
+
+	dt {
+		flex: 0 0 190px;
+		min-width: 0;
+		color: var(--muted);
+		font-size: 13px;
+	}
+
+	dd {
+		flex: 1 1 220px;
+		min-width: 0;
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
+	dd .note { display: block; font-size: 11px; color: var(--faint); }
+	.row.missing dd > .value { color: var(--warn); }
+	.row.unknown dd > .value { color: var(--faint); }
+	.value { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+	<h1>System Info</h1>
+	<button id="refresh" title="Read everything again">Refresh</button>
+	<button id="copy" title="Copy the whole page as text">Copy as text</button>
+</div>
+
+<div id="body">
+	<div id="notice"></div>
+	<div id="status"></div>
+	<div id="sections"></div>
+</div>
+
+<script type="module">
+import * as probe from './js/probe.js';
+
+// Reading the environment is the only impure part of this app, and it is all here: what
+// each value *means* is in js/probe.js, where it can be tested against a browser that has
+// nothing. Every read is wrapped, because a getter that throws (some of these do, in a
+// frame, under a strict policy) must cost one row rather than the page.
+
+var ui = {
+	notice: document.getElementById('notice'),
+	status: document.getElementById('status'),
+	sections: document.getElementById('sections'),
+	refresh: document.getElementById('refresh'),
+	copy: document.getElementById('copy')
+};
+
+ui.notice.textContent = probe.NOTICE;
+
+function attempt (read, fallback) {
+	try {
+		var value = read();
+		return value === undefined ? fallback : value;
+	}
+	catch (err) {
+		return fallback;
+	}
+}
+
+function media (query) {
+	return attempt(function () {
+		if (typeof matchMedia !== 'function') {
+			return null;
+		}
+		return matchMedia(query).matches;
+	}, null);
+}
+
+async function snapshot () {
+	var nav = navigator;
+	var uaData = attempt(function () { return nav.userAgentData || null; }, null);
+
+	var env = {
+		userAgent: attempt(function () { return nav.userAgent; }, null),
+		brands: uaData && uaData.brands ? uaData.brands.slice() : null,
+		uaPlatform: uaData ? uaData.platform : null,
+		platform: attempt(function () { return nav.platform; }, null),
+		language: attempt(function () { return nav.language; }, null),
+		languages: attempt(function () { return nav.languages ? Array.from(nav.languages) : null; }, null),
+		timeZone: attempt(function () { return Intl.DateTimeFormat().resolvedOptions().timeZone; }, null),
+		secureContext: attempt(function () { return window.isSecureContext; }, null),
+		crossOriginIsolated: attempt(function () { return window.crossOriginIsolated; }, null),
+		cores: attempt(function () { return nav.hardwareConcurrency; }, null),
+		memoryGB: attempt(function () { return nav.deviceMemory; }, null),
+		maxTouchPoints: attempt(function () { return nav.maxTouchPoints; }, null),
+		screen: {
+			width: attempt(function () { return screen.width; }, null),
+			height: attempt(function () { return screen.height; }, null),
+			availWidth: attempt(function () { return screen.availWidth; }, null),
+			availHeight: attempt(function () { return screen.availHeight; }, null),
+			colorDepth: attempt(function () { return screen.colorDepth; }, null)
+		},
+		viewport: {width: window.innerWidth, height: window.innerHeight},
+		dpr: attempt(function () { return window.devicePixelRatio; }, null),
+		colorScheme: media('(prefers-color-scheme: dark)') === null
+			? null
+			: (media('(prefers-color-scheme: dark)') ? 'Dark' : 'Light'),
+		reducedMotion: media('(prefers-reduced-motion: reduce)') === null
+			? null
+			: (media('(prefers-reduced-motion: reduce)') ? 'Reduced' : 'No preference'),
+		online: attempt(function () { return nav.onLine; }, null),
+		connection: attempt(function () {
+			var c = nav.connection || nav.mozConnection || nav.webkitConnection;
+			return c ? {
+				effectiveType: c.effectiveType,
+				downlink: c.downlink,
+				rtt: c.rtt,
+				saveData: c.saveData
+			} : null;
+		}, null),
+		storage: await readStorage(),
+		battery: await readBattery(),
+		serviceWorker: await readServiceWorker(),
+		features: readFeatures()
+	};
+	return env;
+}
+
+async function readStorage () {
+	if (!navigator.storage || typeof navigator.storage.estimate !== 'function') {
+		return {supported: false};
+	}
+	var result = {supported: true};
+	try {
+		var estimate = await navigator.storage.estimate();
+		result.usage = estimate.usage;
+		result.quota = estimate.quota;
+	}
+	catch (err) {
+		result.supported = false;
+		return result;
+	}
+	// What was granted, never what was asked for: a durability promise nobody verified is
+	// worse than none, because it is the one people rely on.
+	if (typeof navigator.storage.persisted === 'function') {
+		result.persisted = await navigator.storage.persisted().then(function (yes) {
+			return yes ? 'persistent' : 'best-effort';
+		}).catch(function () {
+			return null;
+		});
+	}
+	return result;
+}
+
+async function readBattery () {
+	if (typeof navigator.getBattery !== 'function') {
+		return {supported: false};
+	}
+	try {
+		var battery = await navigator.getBattery();
+		return {
+			supported: true,
+			level: battery.level,
+			charging: battery.charging,
+			chargingTime: battery.chargingTime,
+			dischargingTime: battery.dischargingTime
+		};
+	}
+	catch (err) {
+		return {supported: false};
+	}
+}
+
+async function readServiceWorker () {
+	if (!navigator.serviceWorker) {
+		return {supported: false};
+	}
+	var state = {supported: true, controlled: !!navigator.serviceWorker.controller};
+	try {
+		var registration = await navigator.serviceWorker.getRegistration();
+		state.scope = registration ? registration.scope : null;
+	}
+	catch (err) {
+		state.scope = null;
+	}
+	return state;
+}
+
+function readFeatures () {
+	return {
+		serviceWorker: 'serviceWorker' in navigator,
+		indexedDB: attempt(function () { return !!window.indexedDB; }, false),
+		storagePersist: !!(navigator.storage && typeof navigator.storage.persist === 'function'),
+		broadcastChannel: typeof window.BroadcastChannel === 'function',
+		webAssembly: typeof WebAssembly === 'object',
+		fileSystemAccess: typeof window.showDirectoryPicker === 'function',
+		clipboardWrite: !!(navigator.clipboard && typeof navigator.clipboard.writeText === 'function'),
+		fullscreen: typeof document.documentElement.requestFullscreen === 'function',
+		keyboardLock: !!(navigator.keyboard && typeof navigator.keyboard.lock === 'function'),
+		webGL: attempt(function () {
+			var canvas = document.createElement('canvas');
+			return !!(canvas.getContext('webgl2') || canvas.getContext('webgl'));
+		}, false),
+		displayMedia: !!(navigator.mediaDevices
+			&& typeof navigator.mediaDevices.getDisplayMedia === 'function'),
+		sharedArrayBuffer: typeof SharedArrayBuffer === 'function'
+	};
+}
+
+var lastSections = [];
+
+async function draw () {
+	ui.status.textContent = 'Reading…';
+	var sections = probe.collect(await snapshot());
+	lastSections = sections;
+
+	ui.sections.innerHTML = '';
+	sections.forEach(function (part) {
+		ui.sections.append(renderSection(part));
+	});
+	ui.status.textContent = 'Read at ' + new Date().toLocaleTimeString()
+		+ ' · nothing left this page';
+}
+
+function renderSection (part) {
+	var node = document.createElement('section');
+	var heading = document.createElement('h2');
+	heading.textContent = part.title;
+	node.append(heading);
+
+	if (part.note) {
+		var note = document.createElement('div');
+		note.className = 'sectionNote';
+		note.textContent = part.note;
+		node.append(note);
+	}
+
+	var list = document.createElement('dl');
+	part.rows.forEach(function (item) {
+		list.append(renderRow(item));
+	});
+	node.append(list);
+	return node;
+}
+
+// A missing value is a row that says what is missing and what it costs. A blank one would
+// leave you wondering whether the page failed or the browser did.
+function renderRow (item) {
+	var row = document.createElement('div');
+	row.className = 'row'
+		+ (item.value === null ? ' unknown' : '')
+		+ (item.state === 'missing' ? ' missing' : '');
+
+	var term = document.createElement('dt');
+	term.textContent = item.label;
+
+	var value = document.createElement('dd');
+	var text = document.createElement('span');
+	text.className = 'value';
+	text.textContent = item.value === null ? 'Unavailable' : item.value;
+	value.append(text);
+
+	// The note is the reason when there is nothing to show, and the consequence when
+	// there is -- either way it is the half of the row worth reading.
+	if (item.note && (item.value === null || item.state)) {
+		var note = document.createElement('span');
+		note.className = 'note';
+		note.textContent = item.note;
+		value.append(note);
+	}
+
+	row.append(term, value);
+	return row;
+}
+
+function asText () {
+	var lines = ['System Info — read ' + new Date().toISOString(), ''];
+	lastSections.forEach(function (part) {
+		lines.push('## ' + part.title);
+		part.rows.forEach(function (item) {
+			lines.push('- ' + item.label + ': ' + (item.value === null ? 'Unavailable' : item.value));
+		});
+		lines.push('');
+	});
+	return lines.join('\n');
+}
+
+// The same two attempts Explorer makes, and for the same reason: this is an iframe, the
+// modern clipboard needs a permission it may not have here, and the old API still works
+// in exactly that case. A copy that silently did nothing is the failure being avoided.
+async function copyText (text) {
+	if (navigator.clipboard && navigator.clipboard.writeText) {
+		try {
+			await navigator.clipboard.writeText(text);
+			return true;
+		}
+		catch (err) {
+			// Refused. Fall through rather than reporting failure.
+		}
+	}
+	var area = document.createElement('textarea');
+	area.value = text;
+	area.setAttribute('readonly', 'readonly');
+	area.style.position = 'fixed';
+	area.style.left = '-2000px';
+	document.body.appendChild(area);
+	area.select();
+	var copied = false;
+	try {
+		copied = document.execCommand('copy');
+	}
+	catch (err) {
+		copied = false;
+	}
+	area.remove();
+	return copied;
+}
+
+ui.refresh.onclick = draw;
+ui.copy.onclick = async function () {
+	var copied = await copyText(asText());
+	ui.status.textContent = copied
+		? 'Copied as text.'
+		: 'The browser refused the clipboard. Select the page and copy it by hand.';
+};
+
+// Nothing to open, but the shell hands every app a file eventually.
+window.openFile = function () {};
+
+draw();
+</script>
+
+</body>
+</html>

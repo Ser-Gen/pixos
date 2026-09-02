@@ -18,7 +18,10 @@
 		<textarea id="default"></textarea>
 	</form>
 
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/tinymce/8.1.2/tinymce.min.js"></script>
+	<!-- Vendored, not from a CDN, so this works offline. See vendor/README.md. TinyMCE
+	     works out its own base URL from this script's src, so everything it loads
+	     afterwards -- skins, themes, plugins, icons -- follows it into vendor/. -->
+	<script src="vendor/tinymce/tinymce.min.js"></script>
 	<script type="module">
 		window.openFile = async function (src, name) {
 			var path = src;
@@ -51,6 +54,13 @@
       editor.on('init', function (e) {
         editor.setContent(text || '');
       });
+      // The save contract. Unlike ace and monaco this editor does not autosave -- writing
+      // a rich-text document to the filesystem on every keystroke is a different weight of
+      // operation -- so it says instead. The window carries a dot until you save, and the
+      // browser only argues about closing the tab while that dot is there.
+      editor.on('dirty', function () {
+        if (typeof markDirty === 'function') { markDirty(true); }
+      });
     },
 			});
 
@@ -58,7 +68,12 @@
 		kek.onsubmit = function (e) {
 			const editorValue = tinymce.activeEditor.getContent();
 
-			parent.saveFileLocal(path, editorValue, name, type);
+			Promise.resolve(parent.saveFileLocal(path, editorValue, name, type)).then(function () {
+				tinymce.activeEditor.setDirty(false);
+				if (typeof markDirty === 'function') { markDirty(false); }
+			}, function () {
+				// The shell raises the card. The dot stays, because it is still unsaved.
+			});
 		}
 		}
 

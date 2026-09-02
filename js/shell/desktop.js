@@ -213,7 +213,16 @@ export function init (cfg) {
 		+ 'The strip at the far right of the taskbar shows the desktop';
 	desktopEl.append(hintEl);
 
-	widgets.mount(desktopEl, cfg.widgets);
+	// A widget leading somewhere is a window arriving, and the peek is over. The `opened`
+	// listener below says the same thing, but only once the window exists -- an open that
+	// installs an app first would spend that time looking like a click that did nothing.
+	widgets.mount(desktopEl, cfg.widgets, {
+		onOpen: function () {
+			if (peeking) {
+				setPeek(false);
+			}
+		}
+	});
 
 	// One listener covers both cases. With no windows the layout is click-through, and
 	// while peeking so are the windows, so in either case the right-click lands here.

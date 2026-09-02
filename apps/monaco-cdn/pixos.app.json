@@ -1,12 +1,12 @@
 {
   "id": "monaco",
   "name": "monaco",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "entryPath": "/apps/monaco-cdn/index.html",
   "files": [
     {
       "path": "/apps/monaco-cdn/index.html",
-      "hash": "sha256:cecb2cbac17f66049ccbd260fe1939393e0fcd96b7ab2fc1e8e498f6d04958b8"
+      "hash": "sha256:9dcfed90bc908bc1809b1b1783651da272b4729b640280b2c8a8ab9ed7b998f0"
     },
     {
       "path": "/apps/monaco-cdn/pixos_supported",
@@ -14,7 +14,387 @@
     },
     {
       "path": "/apps/monaco-cdn/pixos.app.json",
-      "hash": "sha256:9a7eea3503d7f5f1ffd79e55c5737cfea701e5873369389fc6d1313ee32c771d"
+      "hash": "sha256:bdfbbd6ea56d974637c4d35d8a55f68788f884f184a462e067a0ab832f82edbc"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/README.md",
+      "hash": "sha256:94d8722d57b44a69b05974e3795e4d1fed01519c8d3d8d989fca41b0794cb216"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/base/browser/ui/codicons/codicon/codicon.ttf",
+      "hash": "sha256:0f1d5219934e96e83b8db162d60b4d8c09b5de1e7d38031cbafe4a3c0f2889c9"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/base/worker/workerMain.js",
+      "hash": "sha256:0a01b12af244f4a118b3fb5fe757be98b254f4d3f18b810a650a02b42ec6324c"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/abap/abap.js",
+      "hash": "sha256:4a9281fca9ced06ec5c2446d84ac654cd46c12e5b9c1523ade20b42c9bdcaf90"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/apex/apex.js",
+      "hash": "sha256:543a90079a527a8e3c3656ddd8e3d840e35d0f568e415faa3745c8e518a0292a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/azcli/azcli.js",
+      "hash": "sha256:95fa8d3737c20f957a980ba5662c235318f541a34d22f7a9f78da60c819d1587"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/bat/bat.js",
+      "hash": "sha256:6d33e3b5e1e0daa92fa2431533ea237427e6335692bb85a80a572bf0240bcd1c"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/bicep/bicep.js",
+      "hash": "sha256:e06556197faf9643bfc74892fd3b00a093648581fe2b854ec5d4dd8760923039"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/cameligo/cameligo.js",
+      "hash": "sha256:0a6b683527e79c9b4d9746f1a781c70ca9ff3a03003ad685fdad7c1c44756910"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/clojure/clojure.js",
+      "hash": "sha256:ad62bc6630a9b3974d03fa98eb321b405aa8979c91ebf391f878aa9c3ddadb5a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/coffee/coffee.js",
+      "hash": "sha256:692bb5de3d55582d1d574eb2945b4728810e8cc530792f8ba36ca2a550c763ac"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/cpp/cpp.js",
+      "hash": "sha256:49447e995c556ea01f838d0585db3235c111660b4ede632dce44b4d228498e0a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/csharp/csharp.js",
+      "hash": "sha256:94f3d5a7ca6c214aaab263558ec6709169b0430c4084ac9085098898ccb4525a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/csp/csp.js",
+      "hash": "sha256:eaa64fda54615fb89eb6523e727363d689b0305a1e65be7d3db52aefb56bcbf2"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/css/css.js",
+      "hash": "sha256:72be97c175efcd5888184c0d66de61a65a720349a2bba426a64fcceb6e950ce5"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/cypher/cypher.js",
+      "hash": "sha256:9b67f9a891350590ff60ce85ac77e12e793188d9e1da4b85cf68e18f508c7d8f"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/dart/dart.js",
+      "hash": "sha256:f441319c24a0f208115268d0a5a9e4c168ea2f6681e4bd91948d90a7406403a0"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/dockerfile/dockerfile.js",
+      "hash": "sha256:eb821c79fccb1a64ad9bebfadb4c707b36fe40d794110559b10dc7b6de8088ed"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/ecl/ecl.js",
+      "hash": "sha256:ebcd773bd68cb5e9169bd81b7f484d5d72d10700147291c90b92fa13e5b2e7f1"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/elixir/elixir.js",
+      "hash": "sha256:31afddc0f53c778af44e77e7fc7c8645aa72345dcf51ca8c9fbfb55ed499e008"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/flow9/flow9.js",
+      "hash": "sha256:ac14c650b1c98bee78c77356cad6332326a8147a6d1f6d381035a729f66e7859"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/freemarker2/freemarker2.js",
+      "hash": "sha256:f6241ca5da914ab2236a80b09181cc572d15f723a4581263b7b5313f61aa16c1"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/fsharp/fsharp.js",
+      "hash": "sha256:e28a38991ee25b267a837a7abfd81cb383c82f261ff274b5be08a22e9bb16dc6"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/go/go.js",
+      "hash": "sha256:0071120125864169774b6e23e5e1aa47b6c7b80c24aae5d83050e999db8c1728"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/graphql/graphql.js",
+      "hash": "sha256:3001192f3be0c7f66632e08094131161d868e98e0676e669dbb8bd84049220ce"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/handlebars/handlebars.js",
+      "hash": "sha256:d6d62e675489555ab060f9ab5e91f81af74b9ff3e83eeebb877975ba967b4263"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/hcl/hcl.js",
+      "hash": "sha256:75da585935feae0977d78a42d2ff07c46dd6e5abe1c1eb0935426a349fb91415"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/html/html.js",
+      "hash": "sha256:4b5e0e6ba55182e080ac15c58006c10596e6b2348c64809b6b654c6696cf0fbf"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/ini/ini.js",
+      "hash": "sha256:28eaff43e1328ce0bdcb262f9c3073e236c542038022a3ec35fc83a40d41eaa3"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/java/java.js",
+      "hash": "sha256:6b4a08f9e99b11935405b8ce04c4dbb703583c56a29429e99a55b6ae14664816"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/javascript/javascript.js",
+      "hash": "sha256:edc4427d470285d3fd9e3e2baa5d882cc489fe6499c3f6732264bc386dd07e6a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/julia/julia.js",
+      "hash": "sha256:56f157fe9c8a644657b77c223ecf99a2c31a5351151ec168e8fe7600d31b6cbd"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/kotlin/kotlin.js",
+      "hash": "sha256:1c35a9772062b076f0d36774061ecf008c9edb42f38f95f24e790b749237e60d"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/less/less.js",
+      "hash": "sha256:32fb140c9b4d82cbfd2714d6aed8ebddd9af0d9dbbaa7ce63026d3995d0705d9"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/lexon/lexon.js",
+      "hash": "sha256:d36935595b4f68f2e515f9df70be1776d8606c748dd4b7fece1a308b2bfac293"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/liquid/liquid.js",
+      "hash": "sha256:18e15f67522f7b4fd34f96434b35fd72dd662bc5423756c4b8ea10df50877690"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/lua/lua.js",
+      "hash": "sha256:64d7654a92eeaafe315a0d08f1a1da0a3c34e805953b10ae34edae399ab800b5"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/m3/m3.js",
+      "hash": "sha256:0df543e361eeb57186afbf2d3b6942335b345f02e578a16a2f20ae625fb035cd"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/markdown/markdown.js",
+      "hash": "sha256:1d116ad166b29a56de9cd0093561555b5496a630a12eebdffa6ea76232079fe6"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/mdx/mdx.js",
+      "hash": "sha256:c61671711dc41925fff28ccc08d648c47c8a92f65a4bd20b1fc002f20a1bde5d"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/mips/mips.js",
+      "hash": "sha256:e9ee29765b48eceb02e282a1c20fd9520182e7ef37aa390cbb77b6ec4ebd6d4d"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/msdax/msdax.js",
+      "hash": "sha256:09fd6e36922be495b77eb4f5e3bfd8a9c696d3181cf1e6a59d4ff3a012aa078b"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/mysql/mysql.js",
+      "hash": "sha256:91c56654f8ea3fc9db203cb87be255542706cab287d4882e23ec3c523b2fb49e"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/objective-c/objective-c.js",
+      "hash": "sha256:8eebde4cc1e1fce90c08cd709c1de103520fa3752eae58b074a99e2ed82198f2"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/pascal/pascal.js",
+      "hash": "sha256:bc9f86e10316518557081c2ffe209eaa6958ecb9eb8cc752f346d786ae833490"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/pascaligo/pascaligo.js",
+      "hash": "sha256:be6aeb4b6a2f0ae6e4cf2b86994316e0047d1d943b5ba1f3af48d978d99d9e07"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/perl/perl.js",
+      "hash": "sha256:aef83567e9e58aa10447329fc1bcc54cdd1da816a9b4057ec4a5a6ef940f273c"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/pgsql/pgsql.js",
+      "hash": "sha256:733f926dd517039b762b372a10080a269341b338870bf34e33391da6d7c30ee4"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/php/php.js",
+      "hash": "sha256:64f29dd7fab8bca9f5d1bd3f1f85c52ceffe7aa192ef646fa93fd64af5e50a3c"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/pla/pla.js",
+      "hash": "sha256:bb6e4661238435a652786f6c8ab9b26266cd55ee31f18e302da89a68a5042ef4"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/postiats/postiats.js",
+      "hash": "sha256:d4d2d2f9ef9b6f447a6513ee179b0d1ebe671e7cc9c4bf0578d7cb4ca48b75a0"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/powerquery/powerquery.js",
+      "hash": "sha256:875dd7f5d45a573fed65733d9e8df39b1c13b018a2d50fcc90abe86d3cc8f344"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/powershell/powershell.js",
+      "hash": "sha256:4cd4f6d7937b178da32c58f400f3c5fb0b1aecab43d04d128538645078f471e6"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/protobuf/protobuf.js",
+      "hash": "sha256:54a9b1e2da93eb7cad230a79fee95b9552ec44abe7ce3d65cb5ea363b8853557"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/pug/pug.js",
+      "hash": "sha256:7aee49835c7f791fdbc6b9c3145defb841dc0a11cf0e5a47c096b5d35f862b4d"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/python/python.js",
+      "hash": "sha256:0d8874e9831410a753f5c1b6ea5df18b790ee94348c3d7a4ff1a9b6ede2c4a61"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/qsharp/qsharp.js",
+      "hash": "sha256:f3f15200f4d74711142d96e51fbb6a8f98e3373c1068873bc2d68f3d35e5a525"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/r/r.js",
+      "hash": "sha256:ef8943c15f4212b09c2409bb5801509efcbe3bcfb7876ee15c5ce82e3210d878"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/razor/razor.js",
+      "hash": "sha256:fe2157163d454d71469000a1634054597e257d2684d42560bc372828e5691bc6"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/redis/redis.js",
+      "hash": "sha256:7cae02f4816c91f564ec477da7024d4cea420b4589cd2d1528e931ba385654d6"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/redshift/redshift.js",
+      "hash": "sha256:a32e8ab29c40163877a0f796e1ae381a543c9b41112bf64fbf23ba0601673e22"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/restructuredtext/restructuredtext.js",
+      "hash": "sha256:80599112a73eaf3c399bdbdb03bd0566c4a120970d3b100bbb5efcf6838d6441"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/ruby/ruby.js",
+      "hash": "sha256:260ea0ffdd17c493096f8187a2b9a28214e2fcb58f27126af02d7dfa567c005a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/rust/rust.js",
+      "hash": "sha256:28cf6c4170af3045d02eae53b394315d43fdf06f80263c7b0e2522657651531c"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/sb/sb.js",
+      "hash": "sha256:695888e1a4916adc2bcf77a154bd3633975e5ec6262e959a3d6337414930ecd9"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/scala/scala.js",
+      "hash": "sha256:4e16b65c07e890744a4ce51468b51078e362492568dd55a225f5cdfc7a0954c1"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/scheme/scheme.js",
+      "hash": "sha256:586c408b10171526d6647b5471d69dcd6e9fe05743be3f5679b2e508d6e4c940"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/scss/scss.js",
+      "hash": "sha256:4fc7a3957b02653e9999083c588d011626cfa071463b9b7e869752ae2b826149"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/shell/shell.js",
+      "hash": "sha256:85ce2d10eed15befb8e69268b0eba7d3cafa0e22c955f21e5ad1aeba8a7e1820"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/solidity/solidity.js",
+      "hash": "sha256:db4df586205f7f6fe09532bc448113c12b9bdfba145b185c7cd06bfc0c83358a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/sophia/sophia.js",
+      "hash": "sha256:f654291e79746e5969d9a6bda27c4690850f7c52c5dc7950958591f0d1992b35"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/sparql/sparql.js",
+      "hash": "sha256:1d51e2e8163f9c6d3d639e879bd73801ad8b1e6976aa487c4bab6f757b3a4c11"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/sql/sql.js",
+      "hash": "sha256:c0461e7035b3287360dda2bfe65314306fdd05106fd9707de16fcaada3252a9e"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/st/st.js",
+      "hash": "sha256:4bf002a48dec1a22ca4d4f306d230c8dcd8a2c2b15307dff1ca07355e6c3af30"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/swift/swift.js",
+      "hash": "sha256:921223cd77aef0005a2b396c8aa277ac154c392b438ad0229cdf8f4b4dc4ba5b"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/systemverilog/systemverilog.js",
+      "hash": "sha256:1c2345e07c4416c8ae314d0bf5c45c914c13d77873c5926d27cb7a277b7ce9e5"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/tcl/tcl.js",
+      "hash": "sha256:509a945554fab64a64551b73815c0762da50642b4276845abb51ba256d3ae9de"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/twig/twig.js",
+      "hash": "sha256:53f350c87328eceabc393cfd5153ccb419c58069284df0ab3f0d2777c23289a2"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/typescript/typescript.js",
+      "hash": "sha256:ee4db8523ed88bccf86613f3dbc8ec7b1345feaa59474240a1c81bf7cd373af8"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/typespec/typespec.js",
+      "hash": "sha256:8afb242a50cb80bd765f3d00773ee72ac95e22fbfeeaa4cc49bc22c272428b6b"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/vb/vb.js",
+      "hash": "sha256:1d6144ac018fbe02955249425683bda242aa736ec0f796398fdad479d2e71590"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/wgsl/wgsl.js",
+      "hash": "sha256:20b8de1d6065e85ab68fc3875fa462627e5e4fc782c881ea373c5b3a8c8d32dc"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/xml/xml.js",
+      "hash": "sha256:18b724364ab8d710e379c80bbf698da96f53fe224fbd7c6479f09c115b361ace"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/basic-languages/yaml/yaml.js",
+      "hash": "sha256:35c9a0f34335b4f8db8ee6a28a96d5147c47f7b24a702e9f4e8504c08a1fe297"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/editor/editor.main.css",
+      "hash": "sha256:05173e18dfdaa4ebff84f6cf01dd9ca7915722b406920e939188116074049afa"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/editor/editor.main.js",
+      "hash": "sha256:598cd6093cb1ff8f65b17b3b50077f8cea9aff60cbb2b9084d82dcc60785f0fb"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/css/cssMode.js",
+      "hash": "sha256:917c9b6afc79fd9cc55354c2f01912e585d6bddffe98591bad323174dd99efa9"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/css/cssWorker.js",
+      "hash": "sha256:06173e1f0c6ba0d567f79f73ff0a8762f8aabcc79992aca7b2c57f5970b0d58a"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/html/htmlMode.js",
+      "hash": "sha256:c96916a4d4fff9e11e04cb6648141bc51580c7f48454d27536aea48ab981a8da"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/html/htmlWorker.js",
+      "hash": "sha256:91acd78a2204084ee63039b11dd06eead0d7ae5836a92ce3a8a575c497036895"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/json/jsonMode.js",
+      "hash": "sha256:93ab918520312e82bd99116c28859a307e600c48c62c78f0162f8a7da1ca392c"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/json/jsonWorker.js",
+      "hash": "sha256:2011510aa86d52126e769de62dc1f1147e47740701ddde039398d102db35f350"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/typescript/tsMode.js",
+      "hash": "sha256:d516c762930e4e44154bb2c7f1b9ddc2ba09fa90056d3afc6787735882f13d08"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/language/typescript/tsWorker.js",
+      "hash": "sha256:c2b665ca25048e1a06b3570f29fc1849b9eccd51590a59713902a7059e5a8848"
+    },
+    {
+      "path": "/apps/monaco-cdn/vendor/vs/loader.js",
+      "hash": "sha256:776b5fd6c506078d8a41ba14ea19dca222406332fa1b402381e1af1c31f35841"
     }
   ],
   "supported": {
@@ -25,5 +405,6 @@
       "js"
     ]
   },
-  "supportsText": true
+  "supportsText": true,
+  "autosave": true
 }

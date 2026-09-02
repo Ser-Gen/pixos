@@ -1,0 +1,1867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Filmoskop</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+	/* The editor's own chrome. Deliberately a different element from the slide styles
+	   below: an exported deck carries only the second one, and the first attempt at
+	   separating them with a regex over one stylesheet quietly ate the syntax-highlighting
+	   rules — which is exactly the kind of thing a regex over CSS does. */
+	:root {
+		--bg: #14171c;
+		--panel: #1b1f26;
+		--line: rgba(255, 255, 255, .09);
+		--text: #dfe3ea;
+		--muted: #939caa;
+		--accent: #6fb3ff;
+	}
+
+	* { box-sizing: border-box; }
+
+	/* An author rule that sets `display` beats the browser's own [hidden] rule -- origin
+	   comes before specificity in the cascade -- so `element.hidden = true` did nothing to
+	   #empty, which is positioned over the whole stage. The placeholder sat on top of every
+	   slide. Anything toggled with .hidden needs this; the same omission blanked the
+	   presenter window, so speaker.html carries it too. */
+	[hidden] { display: none !important; }
+	html, body { height: 100%; margin: 0; }
+
+	body {
+		display: flex;
+		flex-direction: column;
+		background: var(--bg);
+		color: var(--text);
+		font: 14px/1.5 -apple-system, "Segoe UI", Arial, Helvetica, sans-serif;
+		overflow: hidden;
+	}
+
+	#bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex: 0 0 auto;
+		padding: 8px 12px;
+		border-bottom: 1px solid var(--line);
+		background: var(--panel);
+	}
+
+	#name { font-size: 13px; color: var(--muted); margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	#name b { color: var(--text); font-weight: 600; }
+	#at { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+	button, select {
+		font: inherit;
+		font-size: 12px;
+		padding: 5px 10px;
+		color: var(--text);
+		background: rgba(255, 255, 255, .06);
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		cursor: pointer;
+		white-space: nowrap;
+	}
+	button:hover, select:hover { background: rgba(255, 255, 255, .12); }
+	button[aria-pressed="true"] { background: #2b5f9e; border-color: #3476c4; }
+	select { padding: 4px 6px; }
+
+	#split { flex: 1 1 auto; display: flex; min-height: 0; }
+
+	#editorPane {
+		flex: 0 0 38%;
+		min-width: 0;
+		display: flex;
+		position: relative;
+		border-right: 1px solid var(--line);
+		background: #101318;
+	}
+
+	#source {
+		flex: 1 1 auto;
+		min-width: 0;
+		padding: 12px 14px;
+		font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		color: var(--text);
+		background: #101318;
+		border: none;
+		resize: none;
+		outline: none;
+		tab-size: 4;
+	}
+
+	#monaco { flex: 1 1 auto; min-width: 0; }
+
+	#grip { flex: 0 0 5px; cursor: col-resize; background: var(--line); }
+	#grip:hover { background: var(--accent); }
+
+	#stage {
+		flex: 1 1 auto;
+		min-width: 0;
+		position: relative;
+		background: #222;
+		overflow: hidden;
+	}
+
+	#slides {
+		height: 100%;
+		overflow-y: scroll;
+		scroll-snap-type: y mandatory;
+		scroll-behavior: smooth;
+		background: #222;
+	}
+
+	.Slide--current { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+	body.presenting #bar,
+	body.presenting #editorPane,
+	body.presenting #grip { display: none; }
+	body.presenting .Slide { border-bottom: none; }
+	body.presenting .Slide--current { outline: none; }
+
+	body.slidesOnly #editorPane, body.slidesOnly #grip { display: none; }
+
+	/* The block panel: a drawer over the slides rather than a third pane. Shut, it costs
+	   the two panes nothing; open, a block preview is big enough to recognise a layout by,
+	   which is the entire point of showing them instead of listing their names. */
+	#blocks {
+		position: absolute;
+		inset: 0;
+		z-index: 3;
+		display: flex;
+		flex-direction: column;
+		background: rgba(14, 17, 21, .975);
+	}
+
+	#blocksHead {
+		display: flex;
+		align-items: baseline;
+		gap: 10px;
+		flex: 0 0 auto;
+		padding: 11px 14px;
+		border-bottom: 1px solid var(--line);
+	}
+
+	#blocksHead b { font-size: 13px; }
+	#blocksHint { flex: 1 1 auto; color: var(--muted); font-size: 11px; }
+
+	#blocksGrid {
+		flex: 1 1 auto;
+		overflow: auto;
+		align-content: start;
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+		gap: 14px;
+		padding: 14px;
+	}
+
+	.Block {
+		display: flex;
+		flex-direction: column;
+		padding: 0;
+		text-align: left;
+		background: #0d1015;
+		border: 1px solid var(--line);
+		border-radius: 3px;
+		overflow: hidden;
+		cursor: pointer;
+	}
+
+	.Block:hover, .Block:focus-visible { border-color: var(--accent); outline: none; }
+
+	/* The preview is the slide, built by the same code the deck is, at the deck's own size
+	   and scaled down -- so what you press is what you get. It is inert: the click belongs
+	   to the button around it. */
+	.Block__view { position: relative; overflow: hidden; background: var(--slide-bg, #333); }
+	.Block__stage { position: absolute; top: 0; left: 0; transform-origin: top left; pointer-events: none; }
+
+	.Block__name {
+		display: flex;
+		align-items: baseline;
+		justify-content: space-between;
+		gap: 8px;
+		padding: 7px 9px;
+		font-size: 12px;
+		border-top: 1px solid var(--line);
+	}
+
+	.Block__kind { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .07em; }
+
+	#empty {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		text-align: center;
+		padding: 2em;
+		color: var(--muted);
+		font-size: 13px;
+		pointer-events: none;
+	}
+</style>
+
+<!-- Everything a slide needs, and nothing else. This element is what an export copies,
+     verbatim, so a rule that belongs to a slide has to live here and a rule that belongs
+     to the editor must not. -->
+<style id="slideStyle">
+	:root {
+		--slide-bg: #333;
+		--slide-fg: #fff;
+		/* Here rather than on the app's body: a slide has to look the same in the preview,
+		   in the presenter's frames and in an exported file, and the export carries this
+		   stylesheet and nothing else. Left out, the export fell back to the browser's
+		   default serif and was visibly a different deck. */
+		--slide-font: -apple-system, "Segoe UI", Arial, Helvetica, sans-serif;
+	}
+
+	/* The scrolling stack of slides. The app and the export lay it out differently -- one
+	   fills a pane, the other the window -- but it *looks* the same in both, and that is
+	   this rule's half of the job. */
+	.Slides {
+		scrollbar-width: thin;
+		scrollbar-color: rgba(150, 156, 166, .55) transparent;
+	}
+
+	.Slides::-webkit-scrollbar { width: 10px; }
+	.Slides::-webkit-scrollbar-track { background: rgba(150, 156, 166, .14); }
+	.Slides::-webkit-scrollbar-thumb { background: rgba(150, 156, 166, .5); }
+	.Slides::-webkit-scrollbar-thumb:hover { background: rgba(150, 156, 166, .75); }
+
+	.Slide {
+		position: relative;
+		height: 100%;
+		padding: 3vh 4vw;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		scroll-snap-align: start;
+		background: var(--slide-bg);
+		color: var(--slide-fg);
+		font-family: var(--slide-font);
+		font-size: clamp(14px, 2.1vw, 34px);
+		border-bottom: 1px solid #222;
+		overflow: hidden;
+	}
+
+	.Slide__content { width: 100%; transform-origin: center center; }
+
+	.Slide__counter {
+		position: absolute;
+		right: 1.2em;
+		bottom: 1em;
+		font-size: .5em;
+		opacity: .28;
+		line-height: 1;
+	}
+
+	.Slide h1, .Slide h2, .Slide h3 { margin-top: 0; line-height: 1.15; }
+	.Slide li + li { margin-top: .4em; }
+	.Slide img { max-width: 100%; max-height: 70vh; vertical-align: middle; }
+	.Slide a { color: rgb(170, 190, 255); }
+	.Slide pre {
+		margin: 0;
+		padding: .6em .8em;
+		background: #1d1f21;
+		border-radius: 4px;
+		overflow-x: auto;
+		font-size: .62em;
+		line-height: 1.5;
+	}
+	.Slide code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+	.Slide table { border-collapse: collapse; font-size: .8em; }
+	.Slide th, .Slide td { border: 1px solid rgba(255, 255, 255, .25); padding: .25em .6em; }
+	.Slide blockquote {
+		margin: 0;
+		padding-left: .8em;
+		border-left: 4px solid rgba(255, 255, 255, .3);
+		font-style: italic;
+	}
+
+	/* A picture that did not load says so, with the address it tried. Silence here is
+	   expensive: you find out in front of the room. */
+	.Slide img.missing {
+		display: inline-block;
+		min-width: 8em;
+		min-height: 3em;
+		padding: .4em .6em;
+		border: 1px dashed rgba(255, 120, 120, .7);
+		border-radius: 4px;
+		font-size: .45em;
+		color: #ff9c9c;
+		font-family: ui-monospace, Menlo, Consolas, monospace;
+		word-break: break-all;
+	}
+
+	/* --- layouts ---------------------------------------------------------------- */
+
+	.Layout--sideImage {
+		display: flex;
+		align-items: center;
+		gap: 5%;
+		width: 100%;
+	}
+	.Layout--sideImage > figure { flex: 0 0 45%; margin: 0; }
+	.Layout--sideImage > figure img { width: 100%; max-height: 78vh; object-fit: contain; }
+	.Layout--sideImage > .Layout__body { flex: 1 1 auto; min-width: 0; }
+	.Slide--imageLeft .Layout--sideImage { flex-direction: row; }
+	.Slide--imageRight .Layout--sideImage { flex-direction: row-reverse; }
+
+	.Slide--backgroundImage { padding: 0; }
+	.Slide--backgroundImage .Layout--backgroundImage {
+		position: absolute;
+		inset: 0;
+		background-size: cover;
+		background-position: center;
+	}
+	.Slide--dimmed .Layout--backgroundImage::after {
+		content: "";
+		position: absolute;
+		inset: 0;
+		background: rgba(0, 0, 0, .5);
+	}
+	/* Full height, so the picture behind it -- which is positioned against this box -- is
+	   the whole slide rather than a strip the height of the text. */
+	.Slide--backgroundImage .Slide__content {
+		position: relative;
+		z-index: 1;
+		display: flex;
+		align-items: center;
+		height: 100%;
+		padding: 3vh 4vw;
+		text-shadow: 0 2px 12px rgba(0, 0, 0, .6);
+	}
+
+	/* The words, and the reason they are wrapped at all: an absolutely positioned element
+	   paints above in-flow content whatever the DOM order says, so the picture covered the
+	   text completely until this had a position and a layer of its own. */
+	.Slide--backgroundImage .Layout__over {
+		position: relative;
+		z-index: 1;
+		width: 100%;
+		transform-origin: center center;
+	}
+
+	.Slide--title { text-align: center; }
+	.Slide--title .Layout--title { font-size: 1.15em; }
+
+	.Layout--columns { display: flex; gap: 6%; align-items: flex-start; }
+	.Layout--columns > * { flex: 1 1 0; min-width: 0; }
+
+	.Layout--quote {
+		font-size: 1.2em;
+		font-style: italic;
+		text-align: center;
+		max-width: 22em;
+		margin: 0 auto;
+	}
+
+	/* --- prism, okaidia, trimmed to what a slide uses --------------------------- */
+
+	.token.comment, .token.prolog, .token.doctype, .token.cdata { color: #8292a2; }
+	.token.punctuation { color: #f8f8f2; }
+	.token.property, .token.tag, .token.constant, .token.symbol, .token.deleted { color: #f92672; }
+	.token.boolean, .token.number { color: #ae81ff; }
+	.token.selector, .token.attr-name, .token.string, .token.char, .token.builtin, .token.inserted { color: #a6e22e; }
+	.token.operator, .token.entity, .token.url, .token.variable { color: #f8f8f2; }
+	.token.atrule, .token.attr-value, .token.function, .token.class-name { color: #e6db74; }
+	.token.keyword { color: #66d9ef; }
+	.token.regex, .token.important { color: #fd971f; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+	<div id="name"><b>Untitled</b></div>
+	<span id="at"></span>
+	<select id="editorPick" title="Which editor to write in">
+		<option value="auto">Editor: automatic</option>
+		<option value="monaco">Editor: Monaco</option>
+		<option value="plain">Editor: plain</option>
+	</select>
+	<button id="saveAs" hidden title="This deck has never been saved">Save as…</button>
+	<button id="editToggle" aria-pressed="true" title="Show or hide the source">Source</button>
+	<button id="blocksToggle" aria-pressed="false" title="Insert a ready-made slide or block">Blocks</button>
+	<button id="speaker" title="Open the presenter window on your other screen">Speaker</button>
+	<button id="present" title="Fullscreen from the current slide">Present</button>
+	<button id="export" title="Write a standalone .html beside the deck">Export</button>
+</div>
+
+<div id="split">
+	<div id="editorPane">
+		<textarea id="source" spellcheck="false" placeholder="# First slide
+
+Write markdown. Five dashes start the next slide.
+
+-----
+
+::side-image{src=&quot;photo.jpg&quot;}
+Text beside a picture.
+::"></textarea>
+	</div>
+	<div id="grip"></div>
+	<div id="stage">
+		<div id="slides" class="Slides"></div>
+		<div id="empty" hidden></div>
+		<div id="blocks" hidden>
+			<div id="blocksHead">
+				<b>Insert</b>
+				<span id="blocksHint"></span>
+				<button id="blocksClose" title="Close (Esc)">Close</button>
+			</div>
+			<div id="blocksGrid"></div>
+		</div>
+	</div>
+</div>
+
+<script type="module">
+import * as deck from './js/deck.js';
+import {parseMarkdown} from './vendor/comark.mjs';
+
+// Filmoskop, ported into PixOS.
+//
+// The original was one HTML file that was both the deck and the player, living inside a
+// Monaco playground and reaching into `parent.html` for the editor's cursor. Here the deck
+// is an ordinary markdown file, this app owns both halves — source on the left, slides on
+// the right — and the only thing it reaches for is the shell's file API.
+//
+// What the port had to decide, and where each answer lives:
+//   * where a slide ends, what a layout is, what belongs to the speaker  -> js/deck.js
+//   * turning that into elements, and everything that needs a browser    -> here
+//   * the presenter view                                                 -> speaker.html
+
+var ui = {
+	name: document.getElementById('name'),
+	at: document.getElementById('at'),
+	source: document.getElementById('source'),
+	editorPane: document.getElementById('editorPane'),
+	editorPick: document.getElementById('editorPick'),
+	grip: document.getElementById('grip'),
+	stage: document.getElementById('stage'),
+	slides: document.getElementById('slides'),
+	empty: document.getElementById('empty'),
+	blocks: document.getElementById('blocks'),
+	blocksToggle: document.getElementById('blocksToggle'),
+	blocksClose: document.getElementById('blocksClose'),
+	blocksHint: document.getElementById('blocksHint'),
+	blocksGrid: document.getElementById('blocksGrid'),
+	saveAs: document.getElementById('saveAs'),
+	editToggle: document.getElementById('editToggle'),
+	speaker: document.getElementById('speaker'),
+	present: document.getElementById('present'),
+	export: document.getElementById('export')
+};
+
+var state = {
+	path: null,
+	name: 'Untitled',
+	dir: '/',
+	settings: deck.settingsFrom({}),
+	slides: [],
+	at: 0,
+	dirty: false,
+	saveTimer: null,
+	renderToken: 0,
+	editorSetting: 'auto',
+	editorKind: 'plain'
+};
+
+// The editor, behind six functions. Two things implement it — the textarea that is always
+// here, and the Monaco the editor app carries — and everything above this line neither
+// knows nor cares which one is in the pane.
+var editor = null;
+
+
+// The speaker window is a separate browser window, so this is the only way to reach it.
+// A channel rather than `opener`: it survives either side reloading, and it does not care
+// which of them opened which.
+var channel = typeof BroadcastChannel === 'function'
+	? new BroadcastChannel('pixos-filmoskop')
+	: null;
+
+// --- the editor -----------------------------------------------------------------------
+//
+// PixOS already has a real editor: the `monaco` app (folder `apps/monaco-cdn` -- the two
+// are not the same word, see deck.js) carries a vendored Monaco, 12 MB of it,
+// installed into the same filesystem this app is. Shipping a second copy would be absurd
+// and loading it from that app's vendor folder is not a hack — it is the same origin and
+// the same filesystem. If nobody installed it, the textarea is the editor, and it has to
+// be good enough on its own rather than a placeholder for something better.
+
+function plainEditor () {
+	ui.source.hidden = false;
+	return {
+		kind: 'plain',
+		getValue: function () { return ui.source.value; },
+		setValue: function (text) { ui.source.value = text; },
+		focus: function () { ui.source.focus(); },
+		caretOffset: function () { return ui.source.selectionStart; },
+		setCaretOffset: function (offset) {
+			ui.source.focus();
+			ui.source.setSelectionRange(offset, offset);
+		},
+		hasFocus: function () { return document.activeElement === ui.source; },
+		// execCommand is obsolete and is still the only API that inserts text *as if
+		// typed*. Assigning to a textarea's value wipes the browser's own undo stack --
+		// the bug Tab had -- and a block palette that costs you your undo history is worse
+		// than typing the block out.
+		insert: function (edit) {
+			ui.source.focus();
+			ui.source.setSelectionRange(edit.start, edit.end);
+			if (!document.execCommand('insertText', false, edit.text)) {
+				// Nothing left that keeps undo; the text still has to arrive.
+				ui.source.setRangeText(edit.text, edit.start, edit.end, 'end');
+			}
+			ui.source.setSelectionRange(edit.caret, edit.caret);
+		},
+		layout: function () {},
+		dispose: function () { ui.source.hidden = true; }
+	};
+}
+
+async function monacoEditor (text) {
+	var base = '/__browserfs__' + deck.MONACO_VENDOR;
+
+	// Monaco's stylesheet is not loaded by the AMD loader; the editor app has it as a
+	// <link> and so must this one.
+	if (!document.querySelector('link[data-name="vs/editor/editor.main"]')) {
+		var link = document.createElement('link');
+		link.rel = 'stylesheet';
+		link.setAttribute('data-name', 'vs/editor/editor.main');
+		link.href = base + '/editor/editor.main.css';
+		document.head.append(link);
+	}
+
+	if (typeof window.require !== 'function') {
+		await new Promise(function (resolve, reject) {
+			var script = document.createElement('script');
+			script.src = base + '/loader.js';
+			script.onload = resolve;
+			script.onerror = function () {
+				reject(new Error('The Monaco editor app is installed but its loader did not load.'));
+			};
+			document.head.append(script);
+		});
+		// Resolved to an absolute URL for the same reason the editor app does it: the AMD
+		// loader resolves `paths` against its own idea of a base, which is not this page.
+		window.require.config({paths: {vs: base}});
+	}
+
+	var monaco = await new Promise(function (resolve, reject) {
+		try {
+			window.require(['vs/editor/editor.main'], function () {
+				resolve(window.monaco);
+			});
+		}
+		catch (err) {
+			reject(err);
+		}
+	});
+
+	var host = document.createElement('div');
+	host.id = 'monaco';
+	ui.editorPane.append(host);
+	ui.source.hidden = true;
+
+	var instance = monaco.editor.create(host, {
+		value: text,
+		language: 'markdown',
+		theme: 'vs-dark',
+		wordWrap: 'on',
+		automaticLayout: true,
+		minimap: {enabled: false},
+		insertSpaces: false,
+		tabSize: 4,
+		fontSize: 13,
+		scrollBeyondLastLine: false
+	});
+
+	var model = instance.getModel();
+	instance.onDidChangeModelContent(onEdit);
+	instance.onDidChangeCursorPosition(followCaret);
+
+	return {
+		kind: 'monaco',
+		getValue: function () { return instance.getValue(); },
+		setValue: function (value) { instance.setValue(value); },
+		focus: function () { instance.focus(); },
+		caretOffset: function () {
+			var position = instance.getPosition();
+			return position ? model.getOffsetAt(position) : 0;
+		},
+		setCaretOffset: function (offset) {
+			var position = model.getPositionAt(offset);
+			instance.setPosition(position);
+			instance.revealLineInCenter(position.lineNumber);
+			instance.focus();
+		},
+		hasFocus: function () { return instance.hasTextFocus(); },
+		// Monaco keeps its own undo history, and executeEdits is what goes into it.
+		insert: function (edit) {
+			instance.executeEdits('blocks', [{
+				range: monaco.Range.fromPositions(
+					model.getPositionAt(edit.start), model.getPositionAt(edit.end)),
+				text: edit.text,
+				forceMoveMarkers: true
+			}]);
+			instance.pushUndoStop();
+			var position = model.getPositionAt(edit.caret);
+			instance.setPosition(position);
+			instance.revealLineInCenter(position.lineNumber);
+			instance.focus();
+		},
+		layout: function () { instance.layout(); },
+		dispose: function () {
+			instance.dispose();
+			host.remove();
+			ui.source.hidden = true;
+		}
+	};
+}
+
+function canInstallApps () {
+	return parent !== window && typeof parent.installAppById === 'function';
+}
+
+// Monaco lives in another app, and installing that app is something the shell already
+// knows how to do -- so the answer to "it is not installed" is a button, not an errand.
+// Nothing restarts: `useEditor` swaps the pane in place, carrying the text and the caret
+// across, which is the same path the picker uses.
+var installingMonaco = false;
+
+async function installMonaco () {
+	if (installingMonaco || !canInstallApps()) {
+		return;
+	}
+	installingMonaco = true;
+	// Twelve megabytes of small files: slow enough that silence would read as a dead
+	// button. Sticky, and dismissed by hand below rather than left to expire, so the note
+	// disappears exactly when the editor appears.
+	var pending = parent.notify({
+		level: 'info',
+		title: 'Installing Monaco',
+		timeout: 0,
+		message: 'Copying it into the filesystem. The editor swaps over by itself.',
+		source: 'Filmoskop'
+	});
+	try {
+		await parent.installAppById(deck.MONACO_APP);
+		// The button said Install Monaco, so it ends in Monaco -- and the choice is
+		// written down, or the next boot would go back to asking.
+		state.editorSetting = 'monaco';
+		ui.editorPick.value = 'monaco';
+		await saveSettings();
+		await useEditor('monaco');
+	}
+	catch (err) {
+		report('Could not install Monaco', err);
+	}
+	finally {
+		installingMonaco = false;
+		if (typeof parent.dismissNotification === 'function') {
+			parent.dismissNotification(pending);
+		}
+	}
+}
+
+async function useEditor (setting) {
+	var installed = (parent !== window && parent.apps ? parent.apps : []).map(function (app) {
+		return app.id;
+	});
+	var wanted = deck.chooseEditor(setting, installed);
+	var text = editor ? editor.getValue() : ui.source.value;
+
+	var notice = deck.editorNotice(setting, installed, canInstallApps());
+	if (notice && typeof parent.notify === 'function') {
+		parent.notify(notice === 'offer' ? {
+			level: 'info',
+			title: 'Monaco is not installed',
+			// Sticky on purpose: an offer that expires after six seconds is not an offer.
+			timeout: 0,
+			message: 'Filmoskop can install it for you — about 12 MB copied into the '
+				+ 'filesystem, once. The pane swaps over when it lands and nothing you have '
+				+ 'typed is lost. Until then this is the plain editor.',
+			actions: [{label: 'Install Monaco', run: installMonaco}],
+			source: 'Filmoskop'
+		} : {
+			level: 'info',
+			title: 'Monaco is not installed',
+			message: 'Install the Monaco editor from App Manager and pick it again. '
+				+ 'Until then this is the plain editor.',
+			source: 'Filmoskop'
+		});
+	}
+
+	// The answer comes before the shortcut: picking Monaco while the plain editor is
+	// already in the pane changes nothing to swap, and returning here first is how that
+	// press used to go entirely unanswered.
+	if (editor && editor.kind === wanted) {
+		return;
+	}
+
+	if (editor) {
+		editor.dispose();
+		editor = null;
+	}
+
+	if (wanted === 'monaco') {
+		try {
+			editor = await monacoEditor(text);
+		}
+		catch (err) {
+			report('Could not start Monaco', err);
+			editor = plainEditor();
+			editor.setValue(text);
+		}
+	}
+	else {
+		editor = plainEditor();
+		editor.setValue(text);
+	}
+
+	state.editorKind = editor.kind;
+	ui.editorPick.value = state.editorSetting;
+	await render();
+	followCaret(true);
+}
+
+async function loadSettings () {
+	try {
+		var response = await fetch('/__browserfs__' + deck.settingsFileFor('filmoskop'));
+		if (response.ok) {
+			state.editorSetting = deck.readEditorSetting(await response.json());
+		}
+	}
+	catch (err) {
+		// No settings file yet, or an unreadable one. The default is a real answer.
+	}
+	ui.editorPick.value = state.editorSetting;
+}
+
+async function saveSettings () {
+	if (typeof parent.saveFileLocal !== 'function') {
+		return;
+	}
+	try {
+		await parent.saveFileLocal(deck.settingsFileFor('filmoskop'),
+			parent.Buffer.from(JSON.stringify({editor: state.editorSetting}, null, '\t')));
+	}
+	catch (err) {
+		report('Could not remember that editor choice', err);
+	}
+}
+
+// --- the shell's side ---------------------------------------------------------------
+
+// Called by PixOS when a file is opened into this window. It can arrive before the editor
+// has finished starting -- Monaco is 12 MB and a moment -- so it waits rather than writing
+// into an editor that is not there yet.
+window.openFile = async function (src, name) {
+	await ready;
+	state.name = name || 'Untitled';
+	// `src` arrives as the served path; the deck's own folder is what relative images in
+	// it are written against.
+	var path = String(src || '').replace(/^.*__browserfs__/, '').split('?')[0];
+	state.path = path || null;
+	state.dir = path ? path.replace(/\/[^/]*$/, '') || '/' : '/';
+	ui.name.innerHTML = '';
+	var strong = document.createElement('b');
+	strong.textContent = state.name;
+	ui.name.append(strong);
+	ui.saveAs.hidden = true;
+
+	var text = '';
+	try {
+		var response = await fetch(src);
+		text = await response.text();
+	}
+	catch (err) {
+		report('Could not read ' + state.name, err);
+	}
+	editor.setValue(text);
+	markSaved(false);
+	await render();
+	showSlide(0, true);
+};
+
+function markSaved (dirty) {
+	state.dirty = dirty;
+	if (typeof markDirty === 'function') {
+		markDirty(dirty);
+	}
+}
+
+// Autosave, because a deck is a document you edit for an hour and the manifest says so
+// (`"autosave": true`, which is what puts the *saves automatically* badge in App Manager).
+// Debounced rather than per keystroke: BrowserFS is local and cheap, but a write per
+// character would still be a write per character.
+function scheduleSave () {
+	markSaved(true);
+	// Shown the moment there is something to lose, rather than at startup: the shell calls
+	// openFile *after* this window loads, so a button decided at load time would flash on
+	// every deck that does have a file.
+	if (!state.path) {
+		ui.saveAs.hidden = false;
+	}
+	clearTimeout(state.saveTimer);
+	state.saveTimer = setTimeout(save, 800);
+}
+
+async function save () {
+	// Opened from a launcher rather than by opening a file, there is nowhere to autosave
+	// *to*. Saying so with a button beats prompting for a name on every keystroke.
+	if (!state.path || typeof parent.saveFileLocal !== 'function') {
+		return;
+	}
+	try {
+		await parent.saveFileLocal(state.path, parent.Buffer.from(editor.getValue()));
+		markSaved(false);
+	}
+	catch (err) {
+		report('Could not save ' + state.name, err);
+	}
+}
+
+function report (title, err) {
+	var message = (err && err.message) ? err.message : String(err || '');
+	if (parent !== window && typeof parent.describeError === 'function') {
+		var described = parent.describeError(title, err);
+		title = described.title;
+		message = described.message;
+	}
+	if (parent !== window && typeof parent.notify === 'function') {
+		parent.notify({level: 'error', title: title, message: message, source: 'Filmoskop'});
+		return;
+	}
+	console.error(title, err);
+}
+
+// --- rendering ------------------------------------------------------------------------
+
+// Every slide is parsed on its own. That is what makes the source and the preview line up
+// — slide three is the third block of text, whatever is wrong with slide two — and it is
+// what a future incremental re-render needs: one slide changing is one parse.
+async function render () {
+	var token = ++state.renderToken;
+	var source = editor ? editor.getValue() : ui.source.value;
+	var split = deck.splitSlides(source);
+	var parsed = [];
+
+	for (var i = 0; i < split.slides.length; i++) {
+		var doc;
+		try {
+			doc = await parseMarkdown(split.slides[i]);
+		}
+		catch (err) {
+			doc = {frontmatter: {}, nodes: [['p', {}, 'This slide could not be parsed: '
+				+ ((err && err.message) || 'unknown error')]]};
+		}
+		// A newer edit started while this one was parsing; its slides are the real ones.
+		if (token !== state.renderToken) {
+			return;
+		}
+		parsed.push(doc);
+	}
+
+	state.settings = deck.settingsFrom(parsed.length ? parsed[0].frontmatter : {});
+	document.body.style.setProperty('--slide-bg', state.settings.theme === 'light' ? '#f4f4f2' : '#333');
+	document.body.style.setProperty('--slide-fg', state.settings.theme === 'light' ? '#1b1b1b' : '#fff');
+
+	state.slides = parsed.map(function (doc, index) {
+		var plan = deck.planSlide(doc.nodes);
+		return {
+			index: index,
+			className: plan.className,
+			title: deck.titleOf(plan.content) || ('Slide ' + (index + 1)),
+			plan: plan
+		};
+	});
+
+	ui.slides.innerHTML = '';
+	state.slides.forEach(function (slide) {
+		ui.slides.append(buildSlide(slide));
+	});
+
+	ui.empty.hidden = state.slides.length > 1 || source.trim().length > 0;
+	if (ui.empty.hidden === false) {
+		ui.empty.textContent = 'An empty deck. Write a heading on the left; five dashes on '
+			+ 'their own line start the next slide.';
+	}
+
+	fit();
+	publishDeck();
+	updateCounter();
+}
+
+function buildSlide (slide) {
+	var section = document.createElement('section');
+	section.className = 'Slide ' + (slide.className || '');
+	section.dataset.index = String(slide.index);
+
+	var content = document.createElement('div');
+	content.className = 'Slide__content';
+	slide.plan.content.forEach(function (node) {
+		var element = create(node);
+		if (element) {
+			content.append(element);
+		}
+	});
+	section.append(content);
+
+	if (state.settings.counter) {
+		var counter = document.createElement('div');
+		counter.className = 'Slide__counter';
+		counter.textContent = String(slide.index + 1);
+		section.append(counter);
+	}
+
+	// Clicking a slide puts the caret in it: the preview is a way back into the source,
+	// not only a picture of it.
+	section.onclick = function (e) {
+		if (e.target.closest('a')) {
+			return;
+		}
+		focusSource(slide.index);
+	};
+	return section;
+}
+
+// Tags that are never built, whatever the markdown says. A deck is usually your own file,
+// but it is also the kind of file people send each other, and comark passes raw HTML
+// through — so this is the line between "markdown may contain HTML" and "a slide may run
+// code".
+var FORBIDDEN = {script: true, iframe: true, object: true, embed: true, link: true,
+	meta: true, base: true, form: true, input: true, button: true, style: true};
+
+function create (node) {
+	if (node === null || node === undefined) {
+		return null;
+	}
+	if (typeof node === 'string' || typeof node === 'number') {
+		return document.createTextNode(String(node));
+	}
+	if (!Array.isArray(node)) {
+		return null;
+	}
+
+	var tag = String(node[0] || '').toLowerCase();
+	var props = node[1] || {};
+	var children = node.slice(2);
+
+	// The speaker's notes are not the audience's.
+	if (tag === deck.NOTES) {
+		return null;
+	}
+	if (deck.isLayout(tag)) {
+		return createLayout(tag, props, children);
+	}
+	if (FORBIDDEN[tag] || !/^[a-z][a-z0-9-]*$/.test(tag)) {
+		return null;
+	}
+
+	var element = document.createElement(tag);
+	applyProps(element, props);
+	if (tag === 'img') {
+		watchImage(element);
+	}
+	children.forEach(function (child) {
+		var built = create(child);
+		if (built) {
+			element.append(built);
+		}
+	});
+
+	if (tag === 'pre') {
+		highlight(element, props);
+	}
+	return element;
+}
+
+// A picture that will not load is otherwise silent, and you find out in front of the room.
+// It says which address failed, because by far the most common reason is a path that is
+// right beside the deck on your machine and nowhere on anybody else's.
+function watchImage (image) {
+	// A picture arriving changes how tall the slide's content is, and the fit was measured
+	// before it did -- so a slide that ends up too tall stays too tall, clipped top and
+	// bottom, until something else happens to re-measure it. Both outcomes count: the
+	// dashed "did not load" box has a size of its own.
+	var settle = function () {
+		var section = image.closest ? image.closest('.Slide') : null;
+		if (section) {
+			fitSlide(section);
+		}
+	};
+	image.onload = settle;
+	image.onerror = function () {
+		image.classList.add('missing');
+		image.alt = 'This picture did not load: ' + (image.getAttribute('src') || '');
+		image.title = image.alt;
+		settle();
+	};
+}
+
+function applyProps (element, props) {
+	Object.keys(props || {}).forEach(function (key) {
+		var value = props[key];
+		// No event handlers, ever, and no javascript: anywhere a URL is expected.
+		if (/^on/i.test(key) || value === false || value === null || value === undefined) {
+			return;
+		}
+		if (key === 'src' || key === 'href' || key === 'poster') {
+			var url = String(value);
+			if (/^\s*javascript:/i.test(url)) {
+				return;
+			}
+			element.setAttribute(key, key === 'href' && deck.isExternalSrc(url)
+				? url
+				: assetUrl(url));
+			if (key === 'href' && deck.isExternalSrc(url)) {
+				element.setAttribute('target', '_blank');
+				element.setAttribute('rel', 'noopener noreferrer');
+			}
+			return;
+		}
+		if (key === 'language') {
+			element.dataset.language = String(value);
+			return;
+		}
+		element.setAttribute(key, String(value === true ? '' : value));
+	});
+}
+
+// A path in the deck becomes a path the browser can fetch. Relative to the *deck*, not to
+// this app — which lives two folders away and would otherwise resolve every picture in
+// every deck to nothing.
+function assetUrl (src) {
+	if (deck.isExternalSrc(src)) {
+		return src;
+	}
+	return '/__browserfs__' + deck.resolveAsset(src, state.dir);
+}
+
+function createLayout (name, props, children) {
+	var box = document.createElement('div');
+	box.className = 'Layout Layout--' + camel(name);
+
+	if (name === 'background-image') {
+		box.style.backgroundImage = 'url("' + assetUrl(String(props.src || '')).replace(/"/g, '%22') + '")';
+		var slideContent = document.createElement('div');
+		slideContent.className = 'Layout__over';
+		children.forEach(function (child) {
+			var built = create(child);
+			if (built) {
+				slideContent.append(built);
+			}
+		});
+		// The picture is the slide's background; the words sit above it, so they are
+		// returned separately rather than nested inside the image element.
+		var wrapper = document.createDocumentFragment();
+		wrapper.append(box);
+		if (slideContent.childNodes.length) {
+			wrapper.append(slideContent);
+		}
+		return wrapper;
+	}
+
+	if (name === 'side-image') {
+		var figure = document.createElement('figure');
+		var image = document.createElement('img');
+		image.src = assetUrl(String(props.src || ''));
+		image.alt = String(props.alt || '');
+		watchImage(image);
+		figure.append(image);
+		var body = document.createElement('div');
+		body.className = 'Layout__body';
+		children.forEach(function (child) {
+			var built = create(child);
+			if (built) {
+				body.append(built);
+			}
+		});
+		box.append(figure, body);
+		return box;
+	}
+
+	children.forEach(function (child) {
+		var built = create(child);
+		if (built) {
+			box.append(built);
+		}
+	});
+	return box;
+}
+
+function camel (name) {
+	return String(name).replace(/-([a-z])/g, function (all, letter) {
+		return letter.toUpperCase();
+	});
+}
+
+function highlight (pre, props) {
+	if (typeof Prism === 'undefined') {
+		return;
+	}
+	var code = pre.querySelector('code');
+	var language = String((props && props.language) || '').toLowerCase();
+	if (!code || !language || !Prism.languages[language]) {
+		return;
+	}
+	try {
+		code.innerHTML = Prism.highlight(code.textContent, Prism.languages[language], language);
+	}
+	catch (err) {
+		// Highlighting is decoration. A language Prism mis-parses must not cost the slide.
+	}
+}
+
+// The original scaled each slide's content to fit its box, and it is still the right
+// answer: a slide is a fixed frame, and text that overflows it is worse than text that is
+// a little smaller than you asked for.
+// A slide is a fixed box and its content is however much you wrote, so content that does
+// not fit is shrunk until it does. Without this it overflows a centred flex box in both
+// directions at once and `overflow: hidden` takes the top and the bottom off -- which is
+// what the block tiles were doing before they were fitted like everything else.
+//
+// The measurement survives being inside something already scaled: the outer and inner
+// rects are multiplied by the same factor, so their ratio is not.
+function fitSlide (section) {
+	var content = section.querySelector('.Slide__content');
+	if (!content) {
+		return;
+	}
+	// What can overflow is not always the content box. On a background-image slide the
+	// content box *is* the slide -- the picture is positioned against it -- so the thing
+	// that overflows is the wrapper holding the words, and scaling the content instead
+	// would shrink the picture away from the slide's own edges.
+	var box = content.querySelector('.Layout__over') || content;
+	var host = box.parentElement || section;
+
+	content.style.transform = 'scale(1)';
+	if (box !== content) {
+		box.style.transform = 'scale(1)';
+	}
+
+	// Layout metrics rather than rects: offsetHeight and clientHeight ignore transforms,
+	// so this measures the same whether the slide is on screen at full size or scaled down
+	// into a palette tile. The rects this used to read were multiplied by every scale
+	// above the element, which is fine until something scales a whole slide.
+	var style = getComputedStyle(host);
+	var roomHeight = host.clientHeight
+		- (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0);
+	var roomWidth = host.clientWidth
+		- (parseFloat(style.paddingLeft) || 0) - (parseFloat(style.paddingRight) || 0);
+	var room = Math.min(
+		box.offsetHeight > roomHeight ? roomHeight / box.offsetHeight : 1,
+		box.offsetWidth > roomWidth ? roomWidth / box.offsetWidth : 1
+	);
+	if (room > 0 && room < 1) {
+		box.style.transform = 'scale(' + room + ')';
+	}
+}
+
+function fit () {
+	ui.slides.querySelectorAll('.Slide').forEach(fitSlide);
+}
+
+// --- moving about -----------------------------------------------------------------------
+
+function showSlide (index, instant) {
+	var count = state.slides.length;
+	if (!count) {
+		return;
+	}
+	state.at = Math.max(0, Math.min(count - 1, index));
+	var section = ui.slides.querySelector('.Slide[data-index="' + state.at + '"]');
+	if (section) {
+		// 'instant', not 'auto': 'auto' means *defer to the CSS*, and #slides is
+		// `scroll-behavior: smooth` -- so the jump that was meant to be invisible was
+		// animated, and every pause in typing slid the preview across the screen. Only
+		// 'instant' overrides the stylesheet.
+		section.scrollIntoView({behavior: instant ? 'instant' : 'smooth', block: 'start'});
+	}
+	markCurrent();
+	updateCounter();
+	publishAt();
+}
+
+function markCurrent () {
+	ui.slides.querySelectorAll('.Slide').forEach(function (section) {
+		section.classList.toggle('Slide--current',
+			Number(section.dataset.index) === state.at && !document.body.classList.contains('presenting'));
+	});
+}
+
+function updateCounter () {
+	ui.at.textContent = state.slides.length
+		? (state.at + 1) + ' / ' + state.slides.length
+		: '';
+}
+
+function focusSource (index) {
+	var source = editor.getValue();
+	var split = deck.splitSlides(source);
+	var line = split.starts[index] || 0;
+	var lines = source.split(/\r?\n/);
+	var offset = lines.slice(0, line).join('\n').length + (line ? 1 : 0);
+	editor.setCaretOffset(offset);
+	showSlide(index);
+}
+
+// Typing moves the preview to the slide the caret is in — the behaviour the original got
+// from the playground's editor, and the reason the two panes are one window.
+// `force` is what a re-render needs. Replacing the slides resets the preview's scroll to
+// the top while `state.at` still says slide seven, so the ordinary "has it changed?" test
+// decides nothing needs doing and leaves you looking at slide one. That was the bug where
+// typing scrolled to the wrong slide.
+function followCaret (force) {
+	if (!editor || !editor.hasFocus()) {
+		return;
+	}
+	var index = deck.slideAtOffset(editor.getValue(), editor.caretOffset());
+	if (force === true || index !== state.at) {
+		// Always instant, not only after a rebuild. Following the caret is not navigation
+		// -- you did not ask to go anywhere, you typed a word -- and an animation for it
+		// is motion in the corner of your eye while you are writing.
+		showSlide(index, true);
+	}
+}
+
+// --- ready-made blocks --------------------------------------------------------------------
+//
+// A drawer over the slides, holding each block *rendered* rather than named: the app can
+// already draw a slide, so a palette of pictures costs little more than a palette of
+// words and is the only version of this worth opening.
+//
+// Deliberately no new keyboard chord. Every free one is taken by the browser or the shell
+// (Ctrl/Cmd+Shift+B is the bookmarks bar in both Chrome and Firefox), and a chord that
+// silently never fires is a worse answer than a button -- the mistake earlier phases in
+// this project already made once. Esc closes, arrows and Enter work once it is open.
+
+var blocksOpen = false;
+
+async function readBlockFiles () {
+	// Standalone -- no shell, no filesystem -- the built-in blocks are the whole palette.
+	if (parent === window || !parent.fs) {
+		return [];
+	}
+	var names = await new Promise(function (resolve) {
+		parent.fs.readdir(deck.BLOCKS_DIR, function (err, list) {
+			resolve(err ? [] : (list || []));
+		});
+	});
+	var wanted = names.filter(function (name) {
+		return /\.(md|markdown|txt)$/i.test(name);
+	}).sort();
+
+	var files = [];
+	for (var i = 0; i < wanted.length; i++) {
+		try {
+			files.push({
+				name: wanted[i],
+				text: await new Promise(function (resolve, reject) {
+					parent.fs.readFile(deck.BLOCKS_DIR + '/' + wanted[i], function (err, buffer) {
+						if (err) {
+							reject(err);
+						}
+						else {
+							resolve(String(buffer));
+						}
+					});
+				})
+			});
+		}
+		catch (err) {
+			// One unreadable file must not empty the palette.
+			report('Could not read ' + wanted[i], err);
+		}
+	}
+	return files;
+}
+
+async function openBlocks () {
+	blocksOpen = true;
+	ui.blocks.hidden = false;
+	ui.blocksToggle.setAttribute('aria-pressed', 'true');
+
+	var files = await readBlockFiles();
+	var blocks = deck.blocksFrom(files);
+	ui.blocksHint.textContent = files.length
+		? files.length + ' of these are your own, from ' + deck.BLOCKS_DIR
+		: 'Put a .md file in ' + deck.BLOCKS_DIR + ' and it appears here too';
+
+	ui.blocksGrid.innerHTML = '';
+	for (var i = 0; i < blocks.length; i++) {
+		ui.blocksGrid.append(await blockTile(blocks[i]));
+	}
+	var first = ui.blocksGrid.querySelector('.Block');
+	if (first) {
+		first.focus();
+	}
+}
+
+function closeBlocks () {
+	blocksOpen = false;
+	ui.blocks.hidden = true;
+	ui.blocksToggle.setAttribute('aria-pressed', 'false');
+	if (editor) {
+		editor.focus();
+	}
+}
+
+// The deck's own size, scaled to the tile. Same document as the real preview, so the
+// vw/vh the slide stylesheet is written in mean here exactly what they mean there --
+// which is why these are plain elements and the presenter's previews are frames.
+async function blockTile (block) {
+	var button = document.createElement('button');
+	button.className = 'Block';
+	button.type = 'button';
+
+	var view = document.createElement('div');
+	view.className = 'Block__view';
+	var stage = document.createElement('div');
+	stage.className = 'Block__stage';
+	view.append(stage);
+
+	var name = document.createElement('div');
+	name.className = 'Block__name';
+	var label = document.createElement('span');
+	label.textContent = block.label;
+	var kind = document.createElement('span');
+	kind.className = 'Block__kind';
+	kind.textContent = block.kind === 'slide' ? 'new slide' : 'at the caret';
+	name.append(label, kind);
+
+	button.append(view, name);
+	button.onclick = function () {
+		insertBlock(block);
+	};
+
+	// The slide's real size, so the content is laid out at the size it will be read at.
+	// The tile's own box is decided in `sizeTile`, once this is in the grid and has a
+	// width to be measured -- nothing here is on screen yet.
+	stage.style.width = (ui.slides.clientWidth || 960) + 'px';
+	stage.style.height = (ui.slides.clientHeight || 540) + 'px';
+
+	var section = document.createElement('section');
+	section.className = 'Slide';
+	var content = document.createElement('div');
+	content.className = 'Slide__content';
+	section.append(content);
+	stage.append(section);
+
+	try {
+		var parsed = await parseMarkdown(block.text);
+		var plan = deck.planSlide(parsed.nodes);
+		section.className = 'Slide ' + (plan.className || '');
+		plan.content.forEach(function (node) {
+			var element = create(node);
+			if (element) {
+				content.append(element);
+			}
+		});
+		// A note has nothing to show on a slide, by definition -- so say what it is rather
+		// than offering an empty rectangle.
+		if (!content.childNodes.length) {
+			content.innerHTML = '<p style="opacity:.55;font-size:.5em">'
+				+ 'Nothing on the slide — this is for the presenter window.</p>';
+		}
+	}
+	catch (err) {
+		content.textContent = 'This block could not be parsed.';
+	}
+	return button;
+}
+
+// Measured after layout, because a grid cell has no width until it is in the grid. Two
+// scales, and they are not the same thing: the stage shrinks a whole slide into a tile,
+// and `fitSlide` shrinks content that does not fit *inside* the slide -- the same rule the
+// preview uses, which is why it is the same function. A tile is a slide, so anything true
+// of one has to be true of the other or the palette stops telling you the truth.
+// A tile is a whole slide seen from far away, and how tall it may get is a decision rather
+// than a consequence: a deck pane is portrait whenever the source is open, and a tile that
+// kept that shape unbounded would be a column of enormous rectangles on a narrow window.
+// So the slide is fitted *inside* a box of at most this height and letterboxed if it does
+// not fill it -- the same "fit a picture in a frame" the presenter's previews do.
+var TILE_HEIGHT = 190;
+
+function sizeTile (view) {
+	var stage = view.querySelector('.Block__stage');
+	if (!stage) {
+		return;
+	}
+	// The deck's own size, read now rather than remembered: this runs again on every
+	// resize, and the tiles are meant to be the shape of the slides as they are.
+	var width = ui.slides.clientWidth || 960;
+	var height = ui.slides.clientHeight || 540;
+	stage.style.width = width + 'px';
+	stage.style.height = height + 'px';
+
+	// Measured, never derived from `aspect-ratio`: the view is a flex item in a grid cell,
+	// and leaving its height to be resolved from a ratio is what left the tiles a short
+	// strip across the top of a tall slide -- a slide centres its content vertically, so a
+	// strip across the top of one shows nothing at all.
+	var room = view.clientWidth;
+	var scale = Math.min(room / width, TILE_HEIGHT / height);
+	view.style.height = Math.round(height * scale) + 'px';
+	stage.style.transform = 'translate(' + ((room - width * scale) / 2) + 'px, 0) scale('
+		+ scale + ')';
+
+	var section = stage.querySelector('.Slide');
+	if (section) {
+		fitSlide(section);
+	}
+}
+
+function fitBlocks () {
+	ui.blocksGrid.querySelectorAll('.Block__view').forEach(sizeTile);
+}
+
+function insertBlock (block) {
+	if (!editor) {
+		return;
+	}
+	var edit = deck.insertionFor(editor.getValue(), editor.caretOffset(), block);
+	closeBlocks();
+	if (!edit) {
+		return;
+	}
+	editor.insert(edit);
+	// The plain editor's execCommand fires `input` and Monaco fires its own change event,
+	// so this is the second call in both -- and onEdit is debounced, so a second call is
+	// the same call. Being sure is worth more here than being tidy: a block that appeared
+	// in the source and not in the slides would look like a broken palette.
+	onEdit();
+	followCaret(true);
+}
+
+// --- the speaker window -------------------------------------------------------------------
+
+function publishDeck () {
+	if (!channel) {
+		return;
+	}
+	channel.postMessage(window.filmoskopBridge.getDeck());
+}
+
+function describeSlides () {
+	return state.slides.map(function (slide) {
+		var section = ui.slides.querySelector('.Slide[data-index="' + slide.index + '"]');
+		var content = section ? section.querySelector('.Slide__content') : null;
+		return {
+			index: slide.index,
+			title: slide.title,
+			// The rendered slide, not a description of it: a presenter view that showed
+			// titles would be useless for the one thing it is for, which is knowing what
+			// the room is looking at. It is safe to hand over as markup because this app
+			// built those nodes itself — nothing forbidden survived `create`.
+			html: content ? content.innerHTML : '',
+			className: slide.className,
+			notes: slide.plan.notes.map(deck.textOf).join('\n\n').trim()
+		};
+	});
+}
+
+function publishAt () {
+	if (channel) {
+		channel.postMessage({type: 'at', at: state.at});
+	}
+}
+
+if (channel) {
+	channel.onmessage = function (e) {
+		var message = e.data || {};
+		if (message.type === 'go') {
+			showSlide(Number(message.at) || 0);
+		}
+		else if (message.type === 'hello') {
+			publishDeck();
+		}
+	};
+}
+
+// The presenter window reads this the moment it loads, through `window.opener`, instead of
+// asking over the channel and waiting for an answer. Both windows are same-origin, so it
+// is a plain function call — and it removes the handshake entirely, which is what was
+// leaving the presenter view sitting on "waiting for a deck". The channel is still there
+// for everything that happens afterwards.
+window.filmoskopBridge = {
+	getDeck: function () {
+		var style = document.getElementById('slideStyle');
+		var shown = getComputedStyle(document.body);
+		return {
+			type: 'deck',
+			title: state.settings.title || state.name,
+			at: state.at,
+			// The presenter draws each slide with *this* stylesheet, at *these*
+			// dimensions, rather than with a handful of rules of its own that happened to
+			// look similar. Its previews were visibly not the deck: no layout classes at
+			// all, and the slide sheet is full of vw/vh, which mean something else in
+			// another window. Sending the sheet and the size is what makes them the same
+			// picture -- and it is the same sheet the export copies, so there is one
+			// description of a slide in this app and not three.
+			style: style ? style.textContent : '',
+			width: ui.slides.clientWidth,
+			height: ui.slides.clientHeight,
+			// Set on the body by the deck's frontmatter, so it is not in the sheet.
+			theme: {
+				bg: shown.getPropertyValue('--slide-bg').trim(),
+				fg: shown.getPropertyValue('--slide-fg').trim()
+			},
+			slides: describeSlides()
+		};
+	},
+	go: function (at) {
+		showSlide(Number(at) || 0);
+	}
+};
+
+// --- export -------------------------------------------------------------------------------
+//
+// One file, with the slides already rendered and the pictures inside it. A deck you send
+// somebody has to open on a machine with no PixOS, no network and no second file beside
+// it — so the parser is not included (the markup is already made), and images are carried
+// as data URIs rather than as paths that will not resolve.
+
+async function exportDeck () {
+	if (!state.slides.length) {
+		return;
+	}
+	var slides = [];
+	var embedded = 0;
+
+	for (var i = 0; i < state.slides.length; i++) {
+		var section = ui.slides.querySelector('.Slide[data-index="' + i + '"]');
+		if (!section) {
+			continue;
+		}
+		var clone = section.cloneNode(true);
+		var images = clone.querySelectorAll('img');
+		for (var n = 0; n < images.length; n++) {
+			if (await inline(images[n])) {
+				embedded++;
+			}
+		}
+		var content = clone.querySelector('.Slide__content');
+		slides.push({
+			className: state.slides[i].className,
+			html: content ? content.innerHTML : ''
+		});
+	}
+
+	var html = deck.exportHtml({
+		name: state.name,
+		settings: state.settings,
+		slides: slides,
+		css: exportCss()
+	});
+
+	var name = deck.exportNameFor(state.name);
+	var target = (state.dir === '/' ? '' : state.dir) + '/' + name;
+	try {
+		await parent.saveFileLocal(target, parent.Buffer.from(html));
+	}
+	catch (err) {
+		report('Could not write ' + name, err);
+		return;
+	}
+	if (typeof parent.notify === 'function') {
+		parent.notify({
+			level: 'info',
+			title: 'Exported ' + name,
+			message: slides.length + ' slides'
+				+ (embedded ? ', ' + embedded + ' images embedded' : '')
+				+ '. One file — it opens anywhere, with no network.',
+			source: 'Filmoskop',
+			actions: [{label: 'Open it', run: function () { parent.openFile(target); }}]
+		});
+	}
+}
+
+async function inline (image) {
+	var src = image.getAttribute('src') || '';
+	if (!src || /^data:/i.test(src)) {
+		return false;
+	}
+	try {
+		var response = await fetch(src);
+		var blob = await response.blob();
+		var reader = new FileReader();
+		var data = await new Promise(function (resolve, reject) {
+			reader.onload = function () { resolve(reader.result); };
+			reader.onerror = function () { reject(reader.error); };
+			reader.readAsDataURL(blob);
+		});
+		image.setAttribute('src', data);
+		return true;
+	}
+	catch (err) {
+		// A picture from the network that cannot be reached stays a link to it, which is
+		// the best that can be done and better than an export that fails outright.
+		return false;
+	}
+}
+
+// The slide stylesheet, whole and unedited, plus the few rules an exported file needs that
+// the app gets from its own layout. It used to be the app's single stylesheet with the
+// editor rules cut out by a regex, and that regex silently ate the syntax-highlighting
+// colours — which is why the styles are two elements now rather than one.
+// The slide stylesheet, plus the few rules that only make sense once a deck is a whole
+// page: the stack fills the window rather than a pane. Everything about how a slide
+// *looks* -- the font, the colours, the scrollbar -- is in the sheet itself, so the export
+// cannot come out looking like a different deck than the one you just made.
+function exportCss () {
+	var sheet = document.getElementById('slideStyle');
+	return (sheet ? sheet.textContent : '')
+		+ '\nhtml,body{height:100%;margin:0;background:var(--slide-bg);font-family:var(--slide-font)}'
+		+ '\n.Slides{height:100vh;overflow-y:scroll;scroll-snap-type:y mandatory;scroll-behavior:smooth}'
+		+ '\n.Slide{height:100vh}'
+		+ '\nbody.theme-light{--slide-bg:#f4f4f2;--slide-fg:#1b1b1b}';
+}
+
+// --- presenting -----------------------------------------------------------------------------
+
+async function present () {
+	document.body.classList.add('presenting');
+	markCurrent();
+	try {
+		// The launcher gives this app's iframe `allowfullscreen`; without it the request
+		// is refused and the mode is a lie.
+		await document.documentElement.requestFullscreen();
+	}
+	catch (err) {
+		if (typeof parent.notify === 'function') {
+			parent.notify({
+				level: 'warn',
+				title: 'Fullscreen was refused',
+				message: 'The slides are still enlarged, but the browser would not go '
+					+ 'fullscreen. Press Escape to go back.',
+				source: 'Filmoskop'
+			});
+		}
+	}
+	showSlide(state.at, true);
+	fit();
+}
+
+function stopPresenting () {
+	document.body.classList.remove('presenting');
+	markCurrent();
+	fit();
+}
+
+document.addEventListener('fullscreenchange', function () {
+	if (!document.fullscreenElement) {
+		stopPresenting();
+	}
+});
+
+// --- wiring -----------------------------------------------------------------------------------
+
+var renderTimer = null;
+
+// One edit handler for both editors: the textarea fires `input`, Monaco calls this from
+// onDidChangeModelContent.
+function onEdit () {
+	scheduleSave();
+	clearTimeout(renderTimer);
+	// Long enough not to re-parse mid-word, short enough that the slide keeps up with a
+	// sentence. Rebuilding every slide on every keystroke is what the incremental render
+	// in the backlog is for; this is honest until then.
+	renderTimer = setTimeout(function () {
+		// `true`: after a rebuild the preview has scrolled back to the top, so the caret's
+		// slide has to be shown again whether or not the caret moved.
+		render().then(function () {
+			followCaret(true);
+		});
+	}, 220);
+}
+
+ui.source.addEventListener('input', onEdit);
+
+['keyup', 'click', 'select'].forEach(function (event) {
+	ui.source.addEventListener(event, function () {
+		followCaret();
+	});
+});
+
+ui.source.addEventListener('keydown', function (e) {
+	// A deck is indented markdown; Tab has to insert one rather than leave the field.
+	//
+	// Through execCommand, obsolete as it is, because assigning to `value` wipes the
+	// browser's own undo stack — press Tab once and Ctrl+Z stops working for everything
+	// typed before it. This is the only API that inserts text *as if typed*, and there is
+	// no modern replacement. Monaco has its own undo and never reaches this.
+	if (e.key === 'Tab') {
+		e.preventDefault();
+		if (!document.execCommand('insertText', false, '\t')) {
+			var start = ui.source.selectionStart;
+			var end = ui.source.selectionEnd;
+			ui.source.value = ui.source.value.slice(0, start) + '\t' + ui.source.value.slice(end);
+			ui.source.setSelectionRange(start + 1, start + 1);
+		}
+		onEdit();
+	}
+});
+
+window.addEventListener('keydown', function (e) {
+	// The drawer takes the keyboard while it is open. Without this the arrows would page
+	// the deck behind it -- focus is on a tile, so the "is the editor focused?" test below
+	// says no and every slide key would fire.
+	if (blocksOpen) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			closeBlocks();
+		}
+		return;
+	}
+	if (editor && editor.hasFocus() && !document.body.classList.contains('presenting')) {
+		return;
+	}
+	if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+		e.preventDefault();
+		showSlide(state.at + 1);
+	}
+	else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+		e.preventDefault();
+		showSlide(state.at - 1);
+	}
+	else if (e.key === 'Home') {
+		e.preventDefault();
+		showSlide(0);
+	}
+	else if (e.key === 'End') {
+		e.preventDefault();
+		showSlide(state.slides.length - 1);
+	}
+	else if (e.key === 'Escape' && document.body.classList.contains('presenting')) {
+		stopPresenting();
+	}
+});
+
+ui.editToggle.onclick = function () {
+	var hidden = document.body.classList.toggle('slidesOnly');
+	ui.editToggle.setAttribute('aria-pressed', String(!hidden));
+	if (editor) {
+		editor.layout();
+	}
+	fit();
+};
+
+ui.blocksToggle.onclick = function () {
+	if (blocksOpen) {
+		closeBlocks();
+		return;
+	}
+	openBlocks().then(fitBlocks, function (err) {
+		report('Could not open the blocks', err);
+		closeBlocks();
+	});
+};
+
+ui.blocksClose.onclick = closeBlocks;
+
+// Arrow keys move between tiles because the grid is a grid, and Enter is the button's own.
+ui.blocksGrid.onkeydown = function (e) {
+	if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') {
+		return;
+	}
+	var tiles = Array.prototype.slice.call(ui.blocksGrid.querySelectorAll('.Block'));
+	var at = tiles.indexOf(document.activeElement);
+	if (at === -1) {
+		return;
+	}
+	e.preventDefault();
+	var next = tiles[at + (e.key === 'ArrowRight' ? 1 : -1)];
+	if (next) {
+		next.focus();
+	}
+};
+
+ui.editorPick.onchange = async function () {
+	state.editorSetting = ui.editorPick.value;
+	await saveSettings();
+	await useEditor(state.editorSetting);
+};
+
+// Only ever offered when there is no file: a deck opened from one saves into it.
+ui.saveAs.onclick = async function () {
+	var suggested = window.prompt('Save this deck as (in /home):', 'talk.deck.md');
+	if (!suggested) {
+		return;
+	}
+	var name = suggested.replace(/[\\/]/g, '').trim();
+	if (!name) {
+		return;
+	}
+	if (!/\.md$/i.test(name)) {
+		name += '.deck.md';
+	}
+	state.path = '/home/' + name;
+	state.dir = '/home';
+	state.name = name;
+	ui.name.innerHTML = '';
+	var strong = document.createElement('b');
+	strong.textContent = name;
+	ui.name.append(strong);
+	ui.saveAs.hidden = true;
+	await save();
+};
+
+ui.present.onclick = present;
+ui.export.onclick = exportDeck;
+
+ui.speaker.onclick = function () {
+	// A real browser window, not a PixOS one: the point of it is the *other screen*, and
+	// nothing inside this page can be dragged there.
+	var opened = window.open('speaker.html', 'filmoskop-speaker', 'width=1100,height=760');
+	if (!opened && typeof parent.notify === 'function') {
+		parent.notify({
+			level: 'warn',
+			title: 'The browser blocked the presenter window',
+			message: 'Allow pop-ups for PixOS and press Speaker again.',
+			source: 'Filmoskop'
+		});
+		return;
+	}
+	publishDeck();
+};
+
+var republish = null;
+
+window.addEventListener('resize', function () {
+	fit();
+	if (blocksOpen) {
+		fitBlocks();
+	}
+	if (editor) {
+		editor.layout();
+	}
+	// The presenter renders at the deck's slide size, so a resized deck window is a
+	// presenter with the wrong aspect until it is told. Debounced: a drag is hundreds of
+	// events and each one is a whole deck over the channel.
+	clearTimeout(republish);
+	republish = setTimeout(publishDeck, 200);
+});
+
+// Standalone — opened outside PixOS — there is no file to read and nothing to save to, but
+// the editor still works and the export still downloads nothing. Better than a blank page.
+// Everything above is definitions; this is the app starting. `ready` exists because the
+// shell calls openFile as soon as the iframe loads, which can be well before an editor
+// that has 12 MB to fetch is ready to be written into.
+var ready = (async function () {
+	await loadSettings();
+	await useEditor(state.editorSetting);
+
+	if (parent === window) {
+		editor.setValue('# Filmoskop\n\nThis is running outside PixOS, so there is no file '
+			+ 'to save into.\n\n-----\n\n## Still a deck\n\n* Type on the left\n'
+			+ '* Five dashes start a slide');
+		await render();
+	}
+}());
+
+</script>
+<script src="./vendor/prism.js"></script>
+
+</body>
+</html>

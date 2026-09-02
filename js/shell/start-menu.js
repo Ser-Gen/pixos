@@ -88,6 +88,52 @@ var CSS = `
 	white-space: nowrap;
 }
 
+.PixStart__files {
+	display: flex;
+	flex-direction: column;
+	padding: 0 8px;
+}
+
+.PixStart__file {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	padding: 6px 6px;
+	background: none;
+	border: none;
+	color: #d4d9e0;
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+	text-align: left;
+	min-width: 0;
+}
+
+.PixStart__file:hover,
+.PixStart__file:focus-visible {
+	background: #333840;
+	outline: none;
+}
+
+.PixStart__fileName {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	flex: none;
+	max-width: 55%;
+}
+
+.PixStart__filePath {
+	font-size: 11px;
+	color: #767d88;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	direction: rtl;
+	flex: 1;
+	min-width: 0;
+}
+
 .PixStart__empty {
 	padding: 16px 14px;
 	color: #8a919c;
@@ -131,7 +177,7 @@ function ensureStyle () {
 	document.head.append(style);
 }
 
-// cfg: {host, openApp, actions: [{label, run}]}
+// cfg: {host, openApp, openRecentFile, actions: [{label, run}]}
 export function init (cfg) {
 	host = cfg.host;
 	options = cfg;
@@ -255,6 +301,12 @@ function renderBody (body, query) {
 	if (groups.recent.length) {
 		body.append(heading('Recent'), buildGrid(groups.recent));
 	}
+	// Files, not only apps: "open the thing I was just working on" is a different question
+	// from "start something", and the start menu could only answer the second one.
+	var files = options.openRecentFile ? appsModel.listRecentFiles(6) : [];
+	if (files.length) {
+		body.append(heading('Recent files'), buildFiles(files));
+	}
 	if (groups.rest.length) {
 		body.append(heading(groups.recent.length ? 'All applications' : 'Applications'), buildGrid(groups.rest));
 	}
@@ -271,6 +323,34 @@ function heading (text) {
 	node.className = 'PixStart__group';
 	node.textContent = text;
 	return node;
+}
+
+function buildFiles (files) {
+	var wrap = document.createElement('div');
+	wrap.className = 'PixStart__files';
+	files.forEach(function (entry) {
+		var button = document.createElement('button');
+		button.className = 'PixStart__file';
+		button.title = entry.path;
+
+		var name = document.createElement('span');
+		name.className = 'PixStart__fileName';
+		name.textContent = (entry.path.split('/').pop() || entry.path) + (entry.dir ? '/' : '');
+
+		var where = document.createElement('span');
+		where.className = 'PixStart__filePath';
+		// The end of a path is the part that identifies it, so a truncated one keeps its
+		// tail rather than its root -- which every path in the system shares anyway.
+		where.textContent = entry.path;
+
+		button.append(name, where);
+		button.onclick = function () {
+			close();
+			options.openRecentFile(entry);
+		};
+		wrap.append(button);
+	});
+	return wrap;
 }
 
 function buildGrid (apps) {

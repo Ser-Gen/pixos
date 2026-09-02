@@ -17,9 +17,10 @@
 			'/apps/ace/pixos_supported',
 
 			// 7ZIP
-			'/apps/7z/main.js',
-			'/apps/7z/7zz.wasm',
-			'/apps/7z/7zz.es6.min.js',
+			'/apps/7z/js/parse.js',
+			'/apps/7z/js/archive.js',
+			'/apps/7z/vendor/js7z.js',
+			'/apps/7z/vendor/js7z.wasm',
 
 			// APP MANAGER
 			'/apps/app-manager/index.html',
@@ -44,6 +45,12 @@
 			'/apps/terminal/pipe.js',
 		],
 	},
+	// These two carry their editors in apps/*/vendor -- 98 files for monaco, 137 for
+	// tinymce -- and this list names two of them. Installing either from here therefore
+	// produces an app that opens and stays blank. Listing hundreds of paths by hand in a
+	// file the generator never writes would be worse; the real fix is in docs/backlog.md.
+	// This fallback is only reached when apps/registry.json is unreachable, which the
+	// service worker's precache now also covers.
 	monaco: {
 		name: 'monaco',
 		entryPath: '/apps/monaco-cdn/index.html',
@@ -306,6 +313,40 @@
 			'/apps/markdown-viewer/js/markdown.js',
 			'/apps/markdown-viewer/pixos_supported',
 			'/apps/markdown-viewer/pixos.app.json',
+		],
+	},
+	filmoskop: {
+		name: 'Filmoskop',
+		entryPath: '/apps/filmoskop/index.html',
+		files: [
+			'/apps/filmoskop/favicon.svg',
+			'/apps/filmoskop/index.html',
+			'/apps/filmoskop/js/deck.js',
+			'/apps/filmoskop/speaker.html',
+			'/apps/filmoskop/vendor/comark.mjs',
+			'/apps/filmoskop/vendor/prism.js',
+			'/apps/filmoskop/pixos_supported',
+			'/apps/filmoskop/pixos.app.json',
+		],
+	},
+	calendar: {
+		name: 'Calendar',
+		entryPath: '/apps/calendar/index.html',
+		files: [
+			'/apps/calendar/favicon.svg',
+			'/apps/calendar/index.html',
+			'/apps/calendar/js/calendar.js',
+			'/apps/calendar/pixos.app.json',
+		],
+	},
+	'system-info': {
+		name: 'System Info',
+		entryPath: '/apps/system-info/index.html',
+		files: [
+			'/apps/system-info/favicon.svg',
+			'/apps/system-info/index.html',
+			'/apps/system-info/js/probe.js',
+			'/apps/system-info/pixos.app.json',
 		],
 	},
 	jsdos: {

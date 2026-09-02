@@ -565,7 +565,9 @@
 <script src="../file-type.19.0.0.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script type="module">
-import wasm7z from "../7z/main.js";
+// Only the rules -- which files are archives, what 7-Zip's output means. The engine
+// itself is 1.4 MB of WebAssembly and is loaded on the first extraction, not here.
+import * as archiveNames from "../7z/js/parse.js";
 
 window.BrowserFS = parent.BrowserFS;
 
@@ -574,7 +576,23 @@ window.path = parent.path;
 var Buffer = parent.Buffer;
 window.mountManager = parent.mountManager;
 
-openExplorer();
+// Explorer is not a standalone app and cannot become one: the filesystem it browses lives
+// in the shell's window, not in BrowserFS where its own files are. Opened in a bare tab it
+// used to boot anyway and die on the first readdir with "Cannot read properties of
+// undefined" -- a stack trace where a sentence belongs.
+if (!window.fs || !window.path) {
+	document.body.innerHTML = ''
+		+ '<div style="max-width:520px;margin:14vh auto;padding:0 24px;'
+		+ 'font:14px/1.6 -apple-system,Arial,sans-serif;color:#dfe3ea;text-align:center">'
+		+ '<h1 style="font-size:18px;margin:0 0 10px">Explorer needs the PixOS shell</h1>'
+		+ '<p style="color:#939caa;margin:0 0 18px">It browses the filesystem that lives in '
+		+ 'the shell&rsquo;s window, so there is nothing for it to show on its own.</p>'
+		+ '<p><a style="color:#6fb3ff" href="/">Open PixOS</a></p></div>';
+	document.body.style.background = '#14171c';
+}
+else {
+	openExplorer();
+}
 
 (function () {
 	var s = document.createElement('script');
@@ -809,10 +827,13 @@ async function openExplorer () {
 
 		ui.fileInput.onchange = async function () {
 			if (!ui.fileInput.files.length) return;
-			// map() would pass the array index as onFileHandler's filePath argument.
-			await Promise.all(Array.from(ui.fileInput.files).map(function (file) {
-				return onFileHandler(file);
-			}));
+			// Sequential, not Promise.all: onFileHandler can open a conflict dialog, and
+			// there is only one state.dialog -- concurrent prompts would overwrite each
+			// other and leave every prompt but the last waiting forever.
+			var chosen = Array.from(ui.fileInput.files);
+			for (var i = 0; i < chosen.length; i++) {
+				await onFileHandler(chosen[i]);
+			}
 			ui.fileInput.value = '';
 			await refreshCurrentDir(false);
 		};
@@ -954,12 +975,25 @@ async function openExplorer () {
 			closeContextMenu();
 		});
 
+		// Every branch below acts on the current *selection*, so two things have to be true
+		// before any of them may run: no dialog is open, and the keystroke was not meant
+		// for a field. Both guards sit here rather than on each branch -- they used to be
+		// repeated per branch and were missing from Delete and Enter, which meant deleting
+		// a character while renaming deleted the file, and Enter both renamed and reopened
+		// the old path. One guard cannot be forgotten on the next handler added below.
 		document.addEventListener('keydown', function (e) {
+			// Escape is the exception: closing whatever is open is exactly what it should
+			// do while a dialog has the focus.
 			if (e.key === 'Escape') {
 				closeDialog(state.dialog && state.dialog.type === 'pasteConflict' ? 'cancel' : null);
 				closeContextMenu();
 				renderOverlays();
+				return;
 			}
+			if (state.dialog || isEditableTarget(e.target)) {
+				return;
+			}
+
 			if (e.key === 'Delete' && state.selectedPaths.size) {
 				e.preventDefault();
 				actions.deleteSelected();
@@ -969,19 +1003,19 @@ async function openExplorer () {
 				var path = Array.from(state.selectedPaths)[0];
 				actions.open(path);
 			}
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a' && !isEditableTarget(e.target)) {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
 				e.preventDefault();
 				setAllSelection(true);
 			}
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !isEditableTarget(e.target)) {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
 				e.preventDefault();
 				actions.copySelected();
 			}
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x' && !isEditableTarget(e.target)) {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
 				e.preventDefault();
 				actions.cutSelected();
 			}
-			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && !isEditableTarget(e.target) && hasInternalClipboard()) {
+			if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && hasInternalClipboard()) {
 				e.preventDefault();
 				actions.pasteClipboard();
 			}
@@ -1007,9 +1041,11 @@ async function openExplorer () {
 			}
 
 			if (e.clipboardData.files.length) {
-				await Promise.all(Array.from(e.clipboardData.files).map(function (file) {
-					return onFileHandler(file);
-				}));
+				// Sequential for the same reason as the upload button above: one dialog.
+				var pasted = Array.from(e.clipboardData.files);
+				for (var i = 0; i < pasted.length; i++) {
+					await onFileHandler(pasted[i]);
+				}
 			}
 
 			await refreshCurrentDir(false);
@@ -1104,8 +1140,7 @@ async function openExplorer () {
 			renderToolbarState();
 		}
 		catch (err) {
-			console.error(err);
-			openInfoDialog('Error', String(err));
+			reportFailure('Could not open that folder', err);
 		}
 		finally {
 			state.busy = false;
@@ -1376,7 +1411,12 @@ async function openExplorer () {
 			positionContextMenuNode(menuNode, state.contextMenu.x, state.contextMenu.y);
 		}
 		if (state.dialog) {
-			ui.overlays.append(buildDialogNode(state.dialog));
+			var dialogNode = buildDialogNode(state.dialog);
+			ui.overlays.append(dialogNode);
+			// After the append, never before: buildDialogNode() returns a detached node and
+			// focus() on one of those is silently a no-op, which is why no dialog in this
+			// app had a focused field.
+			focusDialogInput(dialogNode);
 		}
 	}
 
@@ -1481,6 +1521,357 @@ async function openExplorer () {
 		submenu.style.visibility = previousVisibility;
 	}
 
+	// The archive dialog has four states and they are one dialog on purpose: reading it,
+	// asking for a password, showing what is inside, and working. Each of the first three
+	// is a question you can answer without leaving, and a password that turns out to be
+	// wrong comes back here rather than as a note over a dialog that has closed.
+	function buildArchiveDialog (dialog) {
+		var box = document.createElement('div');
+		var busy = dialog.phase === 'reading' || dialog.phase === 'working';
+
+		var title = document.createElement('div');
+		title.className = 'Modal__title';
+		title.textContent = dialog.phase === 'working'
+			? 'Extracting ' + dialog.name
+			: 'Extract ' + dialog.name;
+		box.append(title);
+
+		if (busy) {
+			var waiting = document.createElement('div');
+			waiting.className = 'Modal__list';
+			// Said plainly because this build of 7-Zip runs on this thread: the window is
+			// not going to redraw again until it is done, and a big archive can take a
+			// while. Better to say so than to look frozen.
+			waiting.textContent = dialog.phase === 'reading'
+				? 'Reading the archive…'
+				: 'Extracting. A large archive holds everything up while it works.';
+			box.append(waiting);
+			box.append(archiveButtons([{label: 'Cancel', className: 'Dialog__cancel', disabled: true}]));
+			return box;
+		}
+
+		if (dialog.phase === 'password') {
+			var ask = document.createElement('div');
+			ask.className = 'Modal__list';
+			ask.textContent = dialog.error || 'This archive needs a password.';
+			box.append(ask);
+
+			var field = document.createElement('div');
+			field.className = 'Modal__field';
+			var label = document.createElement('label');
+			label.textContent = 'Password';
+			var input = document.createElement('input');
+			input.type = 'password';
+			input.className = 'Dialog__input';
+			input.style.width = '100%';
+			input.value = dialog.password || '';
+			input.oninput = function () {
+				dialog.onPassword(input.value);
+			};
+			input.onkeydown = function (e) {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					e.stopPropagation();
+					dialog.onUnlock(input.value);
+				}
+			};
+			field.append(label, input);
+			box.append(field);
+
+			var note = document.createElement('div');
+			note.className = 'Modal__list';
+			note.style.fontSize = '12px';
+			note.style.color = '#888';
+			// The distinction the whole classifier exists for, in one line.
+			note.textContent = 'Nothing has been written. If the password is right and it '
+				+ 'still fails, the archive itself is damaged rather than locked.';
+			box.append(note);
+
+			box.append(archiveButtons([
+				{label: 'Cancel', className: 'Dialog__cancel'},
+				{label: 'Unlock', primary: true, run: function () { dialog.onUnlock(input.value); }}
+			]));
+			// The field is the only thing here worth typing into.
+			setTimeout(function () { input.focus(); }, 0);
+			return box;
+		}
+
+		var files = dialog.entries.filter(function (entry) {
+			return !entry.isDirectory;
+		});
+		var total = files.reduce(function (sum, entry) {
+			return sum + (entry.size || 0);
+		}, 0);
+
+		var summary = document.createElement('div');
+		summary.className = 'Modal__list';
+		summary.textContent = files.length + (files.length === 1 ? ' file' : ' files')
+			+ ', ' + formatSize(total) + ' unpacked'
+			+ (dialog.unwrapped ? ' — a tar inside a wrapper, and both come off at once.' : '.');
+		box.append(summary);
+
+		var list = document.createElement('div');
+		list.className = 'Modal__list';
+		list.style.maxHeight = '260px';
+		list.style.overflow = 'auto';
+		list.style.border = '1px solid #444';
+		list.style.padding = '6px 8px';
+
+		if (!files.length) {
+			list.textContent = 'This archive is empty.';
+		}
+		files.forEach(function (entry) {
+			var row = document.createElement('label');
+			row.style.display = 'flex';
+			row.style.gap = '8px';
+			row.style.alignItems = 'baseline';
+			row.style.padding = '2px 0';
+
+			var box2 = document.createElement('input');
+			box2.type = 'checkbox';
+			box2.checked = dialog.selected.has(entry.path);
+			box2.onchange = function () {
+				dialog.onToggle(entry.path, box2.checked);
+				updateExtractButton();
+			};
+
+			var name = document.createElement('span');
+			name.textContent = entry.path;
+			name.style.flex = '1 1 auto';
+			name.style.overflowWrap = 'anywhere';
+
+			var size = document.createElement('span');
+			size.style.color = '#888';
+			size.style.fontSize = '12px';
+			size.style.whiteSpace = 'nowrap';
+			size.textContent = formatSize(entry.size || 0) + (entry.encrypted ? ' · locked' : '');
+
+			row.append(box2, name, size);
+			list.append(row);
+		});
+		box.append(list);
+
+		var where = document.createElement('div');
+		where.className = 'Modal__list';
+		where.style.fontSize = '12px';
+		where.textContent = 'Into ' + dialog.destination + '/ — a new folder here. Nothing '
+			+ 'already in this folder is written over.';
+		box.append(where);
+
+		// Contents can be encrypted while the listing is not, so the field is offered
+		// before the attempt rather than after it fails.
+		var passwordInput = null;
+		if (dialog.entries.some(function (entry) { return entry.encrypted; }) || dialog.password) {
+			var pfield = document.createElement('div');
+			pfield.className = 'Modal__field';
+			var plabel = document.createElement('label');
+			plabel.textContent = 'Password';
+			passwordInput = document.createElement('input');
+			passwordInput.type = 'password';
+			passwordInput.style.width = '100%';
+			passwordInput.value = dialog.password || '';
+			passwordInput.oninput = function () {
+				dialog.onPassword(passwordInput.value);
+			};
+			pfield.append(plabel, passwordInput);
+			box.append(pfield);
+		}
+
+		var buttons = archiveButtons([
+			{label: 'Cancel', className: 'Dialog__cancel'},
+			{label: 'Extract', primary: true, className: 'Dialog__extract', run: function () {
+				if (passwordInput) {
+					dialog.onPassword(passwordInput.value);
+				}
+				var chosen = files.filter(function (entry) {
+					return dialog.selected.has(entry.path);
+				}).map(function (entry) {
+					return entry.path;
+				});
+				// All of them is not a selection: handing 7-Zip no list lets it keep the
+				// empty folders too, and there is nothing to spell wrong.
+				dialog.onExtract(chosen.length === files.length ? null : chosen);
+			}}
+		]);
+		box.append(buttons);
+
+		function updateExtractButton () {
+			var button = buttons.querySelector('.Dialog__extract');
+			var chosen = dialog.selected.size;
+			button.disabled = chosen === 0;
+			button.textContent = (chosen === files.length || !files.length)
+				? 'Extract'
+				: 'Extract ' + chosen;
+		}
+		updateExtractButton();
+
+		return box;
+	}
+
+	// Format and preset, and a password when the format can hold one. Everything else
+	// 7-Zip can be told -- dictionary size, solid blocks, threads, volumes -- is left out
+	// deliberately: it is a dialog that has to teach you what a dictionary is, in front of
+	// somebody who wanted to email a folder.
+	function buildCompressDialog (dialog) {
+		var box = document.createElement('div');
+		var format = archiveNames.formatFor(dialog.format);
+
+		var title = document.createElement('div');
+		title.className = 'Modal__title';
+		title.textContent = dialog.items.length === 1
+			? 'Compress ' + dialog.items[0].name
+			: 'Compress ' + dialog.items.length + ' items';
+		box.append(title);
+
+		if (dialog.phase === 'working') {
+			var waiting = document.createElement('div');
+			waiting.className = 'Modal__list';
+			// The engine runs on this thread, and compressing is where that is felt:
+			// there is far more work in `Best` on a folder than in extracting one.
+			waiting.textContent = (dialog.progress || 'Working…')
+				+ ' The window waits for this.';
+			box.append(waiting);
+			box.append(archiveButtons([{label: 'Cancel', className: 'Dialog__cancel', disabled: true}]));
+			return box;
+		}
+
+		var nameField = document.createElement('div');
+		nameField.className = 'Modal__field';
+		var nameLabel = document.createElement('label');
+		nameLabel.textContent = 'Archive name';
+		var nameInput = document.createElement('input');
+		nameInput.className = 'Dialog__input';
+		nameInput.style.width = '100%';
+		nameInput.value = dialog.name;
+		nameInput.oninput = function () {
+			dialog.onName(nameInput.value);
+		};
+		nameField.append(nameLabel, nameInput);
+		box.append(nameField);
+
+		box.append(choiceRow('Format', archiveNames.FORMATS, dialog.format, function (id) {
+			dialog.onFormat(id);
+		}));
+		box.append(hint(format.note));
+
+		box.append(choiceRow('Compression', archiveNames.PRESETS, dialog.preset, function (id) {
+			dialog.onPreset(id);
+		}));
+		box.append(hint(archiveNames.presetFor(dialog.preset).note));
+
+		var passwordField = document.createElement('div');
+		passwordField.className = 'Modal__field';
+		var passwordLabel = document.createElement('label');
+		passwordLabel.textContent = 'Password';
+		var passwordInput = document.createElement('input');
+		passwordInput.type = 'password';
+		passwordInput.style.width = '100%';
+		passwordInput.value = dialog.password || '';
+		// Not hidden when the format cannot hold one: a field that vanishes looks like a
+		// bug, and a disabled one with a reason beside it is the answer to "why can I not
+		// put a password on this".
+		passwordInput.disabled = !format.password;
+		passwordInput.placeholder = format.password ? '' : 'tar.gz cannot hold one';
+		passwordInput.oninput = function () {
+			dialog.onPassword(passwordInput.value);
+		};
+		passwordField.append(passwordLabel, passwordInput);
+		box.append(passwordField);
+
+		if (format.encryptNames) {
+			var namesRow = document.createElement('label');
+			namesRow.className = 'Modal__list';
+			namesRow.style.display = 'flex';
+			namesRow.style.gap = '8px';
+			namesRow.style.alignItems = 'baseline';
+			var namesBox = document.createElement('input');
+			namesBox.type = 'checkbox';
+			namesBox.checked = dialog.encryptNames === true;
+			namesBox.onchange = function () {
+				dialog.onEncryptNames(namesBox.checked);
+			};
+			var namesText = document.createElement('span');
+			// Worth spelling out: in a zip the list of what is inside is readable by
+			// anyone holding the file, password or not.
+			namesText.textContent = 'Hide the file names too — without this, anyone with '
+				+ 'the archive can see what is in it.';
+			namesRow.append(namesBox, namesText);
+			box.append(namesRow);
+		}
+
+		box.append(archiveButtons([
+			{label: 'Cancel', className: 'Dialog__cancel'},
+			{label: 'Compress', primary: true, run: function () {
+				dialog.onName(nameInput.value);
+				if (format.password) {
+					dialog.onPassword(passwordInput.value);
+				}
+				dialog.onCompress();
+			}}
+		]));
+		return box;
+	}
+
+	function choiceRow (label, options, current, onPick) {
+		var row = document.createElement('div');
+		row.className = 'Modal__field';
+		var caption = document.createElement('label');
+		caption.textContent = label;
+		row.append(caption);
+
+		var buttons = document.createElement('div');
+		buttons.style.display = 'flex';
+		buttons.style.gap = '6px';
+		buttons.style.flexWrap = 'wrap';
+		options.forEach(function (option) {
+			var button = document.createElement('button');
+			button.type = 'button';
+			button.textContent = option.label;
+			button.setAttribute('aria-pressed', String(option.id === current));
+			if (option.id === current) {
+				button.classList.add('Dialog__submit');
+			}
+			button.onclick = function () {
+				onPick(option.id);
+			};
+			buttons.append(button);
+		});
+		row.append(buttons);
+		return row;
+	}
+
+	function hint (text) {
+		var node = document.createElement('div');
+		node.className = 'Modal__list';
+		node.style.fontSize = '12px';
+		node.style.color = '#888';
+		node.style.marginTop = '-4px';
+		node.textContent = text;
+		return node;
+	}
+
+	function archiveButtons (specs) {
+		var row = document.createElement('div');
+		row.className = 'Modal__buttons';
+		specs.forEach(function (spec) {
+			var button = document.createElement('button');
+			button.textContent = spec.label;
+			if (spec.className) {
+				button.className = spec.className;
+			}
+			if (spec.primary) {
+				button.classList.add('Dialog__submit');
+			}
+			button.disabled = !!spec.disabled;
+			button.onclick = spec.run || function () {
+				state.dialog = null;
+				renderOverlays();
+			};
+			row.append(button);
+		});
+		return row;
+	}
+
 	function buildDialogNode (dialog) {
 		var modal = document.createElement('div');
 		modal.className = 'Modal';
@@ -1492,24 +1883,36 @@ async function openExplorer () {
 		if (dialog.type === 'rename') {
 			panel.innerHTML = `
 				<div class="Modal__title">Rename</div>
-				<div class="Modal__field"><label>New name</label><input class="Dialog__input" value="${escapeAttr(dialog.oldName)}"></div>
+				<div class="Modal__field"><label>New name</label><input class="Dialog__input" data-select-basename value="${escapeAttr(dialog.oldName)}"></div>
 				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Rename</button></div>
 			`;
 			wireSimpleDialog(panel, function () {
 				var input = panel.querySelector('.Dialog__input');
-				dialog.onSubmit(input.value.trim());
+				var value = input.value.trim();
+				if (!value) {
+					// Declined, not submitted: keep the dialog and the focus rather than
+					// closing on a name that cannot be used.
+					input.focus();
+					return false;
+				}
+				dialog.onSubmit(value);
 			});
 		}
 		else if (dialog.type === 'newFile') {
 			panel.innerHTML = `
 				<div class="Modal__title">Create file</div>
-				<div class="Modal__field"><label>File name</label><input class="Dialog__name" value="new.txt"></div>
+				<div class="Modal__field"><label>File name</label><input class="Dialog__name" data-select-basename value="new.txt"></div>
 				<div class="Modal__field"><label>Content</label><textarea class="Dialog__content">a,b,c,d</textarea></div>
 				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Create</button></div>
 			`;
 			wireSimpleDialog(panel, function () {
+				var nameInput = panel.querySelector('.Dialog__name');
+				if (!nameInput.value.trim()) {
+					nameInput.focus();
+					return false;
+				}
 				dialog.onSubmit({
-					name: panel.querySelector('.Dialog__name').value.trim(),
+					name: nameInput.value.trim(),
 					content: panel.querySelector('.Dialog__content').value
 				});
 			});
@@ -1521,7 +1924,12 @@ async function openExplorer () {
 				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Create</button></div>
 			`;
 			wireSimpleDialog(panel, function () {
-				dialog.onSubmit(panel.querySelector('.Dialog__input').value.trim());
+				var folderInput = panel.querySelector('.Dialog__input');
+				if (!folderInput.value.trim()) {
+					folderInput.focus();
+					return false;
+				}
+				dialog.onSubmit(folderInput.value.trim());
 			});
 		}
 		else if (dialog.type === 'onlineFile') {
@@ -1532,8 +1940,13 @@ async function openExplorer () {
 				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Add</button></div>
 			`;
 			wireSimpleDialog(panel, function () {
+				var urlInput = panel.querySelector('.Dialog__url');
+				if (!urlInput.value.trim()) {
+					urlInput.focus();
+					return false;
+				}
 				dialog.onSubmit({
-					url: panel.querySelector('.Dialog__url').value.trim(),
+					url: urlInput.value.trim(),
 					name: panel.querySelector('.Dialog__name').value.trim()
 				});
 			});
@@ -1549,70 +1962,6 @@ async function openExplorer () {
 				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit Explorer__danger">Delete</button></div>
 			`;
 			wireSimpleDialog(panel, dialog.onSubmit);
-		}
-		else if (dialog.type === 'openWith') {
-			var appOptions = dialog.apps.map(function (app) {
-				return '<option value="' + escapeAttr(app.id) + '">' + escapeHtml(app.label + (app.installed ? '' : ' (install)')) + '</option>';
-			}).join('');
-			if (!dialog.hasApps) {
-				appOptions = '<option value="">No compatible apps</option>';
-			}
-			var defaultInfo = dialog.extension
-				? (dialog.currentDefaultAppLabel
-					? 'Current default for .' + escapeHtml(dialog.extension) + ': ' + escapeHtml(dialog.currentDefaultAppLabel)
-					: 'No default app for .' + escapeHtml(dialog.extension))
-				: '';
-			var defaultControls = dialog.extension ? `
-				<div class="Modal__field">
-					<label class="Explorer__toolbarLabel">
-						<input class="Dialog__setDefault Explorer__check" type="checkbox"${dialog.selectedIsDefault ? ' checked' : ''}${dialog.hasApps ? '' : ' disabled'}>
-						<span>Use selected app by default for .${escapeHtml(dialog.extension)}</span>
-					</label>
-				</div>
-				<div class="Modal__list">${defaultInfo}</div>
-			` : '';
-
-			var openWithTitle = dialog.multiFileCount > 1
-				? 'Open ' + dialog.multiFileCount + ' files with...'
-				: 'Open with...';
-
-			panel.innerHTML = `
-				<div class="Modal__title">${openWithTitle}</div>
-				<div class="Modal__field"><label>Application</label><select class="Dialog__app">${appOptions}</select></div>
-				${defaultControls}
-				<div class="Modal__buttons">
-					<button class="Dialog__openManager">App Manager</button>
-					<button class="Dialog__manageDefaults">Manage Defaults</button>
-					<button class="Dialog__cancel">Cancel</button>
-					<button class="Dialog__submit"${dialog.hasApps ? '' : ' disabled'}>Open</button>
-				</div>
-			`;
-			wireSimpleDialog(panel, function () {
-				dialog.onSubmit({
-					appId: panel.querySelector('.Dialog__app').value,
-					setAsDefault: !!(panel.querySelector('.Dialog__setDefault') && panel.querySelector('.Dialog__setDefault').checked)
-				});
-			});
-			panel.querySelector('.Dialog__openManager').onclick = function () {
-				dialog.onOpenManager();
-			};
-			panel.querySelector('.Dialog__manageDefaults').onclick = function () {
-				dialog.onManageDefaults();
-			};
-			var appSelect = panel.querySelector('.Dialog__app');
-			var submit = panel.querySelector('.Dialog__submit');
-			var setDefault = panel.querySelector('.Dialog__setDefault');
-			function syncOpenWithSubmitLabel () {
-				var selected = dialog.apps.find(function (app) {
-					return app.id === appSelect.value;
-				});
-				submit.textContent = selected && !selected.installed ? 'Install and Open' : 'Open';
-				if (setDefault) {
-					setDefault.checked = !!(selected && dialog.currentDefaultAppId === selected.id);
-				}
-			}
-			appSelect.onchange = syncOpenWithSubmitLabel;
-			syncOpenWithSubmitLabel();
 		}
 		else if (dialog.type === 'defaultAppsManager') {
 			var associationRows = dialog.rows.length ? dialog.rows.map(function (row) {
@@ -1674,6 +2023,12 @@ async function openExplorer () {
 					renderOverlays();
 				};
 			}
+		}
+		else if (dialog.type === 'archive') {
+			panel.append(buildArchiveDialog(dialog));
+		}
+		else if (dialog.type === 'compress') {
+			panel.append(buildCompressDialog(dialog));
 		}
 		else if (dialog.type === 'ffmpegOptions') {
 			panel.innerHTML = `
@@ -1741,6 +2096,21 @@ async function openExplorer () {
 				renderOverlays();
 			};
 		}
+		else if (dialog.type === 'copyText') {
+			panel.innerHTML = `
+				<div class="Modal__title">${escapeHtml(dialog.title)}</div>
+				<div class="Modal__list">Your browser did not let PixOS write to the clipboard. Press ${escapeHtml(copyChordLabel())} to copy it yourself.</div>
+				<div class="Modal__field"><textarea class="Dialog__copyText" readonly rows="${Math.min(8, dialog.text.split('\n').length)}" style="width:100%">${escapeHtml(dialog.text)}</textarea></div>
+				<div class="Modal__buttons"><button class="Dialog__submit">Close</button></div>
+			`;
+			var copyArea = panel.querySelector('.Dialog__copyText');
+			copyArea.focus();
+			copyArea.select();
+			panel.querySelector('.Dialog__submit').onclick = function () {
+				state.dialog = null;
+				renderOverlays();
+			};
+		}
 		else if (dialog.type === 'share') {
 			var shareInfo = state.shares[dialog.sharePath] || {};
 			var connCount = shareInfo.connections ? shareInfo.connections.length : 0;
@@ -1801,9 +2171,14 @@ async function openExplorer () {
 			};
 			var urlInput = panel.querySelector('.Dialog__shareUrl');
 			urlInput.onclick = function () { this.select(); };
-			panel.querySelector('.Dialog__copyUrl').onclick = function () {
+			panel.querySelector('.Dialog__copyUrl').onclick = async function () {
 				urlInput.select();
-				navigator.clipboard.writeText(urlInput.value);
+				// Same refusal as Copy path, and it used to reject into nothing here.
+				if (!await copyTextToClipboard(urlInput.value)) {
+					report('Could not copy the link', 'Your browser did not let PixOS write '
+						+ 'to the clipboard. The link is selected above — press '
+						+ copyChordLabel() + ' to copy it.', 'warn');
+				}
 			};
 			var chatMessages = panel.querySelector('.Dialog__chatMessages');
 			var chatInput = panel.querySelector('.Dialog__chatInput');
@@ -1913,7 +2288,12 @@ async function openExplorer () {
 		function submitOnce () {
 			if (submitted) return;
 			submitted = true;
-			onSubmit();
+			// `false` means the handler declined -- an empty filename, say -- and left the
+			// dialog open. The latch has to release, or every later click and Enter is
+			// swallowed and the dialog is dead with no way out but Cancel.
+			if (onSubmit() === false) {
+				submitted = false;
+			}
 		}
 		var cancel = panel.querySelector('.Dialog__cancel');
 		if (cancel) {
@@ -1926,17 +2306,82 @@ async function openExplorer () {
 		if (submit) {
 			submit.onclick = submitOnce;
 		}
-		var firstInput = panel.querySelector('input, textarea, select');
-		if (firstInput) firstInput.focus();
 		panel.onkeydown = function (e) {
 			if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
 				e.preventDefault();
+				// preventDefault stops the default action, not the bubble. Without this the
+				// event still reached the document handler above, which opened the path the
+				// dialog had just renamed away from.
+				e.stopPropagation();
 				submitOnce();
 			}
 		};
 	}
 
+	// The first field of a dialog, focused with its value selected -- except on a filename
+	// field, where the extension is left out of the selection: typing straight over
+	// "report" should keep ".final.pdf", which is what makes the autofocus useful rather
+	// than something to undo first.
+	//
+	// A dialog with no field at all focuses its default button instead, so Enter confirms
+	// it rather than falling through to the window behind.
+	function focusDialogInput (root) {
+		// Never a checkbox: it cannot be typed into, and focusing the first one in a list
+		// of them buries the field -- or the button -- that the dialog is actually asking
+		// you to use. The archive dialog is a list of checkboxes and made this visible.
+		var input = root.querySelector('input:not([type="checkbox"]), textarea, select');
+		if (!input) {
+			var submit = root.querySelector('.Dialog__submit');
+			if (submit) {
+				submit.focus();
+			}
+			return;
+		}
+		input.focus();
+		if (input.tagName !== 'INPUT') {
+			return;
+		}
+		try {
+			if (input.dataset.selectBasename !== undefined) {
+				input.setSelectionRange(0, basenameEnd(input.value));
+			}
+			else {
+				input.select();
+			}
+		}
+		catch (err) {
+			// Some input types refuse setSelectionRange. Focused is still better than not.
+		}
+	}
+
+	function basenameEnd (name) {
+		var text = String(name == null ? '' : name);
+		var dot = text.lastIndexOf('.');
+		// A leading dot is the whole name of a dotfile, not an extension.
+		return dot > 0 ? dot : text.length;
+	}
+
+	// Everything a dialog does happens after the action that opened it has already
+	// returned, so the wrapper around `actions` is long gone by the time a submit handler
+	// runs. A rejection in there escaped into nothing: a rename onto a file another window
+	// had just deleted reported itself as "Uncaught (in promise)" in a console nobody has
+	// open, and as absolutely nothing on screen. The callbacks are wrapped here for the
+	// same reason the actions are -- so that a dialog added later gets it too.
+	// Every on*-shaped function on the dialog, rather than a list of the ones that exist
+	// today: a list is a thing to forget to add to, and forgetting is the failure this is
+	// here to prevent.
+	function isCallbackName (name) {
+		return /^on[A-Z]/.test(name);
+	}
+
 	function openDialog (dialog) {
+		if (dialog) {
+			Object.keys(dialog).forEach(function (name) {
+				if (isCallbackName(name) && typeof dialog[name] === 'function') {
+					dialog[name] = guarded(dialog[name], readableActionName(dialog.type || 'dialog'));
+				}
+			});
+		}
 		state.dialog = dialog;
 		renderOverlays();
 	}
@@ -2014,6 +2459,16 @@ async function openExplorer () {
 		return state.items.find(function (item) {
 			return item.path === itemPath;
 		}) || null;
+	}
+
+	// The folder you are looking *at* is not one of the rows in it, so nothing in the
+	// empty-area menu can look it up. This is where it is described instead.
+	function getCurrentFolderItem () {
+		return {
+			path: state.cwd,
+			name: state.cwd.split('/').filter(Boolean).pop() || '/',
+			isDirectory: true
+		};
 	}
 
 	function getSelectedItems () {
@@ -2350,6 +2805,360 @@ async function openExplorer () {
 		}
 	}
 
+	// --- archives -------------------------------------------------------------------
+	//
+	// The engine is 1.4 MB of WebAssembly and most sessions never open an archive, so it
+	// arrives on the first press of *Extract* rather than with Explorer. The rules it
+	// needs (../7z/js/parse.js) are imported at the top, because deciding whether a file
+	// is an archive at all must not cost a download.
+
+	var archiveEngine = null;
+
+	function loadArchiveEngine () {
+		if (!archiveEngine) {
+			archiveEngine = import('../7z/js/archive.js');
+			// A failed load is not the answer for the rest of the session: the next press
+			// tries again rather than replaying it.
+			archiveEngine.catch(function () {
+				archiveEngine = null;
+			});
+		}
+		return archiveEngine;
+	}
+
+	// The engine describes its own failures -- a wrong password and a truncated file are
+	// the same exit code, and only the text tells them apart -- so its sentence is used
+	// where there is one, and only an unexpected exception falls back to the generic
+	// reporter.
+	function reportArchiveFailure (label, err) {
+		if (err && err.failure) {
+			report(err.failure.title, err.failure.message, 'warn');
+			return;
+		}
+		reportFailure(label, err);
+	}
+
+	async function openArchiveDialog (item) {
+		var dialog = {
+			type: 'archive',
+			name: item.name,
+			path: item.path,
+			phase: 'reading',
+			entries: [],
+			selected: null,
+			password: '',
+			error: '',
+			destination: '',
+			unwrapped: false,
+			bytes: null,
+			onUnlock: function (password) {
+				readArchive(dialog, password);
+			},
+			onExtract: function (paths) {
+				runExtract(dialog, paths);
+			},
+			onToggle: function (entryPath, on) {
+				if (on) {
+					dialog.selected.add(entryPath);
+				}
+				else {
+					dialog.selected.delete(entryPath);
+				}
+			},
+			onPassword: function (value) {
+				dialog.password = value;
+			}
+		};
+		openDialog(dialog);
+		await readArchive(dialog, '');
+	}
+
+	// Listing first, always. Reading an archive to see inside it writes nothing anywhere,
+	// which is what makes it safe to do before asking anything.
+	async function readArchive (dialog, password) {
+		dialog.phase = 'reading';
+		dialog.error = '';
+		dialog.password = password || '';
+		refreshArchiveDialog(dialog);
+
+		var engine = null;
+		var listing;
+		try {
+			engine = await loadArchiveEngine();
+			if (!dialog.bytes) {
+				dialog.bytes = await readFile(dialog.path);
+			}
+			listing = await engine.inspect(dialog.bytes, {
+				name: dialog.name,
+				password: dialog.password
+			});
+		}
+		catch (err) {
+			closeArchiveDialog(dialog);
+			reportArchiveFailure('Could not read ' + dialog.name, err);
+			return;
+		}
+
+		// Closed while the engine was working. Its answer is no longer wanted, and
+		// reopening the dialog over whatever is on screen now would be worse than useless.
+		if (state.dialog !== dialog) {
+			return;
+		}
+
+		if (listing.needsPassword) {
+			dialog.phase = 'password';
+			dialog.error = listing.failure ? listing.failure.title : '';
+			refreshArchiveDialog(dialog);
+			return;
+		}
+		if (listing.failure) {
+			closeArchiveDialog(dialog);
+			report(listing.failure.title, listing.failure.message, 'warn');
+			return;
+		}
+
+		dialog.entries = listing.entries;
+		dialog.unwrapped = !!listing.unwrapped;
+		dialog.selected = new Set(listing.entries.filter(function (entry) {
+			return !entry.isDirectory;
+		}).map(function (entry) {
+			return entry.path;
+		}));
+		dialog.destination = engine.destinationFor(dialog.name, function (name) {
+			return state.items.some(function (entry) {
+				return entry.name === name;
+			});
+		});
+		dialog.phase = 'ready';
+		refreshArchiveDialog(dialog);
+	}
+
+	async function runExtract (dialog, paths) {
+		dialog.phase = 'working';
+		dialog.error = '';
+		refreshArchiveDialog(dialog);
+
+		var result;
+		try {
+			var engine = await loadArchiveEngine();
+			result = await engine.extract(dialog.bytes, {
+				name: dialog.name,
+				password: dialog.password,
+				// Everything selected is not a selection: without a list 7-Zip keeps the
+				// empty folders too, and there is nothing to get wrong.
+				paths: paths
+			});
+		}
+		catch (err) {
+			var kind = err && err.failure ? err.failure.kind : '';
+			// A password is a question, not a failure: the dialog stays open and asks
+			// again, with what went wrong above the field.
+			if (kind === 'password' || kind === 'password-needed') {
+				dialog.phase = 'password';
+				dialog.error = err.failure.title;
+				refreshArchiveDialog(dialog);
+				return;
+			}
+			closeArchiveDialog(dialog);
+			reportArchiveFailure('Could not extract ' + dialog.name, err);
+			return;
+		}
+
+		closeArchiveDialog(dialog);
+		await writeExtracted(dialog.name, result, dialog.destination);
+		await refreshCurrentDir(false);
+	}
+
+	// Nothing here needs the engine: the names, formats and presets are all in the rules
+	// module Explorer already has. The 1.4 MB arrives when Compress is pressed, and not
+	// for somebody who opened the dialog to look at it.
+	function openCompressDialog (items) {
+		var folderName = state.cwd.split('/').filter(Boolean).pop() || 'archive';
+		var dialog = {
+			type: 'compress',
+			items: items,
+			folderName: folderName,
+			format: '7z',
+			preset: 'normal',
+			password: '',
+			encryptNames: false,
+			phase: 'ready',
+			progress: '',
+			name: ''
+		};
+		dialog.name = freeArchiveName(items, dialog.format, folderName);
+
+		dialog.onFormat = function (formatId) {
+			// The name follows the format rather than being left saying .zip on a 7z.
+			var stem = archiveNames.stripExtension(dialog.name, dialog.format);
+			dialog.format = formatId;
+			dialog.name = freeArchiveName(items, formatId, folderName, stem);
+			refreshArchiveDialog(dialog);
+		};
+		dialog.onPreset = function (presetId) {
+			dialog.preset = presetId;
+			refreshArchiveDialog(dialog);
+		};
+		dialog.onName = function (value) {
+			dialog.name = value;
+		};
+		dialog.onPassword = function (value) {
+			dialog.password = value;
+		};
+		dialog.onEncryptNames = function (on) {
+			dialog.encryptNames = on;
+		};
+		dialog.onCompress = function () {
+			runCompress(dialog);
+		};
+
+		openDialog(dialog);
+	}
+
+	function freeArchiveName (items, formatId, folderName, stem) {
+		var suggested = stem
+			? stem + '.' + archiveNames.formatFor(formatId).extension
+			: archiveNames.archiveNameFor(items, formatId, folderName);
+		var base = archiveNames.stripExtension(suggested, formatId);
+		return archiveNames.uniqueName(base, archiveNames.formatFor(formatId).extension, function (name) {
+			return state.items.some(function (entry) {
+				return entry.name === name;
+			});
+		});
+	}
+
+	async function runCompress (dialog) {
+		dialog.phase = 'working';
+		dialog.progress = 'Reading the files…';
+		refreshArchiveDialog(dialog);
+
+		var made;
+		try {
+			var engine = await loadArchiveEngine();
+			var source = await collectForArchive(dialog.items);
+			dialog.progress = 'Compressing ' + source.files.length
+				+ (source.files.length === 1 ? ' file…' : ' files…');
+			refreshArchiveDialog(dialog);
+			made = await engine.compress({
+				name: dialog.name,
+				format: dialog.format,
+				preset: dialog.preset,
+				password: dialog.password,
+				encryptNames: dialog.encryptNames,
+				files: source.files,
+				dirs: source.dirs
+			});
+		}
+		catch (err) {
+			closeArchiveDialog(dialog);
+			reportArchiveFailure('Could not make ' + dialog.name, err);
+			return;
+		}
+
+		closeArchiveDialog(dialog);
+		try {
+			// Through the same funnel every other route that produces a file uses, so a
+			// name that has appeared since the dialog opened is asked about rather than
+			// written over. The suggested name is already a free one; this is the race.
+			var written = await writeNewFile(state.cwd, made.name, Buffer.from(made.data), 'compress');
+			if (!written) {
+				return;
+			}
+		}
+		catch (err) {
+			reportFailure('Writing ' + made.name, err);
+			return;
+		}
+		await refreshCurrentDir(false);
+		report('Made ' + made.name, formatSize(made.data.length) + ' from '
+			+ dialog.items.length + (dialog.items.length === 1 ? ' item' : ' items') + '.',
+			'info');
+	}
+
+	// Every file under everything that was selected, with paths relative to this folder --
+	// so the archive holds `notes/a.txt` and not the whole path from the root of PixOS.
+	// Empty folders are collected separately, because they are part of the shape and
+	// nothing else would record them.
+	async function collectForArchive (items) {
+		var files = [];
+		var dirs = [];
+
+		async function walk (item, relative) {
+			if (!item.isDirectory) {
+				files.push({path: relative, data: await readFile(item.path)});
+				return;
+			}
+			dirs.push(relative);
+			var children = await listDirectory(item.path);
+			for (var i = 0; i < children.length; i++) {
+				await walk(children[i], relative + '/' + children[i].name);
+			}
+		}
+
+		for (var i = 0; i < items.length; i++) {
+			await walk(items[i], items[i].name);
+		}
+		return {files: files, dirs: dirs};
+	}
+
+	// The first render of a dialog goes through openDialog, which wraps its callbacks so a
+	// throw inside one is reported rather than lost. Every render after that must not:
+	// openDialog wraps again each time it is called, and a dialog with four states would
+	// end up several layers deep in its own error handling.
+	function refreshArchiveDialog (dialog) {
+		if (state.dialog === dialog) {
+			renderOverlays();
+			return;
+		}
+		openDialog(dialog);
+	}
+
+	function closeArchiveDialog (dialog) {
+		if (state.dialog === dialog) {
+			state.dialog = null;
+			renderOverlays();
+		}
+	}
+
+	// Straight into a folder beside the archive -- the whole point of the phase. The name
+	// is never one that is already taken: extracting the same archive twice is ordinary,
+	// and merging into a folder somebody has since put their own files in cannot be undone.
+	async function writeExtracted (archiveName, result, destination) {
+		var engine = await loadArchiveEngine();
+		var folder = destination || engine.destinationFor(archiveName, function (name) {
+			return state.items.some(function (entry) {
+				return entry.name === name;
+			});
+		});
+		var destPath = path.join(state.cwd, folder);
+
+		try {
+			await ensureDir(destPath);
+			for (var i = 0; i < result.files.length; i++) {
+				await writeFile(path.join(destPath, result.files[i].path),
+					Buffer.from(result.files[i].data));
+			}
+			// An empty folder is part of the archive's shape, and writeFile only makes the
+			// ones with something in them.
+			for (var d = 0; d < (result.dirs || []).length; d++) {
+				await ensureDir(path.join(destPath, result.dirs[d]));
+			}
+		}
+		catch (err) {
+			reportFailure('Writing the contents of ' + archiveName, err);
+			return;
+		}
+
+		var partial = result.failure && result.failure.kind === 'partial';
+		report(partial ? 'Extracted part of ' + archiveName : 'Extracted ' + archiveName,
+			result.files.length + (result.files.length === 1 ? ' file' : ' files')
+				+ ' into ' + folder + '/'
+				+ (result.unwrapped ? ' — both layers of it, so there is no .tar left over.' : '')
+				+ (partial ? ' ' + result.failure.message : ''),
+			partial ? 'warn' : 'info',
+			[{label: 'Open ' + folder, run: function () { navigateTo(destPath); }}]);
+	}
+
 	function getRowMenuItems (path) {
 		var selected = getSelectedItems();
 		if (selected.length > 1) {
@@ -2367,6 +3176,8 @@ async function openExplorer () {
 				{separator: true},
 				{label: 'Copy', action: actions.copySelected},
 				{label: 'Cut', action: actions.cutSelected},
+				{label: 'Copy path', action: function () { actions.copyPath(item.path); }},
+				{label: 'Compress…', action: function () { actions.compress(item.path); }},
 				{label: 'Paste into Folder', action: function () { actions.pasteClipboard(item.path); }, disabled: !hasInternalClipboard()},
 				{separator: true},
 				{label: 'Rename', action: function () { actions.rename(item.path); }},
@@ -2378,6 +3189,11 @@ async function openExplorer () {
 					{label: 'Add Online File', action: actions.addOnlineFile}
 				]}
 			];
+			// Only under the shell: it is the shell that owns the bookmarks document.
+			if (typeof parent.addBookmark === 'function') {
+				dirMenuItems.push({separator: true});
+				dirMenuItems.push({label: 'Add to bookmarks', action: function () { actions.addToBookmarks(item.path); }});
+			}
 			if (dirIsMountPoint) {
 				dirMenuItems.push({separator: true});
 				dirMenuItems.push({label: 'Unmount', action: function () { actions.umount(item.path); }});
@@ -2396,27 +3212,47 @@ async function openExplorer () {
 			{separator: true},
 			{label: 'Copy', action: actions.copySelected},
 			{label: 'Cut', action: actions.cutSelected},
+			{label: 'Copy path', action: function () { actions.copyPath(item.path); }},
+			// Top level rather than in Tools, unlike *Extract…*: compressing applies to
+			// anything, extracting only to an archive.
+			{label: 'Compress…', action: function () { actions.compress(item.path); }},
 			{label: 'Rename', action: function () { actions.rename(item.path); }},
 			{label: 'Download', action: actions.downloadSelected},
 			{label: 'Delete', action: actions.deleteSelected},
 			{separator: true},
 			{label: 'Tools', submenu: [
 				{label: 'Get SHA1', action: actions.getHashSHA1},
-				{label: 'Extract', action: actions.extract},
-				{label: 'Extract 7z', action: actions.extract7z},
+				// One entry for every format 7-Zip reads, and disabled when the name is
+				// not one of them -- an *Extract* that opens a dialog to say "this is not
+				// an archive" is a worse answer than an entry you can see is not for this
+				// file. The name is a hint, not the truth, so the engine still checks.
+				{label: 'Extract…', action: function () { actions.extract(item.path); },
+					disabled: !archiveNames.isArchiveName(item.name)},
 				{label: 'Mount as filesystem', action: function () { actions.mountArchive(item.path); }, disabled: !isMountable},
 				{label: 'FFmpeg', action: actions.ffmpeg},
 				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
 			]}
 		];
 
+		// Both of these only exist under the shell -- it owns the desktop and it owns the
+		// bookmarks document -- and they share one separator so a standalone Explorer does
+		// not end its menu with a rule and nothing after it.
+		var shellExtras = [];
+		if (typeof parent.addBookmark === 'function') {
+			shellExtras.push({label: 'Add to bookmarks', action: function () {
+				actions.addToBookmarks(item.path);
+			}});
+		}
 		// The images are already here, so this is the natural place to set one as the
-		// wallpaper. Only offered under the shell, which is what owns the desktop.
+		// wallpaper.
 		if (isImageExtension(item.path) && typeof parent.setWallpaperImage === 'function') {
-			fileMenuItems.push({separator: true});
-			fileMenuItems.push({label: 'Set as wallpaper', action: function () {
+			shellExtras.push({label: 'Set as wallpaper', action: function () {
 				parent.setWallpaperImage(item.path);
 			}});
+		}
+		if (shellExtras.length) {
+			fileMenuItems.push({separator: true});
+			fileMenuItems = fileMenuItems.concat(shellExtras);
 		}
 
 		return fileMenuItems;
@@ -2437,14 +3273,15 @@ async function openExplorer () {
 		items.push(
 			{label: 'Copy selected', action: actions.copySelected},
 			{label: 'Cut selected', action: actions.cutSelected},
+			{label: 'Copy paths', action: function () { actions.copyPath(); }},
+			{label: 'Compress…', action: function () { actions.compress(); }},
 			{separator: true},
 			{label: 'Delete selected', action: actions.deleteSelected},
 			{label: 'Download selected', action: actions.downloadSelected},
 			{separator: true},
 			{label: 'Tools for selected', submenu: [
 				{label: 'Get SHA1', action: actions.getHashSHA1},
-				{label: 'Extract', action: actions.extract},
-				{label: 'Extract 7z', action: actions.extract7z},
+				{label: 'Extract all', action: actions.extractSelected},
 				{label: 'FFmpeg', action: actions.ffmpeg},
 				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
 			]}
@@ -2454,6 +3291,11 @@ async function openExplorer () {
 
 	function getEmptyAreaMenuItems () {
 		return [
+			// No row under the pointer, so this entry has to name what it acts on. It is
+			// also the only way to reach *Open with...* for the folder you are inside --
+			// otherwise you have to go up a level to right-click it.
+			{label: 'Open this folder with...', action: function () { actions.openWith(getCurrentFolderItem()); }},
+			{separator: true},
 			{label: 'New File', action: actions.createFile},
 			{label: 'New Folder', action: actions.createFolder},
 			{label: 'Add Online File', action: actions.addOnlineFile},
@@ -2513,7 +3355,7 @@ async function openExplorer () {
 			});
 		}
 		catch (err) {
-			openInfoDialog('Screen Recording', 'Could not start screen capture: ' + err.message);
+			reportFailure('Could not start screen capture', err);
 			return;
 		}
 
@@ -2568,7 +3410,7 @@ async function openExplorer () {
 		catch (err) {
 			screenStream.getTracks().forEach(function (t) { t.stop(); });
 			if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
-			openInfoDialog('Screen Recording', 'Could not initialize recording: ' + err.message);
+			reportFailure('Could not start the recording', err);
 			return;
 		}
 
@@ -2589,7 +3431,9 @@ async function openExplorer () {
 			var now = new Date();
 			var pad = function (n) { return String(n).padStart(2, '0'); };
 			var name = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '-' + pad(now.getHours()) + '-' + pad(now.getMinutes()) + ext;
-			onFileHandler(blobToFile(blob, name));
+			// Awaited: onFileHandler can prompt, and stopScreenRecording re-renders the
+			// overlays -- which would tear the prompt down before it was answered.
+			await onFileHandler(blobToFile(blob, name));
 			actions.stopScreenRecording(true);
 		};
 
@@ -2608,7 +3452,7 @@ async function openExplorer () {
 		catch (err) {
 			screenStream.getTracks().forEach(function (t) { t.stop(); });
 			if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
-			openInfoDialog('Screen Recording', 'Could not start MediaRecorder: ' + err.message);
+			reportFailure('Could not start the recorder', err);
 			return;
 		}
 
@@ -2697,8 +3541,58 @@ async function openExplorer () {
 			parent.openFile(item.path, forcedApp);
 		},
 
-		openWith: async function (itemPath) {
-			var selectedFiles = getSelectedItems().filter(function (entry) {
+		// The clipboard from inside an iframe is the trap here: it needs a secure context,
+		// it needs a gesture, and it can simply be refused. A copy that silently did
+		// nothing is worse than no menu entry at all, so a refusal falls back to showing
+		// the text already selected -- a copy you can finish by hand.
+		copyPath: async function (itemPath) {
+			var paths = itemPath
+				? [itemPath]
+				: getSelectedItems().map(function (entry) { return entry.path; });
+			if (!paths.length) {
+				return;
+			}
+			var text = paths.join('\n');
+			if (await copyTextToClipboard(text)) {
+				return;
+			}
+			openDialog({
+				type: 'copyText',
+				title: paths.length > 1 ? 'Copy paths' : 'Copy path',
+				text: text
+			});
+		},
+
+		addToBookmarks: async function (itemPath) {
+			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
+			if (!item || typeof parent.addBookmark !== 'function') {
+				return;
+			}
+			// The shell reports what happened, including "already bookmarked", so there
+			// is one surface for it rather than two that can disagree.
+			await parent.addBookmark({
+				title: item.name,
+				url: item.path,
+				// A trailing slash is what tells Bookmarks to open it with Explorer
+				// rather than as a file. Explorer is the one that knows which it is.
+				directory: item.isDirectory
+			});
+		},
+
+		// The dialog itself is the shell's (js/shell/open-with.js), the same one a file
+		// with no default app raises. Explorer used to draw its own, and the two came up
+		// in nearly the same situation looking nothing alike -- only one of them knew
+		// about the browser tab, and only one of them had keyboard picking. What stays
+		// here is what only Explorer knows: that a folder can be navigated to in place,
+		// and that several files can be opened at once.
+		// `target` is a path when a row menu opened this, and the selection may still
+		// override it -- several files at once are opened together. It is an *item* when
+		// the caller already knows what it means and the selection is not it: the
+		// empty-area menu acts on the folder you are looking at, and a file left
+		// highlighted inside that folder must not quietly take its place.
+		openWith: async function (target) {
+			var subject = (target && typeof target === 'object') ? target : null;
+			var selectedFiles = subject ? [] : getSelectedItems().filter(function (entry) {
 				return !entry.isDirectory;
 			});
 			var items;
@@ -2706,100 +3600,124 @@ async function openExplorer () {
 				items = selectedFiles;
 			}
 			else {
-				var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
+				var item = subject || getItemByPath(target || Array.from(state.selectedPaths)[0]);
 				if (!item) {
 					return;
 				}
 				items = [item];
 			}
 
+			if (typeof parent.openWithChooser !== 'function') {
+				report('Open with needs PixOS', 'This window is not running inside the '
+					+ 'PixOS shell, so there is nothing to list the apps.', 'warn');
+				return;
+			}
+
 			var apps = await getOpenWithAppsForItems(items);
-			var hasApps = apps.length > 0;
-			var extensions = items.filter(function (entry) {
-				return !entry.isDirectory;
-			}).map(function (entry) {
+			var fileItems = items.filter(function (entry) { return !entry.isDirectory; });
+			var extensions = fileItems.map(function (entry) {
 				return getSpecificExtension(entry.path);
 			}).filter(Boolean);
 			var uniqueExtensions = extensions.filter(function (ext, index) {
 				return extensions.indexOf(ext) === index;
 			});
-			var extension = uniqueExtensions.length === 1 ? uniqueExtensions[0] : '';
-			var currentDefaultAppId = extension ? getDefaultAppIdForExtension(extension) : null;
-			var currentDefaultAppLabel = currentDefaultAppId ? getCatalogLabel(currentDefaultAppId) || currentDefaultAppId : '';
-			var multiFileCount = items.filter(function (entry) { return !entry.isDirectory; }).length;
+			// Only ever offered for one file: an association is one extension to one app,
+			// and "remember this for all five of these" is not a thing it can express.
+			var extension = (fileItems.length === 1 && uniqueExtensions.length === 1)
+				? uniqueExtensions[0]
+				: '';
 
-			openDialog({
-				type: 'openWith',
+			// The chooser promises never to be empty, and for one file it keeps that
+			// promise itself — the browser tab and the plain window are always there.
+			// For a folder, or for several files with nothing in common, there is
+			// nothing universal to fall back on, so the empty case is answered here
+			// instead of being shown as a dialog with no rows in it.
+			var universal = items.length === 1 && !items[0].isDirectory;
+			if (!apps.length && !universal) {
+				report('Nothing can open all of these',
+					items.length > 1
+						? 'No installed app takes every one of the ' + items.length + ' files selected. '
+							+ 'Try them one at a time.'
+						: 'No installed app can open a folder.',
+					'warn');
+				return;
+			}
+
+			state.dialog = null;
+			renderOverlays();
+
+			var picked = await parent.openWithChooser({
+				paths: items.map(function (entry) { return entry.path; }),
 				apps: apps,
-				hasApps: hasApps,
 				extension: extension,
-				multiFileCount: multiFileCount,
-				currentDefaultAppId: currentDefaultAppId,
-				currentDefaultAppLabel: currentDefaultAppLabel,
-				selectedIsDefault: !!(hasApps && apps[0] && currentDefaultAppId && apps[0].id === currentDefaultAppId),
-				onSubmit: async function (payload) {
-					if (!hasApps || !payload || !payload.appId) {
-						openInfoDialog('Open with', 'No compatible apps found');
-						return;
-					}
-					var app = findOpenWithApp(apps, payload.appId);
-					if (!app) {
-						openInfoDialog('Open with', 'No compatible apps found');
-						return;
-					}
-					state.dialog = null;
-					renderOverlays();
-					var fileItems = items.filter(function (entry) { return !entry.isDirectory; });
-					if (!app.installed && typeof parent.installAppById === 'function') {
-						var needsInstall = fileItems.length > 0
-							|| (items.length === 1 && items[0].isDirectory && app.id === 'treemap');
-						if (needsInstall) {
-						try {
-							await parent.installAppById(app.id);
+				title: items.length > 1
+					? 'Open ' + items.length + ' files with...'
+					: 'Open with...',
+				subtitle: items.length === 1 ? items[0].path : items.length + ' files',
+				// Neither route means anything for a folder, and for several files at
+				// once they would each need a tab or a window of their own.
+				universal: universal,
+				extras: [
+					{
+						label: 'App Manager',
+						run: function () {
+							// An installed app, opened as one.
+							if (typeof parent.openApp === 'function') {
+								parent.openApp('app-manager');
+							}
+							else {
+								parent.openFile('/apps/app-manager/index.html');
+							}
 						}
-						catch (err) {
-							console.error(err);
-							openInfoDialog('Install error', String(err));
-							return;
-						}
+					},
+					{
+						label: 'Manage Defaults',
+						run: function () {
+							actions.manageDefaultApps(extension);
 						}
 					}
-					if (fileItems.length === 1 && extension && payload.setAsDefault && typeof parent.setDefaultAppForExtension === 'function') {
-						try {
-							await parent.setDefaultAppForExtension(extension, app.id);
-						}
-						catch (err) {
-							console.error(err);
-							openInfoDialog('Default app error', String(err));
-							return;
-						}
-					}
-					if (items[0].isDirectory && items.length === 1) {
-						if (app.id === 'explorer') {
-							navigateTo(items[0].path);
-						}
-						else {
-							parent.openPath(items[0].path, app.id);
-						}
-					}
-					else if (fileItems.length > 1 && typeof parent.openFiles === 'function') {
-						parent.openFiles(fileItems.map(function (entry) {
-							return entry.path;
-						}), app.id);
-					}
-					else if (fileItems.length === 1) {
-						parent.openFile(fileItems[0].path, app.id);
-					}
-				},
-				onOpenManager: function () {
-					state.dialog = null;
-					renderOverlays();
-					parent.openFile('/apps/app-manager/index.html');
-				},
-				onManageDefaults: function () {
-					actions.manageDefaultApps(extension);
-				}
+				]
 			});
+			if (!picked) {
+				return;
+			}
+			// Installing the app and remembering the choice already happened in the
+			// shell; what is left is the opening, which is the part Explorer knows how
+			// to do differently.
+			if (picked.kind === parent.OPEN_WITH_BROWSER_TAB) {
+				parent.openInBrowserTab(items[0].path);
+				return;
+			}
+			if (picked.kind === parent.OPEN_WITH_RAW_WINDOW) {
+				parent.openRawFile(items[0].path);
+				return;
+			}
+			if (items[0].isDirectory && items.length === 1) {
+				if (picked.appId === 'explorer') {
+					// Navigating to the folder this window is already showing does
+					// nothing, and a chooser entry that does nothing reads as broken.
+					// Asked from inside it, *Explorer* means another one.
+					if (items[0].path === state.cwd) {
+						parent.openPath(items[0].path, 'new explorer');
+					}
+					else {
+						navigateTo(items[0].path);
+					}
+				}
+				else {
+					parent.openPath(items[0].path, picked.appId);
+				}
+				return;
+			}
+			if (fileItems.length > 1 && typeof parent.openFiles === 'function') {
+				parent.openFiles(fileItems.map(function (entry) {
+					return entry.path;
+				}), picked.appId);
+				return;
+			}
+			if (fileItems.length === 1) {
+				parent.openFile(fileItems[0].path, picked.appId);
+			}
 		},
 
 		manageDefaultApps: async function (prefillExtension) {
@@ -2810,11 +3728,10 @@ async function openExplorer () {
 			openDialog({
 				type: 'newFile',
 				onSubmit: async function (payload) {
-					if (!payload.name) return;
 					state.dialog = null;
 					renderOverlays();
 					var ab = await new File([payload.content || ''], payload.name).arrayBuffer();
-					await writeFile(path.join(state.cwd, payload.name), Buffer.from(ab));
+					await writeNewFile(state.cwd, payload.name, Buffer.from(ab));
 					await refreshCurrentDir(false);
 				}
 			});
@@ -2824,10 +3741,16 @@ async function openExplorer () {
 			openDialog({
 				type: 'newFolder',
 				onSubmit: async function (name) {
-					if (!name) return;
 					state.dialog = null;
 					renderOverlays();
-					await mkdir(path.join(state.cwd, name));
+					var target = path.join(state.cwd, name);
+					// mkdir on an existing name is an error rather than a silent no-op, and
+					// an unhandled one looked like the button doing nothing.
+					if (await stat(target)) {
+						report('Create folder', '"' + name + '" already exists in ' + state.cwd + '.', 'warn');
+						return;
+					}
+					await mkdir(target);
 					await refreshCurrentDir(false);
 				}
 			});
@@ -2837,12 +3760,28 @@ async function openExplorer () {
 			openDialog({
 				type: 'onlineFile',
 				onSubmit: async function (payload) {
-					if (!payload.url) return;
 					state.dialog = null;
 					renderOverlays();
-					var ab = await fetch(payload.url).then(function (r) { return r.arrayBuffer(); });
+
+					// The original had no catch and never checked response.ok, so a 404 or a
+					// CORS block closed the dialog and did nothing whatsoever. Both are the
+					// ordinary outcomes of typing a URL, not exceptional ones.
+					var response;
+					try {
+						response = await fetch(payload.url);
+					}
+					catch (err) {
+						reportFetchFailure(payload.url, {error: err});
+						return;
+					}
+					if (!response.ok) {
+						reportFetchFailure(payload.url, {response: response});
+						return;
+					}
+
+					var ab = await response.arrayBuffer();
 					var name = payload.name || getNameByPath(decodeURIComponent(payload.url));
-					await writeFile(path.join(state.cwd, name), Buffer.from(ab));
+					await writeNewFile(state.cwd, name, Buffer.from(ab));
 					await refreshCurrentDir(false);
 				}
 			});
@@ -2855,11 +3794,37 @@ async function openExplorer () {
 				type: 'rename',
 				oldName: item.name,
 				onSubmit: async function (newName) {
-					if (!newName || newName === item.name) return;
+					// The same name is a no-op, not an error -- close, exactly as Cancel
+					// would. Leaving the dialog up made it look like the button was dead.
+					if (!newName || newName === item.name) {
+						state.dialog = null;
+						renderOverlays();
+						return;
+					}
 					state.dialog = null;
 					renderOverlays();
-					var newPath = path.join(path.dirname(item.path), newName);
-					await fsRename(item.path, newPath);
+					try {
+						// fsRename does not fail on an occupied name, it replaces what is
+						// there -- so renaming onto an existing file used to destroy it
+						// silently. There is no error to catch; the question has to be
+						// asked first, the same one a paste asks.
+						var resolved = await resolveIncomingDestination(
+							newName, path.dirname(item.path), 'rename', item.isDirectory);
+						if (!resolved) {
+							return;
+						}
+						if (resolved.replaceExisting) {
+							await unlink(resolved.destPath);
+						}
+						await fsRename(item.path, resolved.destPath);
+					}
+					catch (err) {
+						// Thrown straight to the action wrapper, which translates the errno
+						// and raises a notification. Catching it here to build a dialog by
+						// hand is what put a raw "ENOENT: No such file or directory." on
+						// screen -- the errno translation lives one level up.
+						throw err;
+					}
 					await refreshCurrentDir(false);
 				}
 			});
@@ -2880,9 +3845,8 @@ async function openExplorer () {
 						}));
 					}
 					catch (err) {
-						console.error(err);
-						openInfoDialog('Delete error', String(err));
-						return;
+						// Same reasoning as rename: the wrapper translates and reports.
+						throw err;
 					}
 					state.selectedPaths = new Set();
 					await refreshCurrentDir(false);
@@ -2914,45 +3878,93 @@ async function openExplorer () {
 			openInfoDialog('SHA1', lines.join('\n'));
 		},
 
-		extract7z: async function () {
-			var targets = getSelectedItems().filter(function (item) { return !item.isDirectory; });
-			for (var i = 0; i < targets.length; i++) {
-				var ab = await readFile(targets[i].path);
-				var name = path.basename(targets[i].path) + '.zip';
-				var zip = await wasm7z(ab);
-				await writeFile(path.join(state.cwd, name), Buffer.from(zip));
+		// One entry, one dialog, for every format 7-Zip reads. There were two before --
+		// *Extract*, which only ever understood zip, and *Extract 7z*, which did not
+		// extract at all: it unpacked the archive and re-packed the contents as a zip
+		// beside it, leaving you a second job to do by hand.
+		extract: async function (itemPath) {
+			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
+			if (!item || item.isDirectory) {
+				return;
 			}
-			await refreshCurrentDir(false);
+			await openArchiveDialog(item);
 		},
 
-		extract: async function () {
-			var targets = getSelectedItems().filter(function (item) { return !item.isDirectory; });
+		// The other half of the engine. Acts on the selection, or on the row it was
+		// opened from -- a folder, a file, or a dozen of both.
+		compress: function (itemPath) {
+			var items = getSelectedItems();
+			if (!items.length || (itemPath && !state.selectedPaths.has(itemPath))) {
+				var single = getItemByPath(itemPath);
+				items = single ? [single] : [];
+			}
+			if (!items.length) {
+				return;
+			}
+			openCompressDialog(items);
+		},
+
+		// Several at once: no listing and no subset, because a dialog per archive is not
+		// an answer to "extract these five". A locked one is reported rather than
+		// silently skipped, and says how to deal with it.
+		extractSelected: async function () {
+			var targets = getSelectedItems().filter(function (item) {
+				return !item.isDirectory;
+			});
+			if (!targets.length) {
+				return;
+			}
+			if (targets.length === 1) {
+				await openArchiveDialog(targets[0]);
+				return;
+			}
+
+			var engine;
+			try {
+				engine = await loadArchiveEngine();
+			}
+			catch (err) {
+				reportArchiveFailure('The archive engine could not be loaded', err);
+				return;
+			}
+
+			var done = [];
+			var locked = [];
+			var failed = [];
 			for (var i = 0; i < targets.length; i++) {
-				var src = targets[i];
-				var destName = path.basename(src.path) + '-extracted';
-				var destPath = path.join(state.cwd, destName);
-				if (!await stat(destPath)) {
-					await mkdir(destPath);
+				try {
+					var bytes = await readFile(targets[i].path);
+					var result = await engine.extract(bytes, {name: targets[i].name});
+					await writeExtracted(targets[i].name, result);
+					done.push(targets[i].name);
 				}
-
-				var zipData = await readFile(src.path);
-				var zip = new JSZip();
-				var loaded = await zip.loadAsync(copyBuffer(zipData.buffer), {createFolders: true});
-
-				var filePaths = Object.keys(loaded.files);
-				for (var p = 0; p < filePaths.length; p++) {
-					var fp = filePaths[p];
-					var zf = loaded.files[fp];
-					if (zf.dir) {
-						await ensureDir(path.join(destPath, fp));
+				catch (err) {
+					var kind = err && err.failure ? err.failure.kind : '';
+					if (kind === 'password' || kind === 'password-needed') {
+						locked.push(targets[i].name);
 					}
 					else {
-						var out = await zf.async('arraybuffer');
-						await writeFile(path.join(destPath, fp), Buffer.from(out));
+						failed.push(targets[i].name + ' — '
+							+ (err && err.failure ? err.failure.title : (err && err.message) || 'failed'));
 					}
 				}
 			}
 			await refreshCurrentDir(false);
+
+			var lines = [];
+			if (done.length) {
+				lines.push(done.length + ' extracted.');
+			}
+			if (locked.length) {
+				lines.push(locked.length + ' need a password: ' + locked.join(', ')
+					+ '. Extract those one at a time — the dialog asks.');
+			}
+			if (failed.length) {
+				lines.push(failed.join('; ') + '.');
+			}
+			report(done.length ? 'Extracted ' + done.length + ' of ' + targets.length
+				: 'Nothing was extracted', lines.join(' '),
+				(locked.length || failed.length) ? 'warn' : 'info');
 		},
 
 		ffmpeg: async function () {
@@ -2976,7 +3988,7 @@ async function openExplorer () {
 						var out = await window.ffmpeg.readFile('output.mp4');
 						var fileType = await window.fileTypeFromBuffer(out);
 						var name = path.basename(src.path) + '.' + (fileType && fileType.ext ? fileType.ext : 'mp4');
-						await writeFile(path.join(state.cwd, name), Buffer.from(out));
+						await writeNewFile(state.cwd, name, Buffer.from(out));
 					}
 					await refreshCurrentDir(false);
 				}
@@ -3005,7 +4017,7 @@ async function openExplorer () {
 						var buf = await readFile(item.path);
 						var cb = function (err) {
 							if (err) {
-								openInfoDialog('Mount', 'Failed to mount: ' + err.message);
+								reportFailure('Could not mount ' + item.name, err);
 							} else {
 								renderSidebar();
 								navigateTo(mountPoint);
@@ -3019,7 +4031,7 @@ async function openExplorer () {
 							openInfoDialog('Mount', 'Unsupported format: ' + ext);
 						}
 					} catch (e) {
-						openInfoDialog('Mount', 'Error: ' + e.message);
+						reportFailure('Could not mount ' + item.name, e);
 					}
 				}
 			});
@@ -3053,7 +4065,7 @@ async function openExplorer () {
 						mountPoint = normalizePath(mountPoint);
 						mountManager.mountNativeDir(handle, mountPoint, name, function (err) {
 							if (err) {
-								openInfoDialog('Mount', 'Failed to mount: ' + err.message);
+								reportFailure('Could not mount ' + name, err);
 								return;
 							}
 							renderSidebar();
@@ -3061,14 +4073,16 @@ async function openExplorer () {
 							var readTimer = setTimeout(function () {
 								if (readDone) return;
 								readDone = true;
-								openInfoDialog('Mount', 'Mounted at ' + mountPoint + ' but reading timed out. Open it from the Mounts sidebar.');
+								report('Mounted, but slow to read',
+									mountPoint + ' is mounted, but reading it timed out. Open it from the '
+									+ 'Mounts sidebar when it responds.', 'warn');
 							}, 10000);
 							fs.readdir(mountPoint, function (readErr) {
 								if (readDone) return;
 								readDone = true;
 								clearTimeout(readTimer);
 								if (readErr) {
-									openInfoDialog('Mount', 'Mounted at ' + mountPoint + ' but cannot read contents: ' + readErr.message);
+									reportFailure('Mounted ' + mountPoint + ', but cannot read it', readErr);
 									return;
 								}
 								navigateTo(mountPoint);
@@ -3077,8 +4091,9 @@ async function openExplorer () {
 					}
 				});
 			} catch (e) {
+				// Picking no folder is not a failure; the browser reports it as one.
 				if (e.name !== 'AbortError') {
-					openInfoDialog('Mount', 'Error: ' + e.message);
+					reportFailure('Could not mount that folder', e);
 				}
 			}
 		},
@@ -3143,7 +4158,7 @@ async function openExplorer () {
 						localStorageId: localStorageId,
 						callbackUrl: callbackUrl,
 						onUnauthorized: function (mp) {
-							openInfoDialog('Mount Files3', 'Session expired for ' + mp + '. Please mount again.');
+							report('Files3 session expired', 'The session for ' + mp + ' has expired. Mount it again.', 'warn');
 						}
 					}, mountPoint, displayName, function (err) {
 						if (err) {
@@ -3153,7 +4168,7 @@ async function openExplorer () {
 							} else if (msg.indexOf('Popup blocked') === 0) {
 								openInfoDialog('Mount Files3', msg + ' Allow popups for this site and try again.');
 							} else {
-								openInfoDialog('Mount Files3', 'Failed to mount: ' + msg);
+								report('Could not mount Files3', msg);
 							}
 						} else {
 							renderSidebar();
@@ -3175,7 +4190,7 @@ async function openExplorer () {
 					refreshCurrentDir(false);
 				}
 			} catch (e) {
-				openInfoDialog('Unmount', 'Error: ' + e.message);
+				reportFailure('Could not unmount that', e);
 			}
 		},
 
@@ -3346,6 +4361,197 @@ async function openExplorer () {
 			}
 		}
 	};
+
+	// Wrapped once, here, rather than each action growing its own try/catch. Most of these
+	// are async and most had no catch at all, so a failed write, a refused rename or a
+	// download that never arrived resolved into nothing: no message, no change on screen,
+	// and an unhandled rejection in a console nobody has open.
+	//
+	// An action that handles its own errors never reaches this. An action added later gets
+	// the reporting whether or not its author thought about it, which is the whole point --
+	// the failure mode being designed out is "someone forgot".
+	Object.keys(actions).forEach(function (name) {
+		if (typeof actions[name] === 'function') {
+			actions[name] = guarded(actions[name], readableActionName(name));
+		}
+	});
+
+	// Runs `fn` and reports whatever it throws -- synchronously or as a rejected promise --
+	// under `label`, rather than letting it disappear.
+	function guarded (fn, label) {
+		return function () {
+			var result;
+			try {
+				result = fn.apply(this, arguments);
+			}
+			catch (err) {
+				reportFailure(label, err);
+				return;
+			}
+			if (result && typeof result.then === 'function') {
+				return result.catch(function (err) {
+					reportFailure(label, err);
+				});
+			}
+			return result;
+		};
+	}
+
+	// The last resort, for what neither wrapper covers: a listener, a timer, a promise
+	// nobody awaited. The shell's own handlers cannot see any of it -- a rejection inside
+	// an app fires on that app's window, not on the shell's -- so Explorer has to catch
+	// its own or it stays a console line, which is the thing this phase exists to end.
+	window.addEventListener('unhandledrejection', function (e) {
+		reportFailure('Something went wrong in Explorer', e.reason);
+	});
+
+	window.addEventListener('error', function (e) {
+		// A missing image in a folder listing fires this too, with no error object. Not
+		// worth interrupting anyone for.
+		if (!e.error) {
+			return;
+		}
+		reportFailure('Something went wrong in Explorer', e.error);
+	});
+
+	// Prefers the shell's notification layer, which does not steal the focus and stacks
+	// when several things fail. Standalone -- Explorer opened directly in a tab -- there is
+	// no shell, so it falls back to its own dialog rather than to silence.
+	//
+	// Everything Explorer reports goes through here. A call site that reaches for
+	// openInfoDialog directly gets a modal where the rest of the system gets a card, and
+	// skips the errno translation with it -- which is how a raw ENOENT reached the screen.
+	function report (title, message, level, actions) {
+		try {
+			if (parent !== window && typeof parent.notify === 'function') {
+				parent.notify({
+					level: level || 'error',
+					title: title,
+					message: message,
+					source: 'Explorer',
+					actions: actions || []
+				});
+				return;
+			}
+		}
+		catch (crossOrigin) {
+			// Not our parent. Fall through to the dialog.
+		}
+		openInfoDialog(title, message);
+	}
+
+	// Two attempts and then an honest surrender. The async API is the right one and is
+	// what a modern browser grants; execCommand still works in places it does not --
+	// notably an iframe without clipboard permission, which is exactly what Explorer is.
+	async function copyTextToClipboard (text) {
+		try {
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				await navigator.clipboard.writeText(text);
+				return true;
+			}
+		}
+		catch (err) {
+			console.warn('Explorer: the clipboard refused a write', err);
+		}
+		try {
+			var area = document.createElement('textarea');
+			area.value = text;
+			area.setAttribute('readonly', '');
+			area.style.position = 'fixed';
+			area.style.top = '-1000px';
+			document.body.appendChild(area);
+			area.select();
+			var copied = document.execCommand('copy');
+			area.remove();
+			return !!copied;
+		}
+		catch (fallbackErr) {
+			return false;
+		}
+	}
+
+	// What to tell someone to press. Not a capability check -- purely which keyboard is
+	// under their hands.
+	function copyChordLabel () {
+		return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '')
+			? 'Cmd+C'
+			: 'Ctrl+C';
+	}
+
+	function reportFailure (label, err) {
+		console.error('Explorer: ' + label, err);
+		var described = describeFailure(label, err);
+		report(described.title, described.message);
+	}
+
+	// A download that did not happen, explained. The classification lives in the shell
+	// (js/shell/failure.js) because an app cannot import shell modules -- so this asks the
+	// parent, and degrades to the raw message when there is no parent to ask.
+	function reportFetchFailure (url, outcome) {
+		var described;
+		try {
+			if (parent !== window && typeof parent.describeFetchFailure === 'function') {
+				described = parent.describeFetchFailure(Object.assign({
+					url: url,
+					context: 'Could not download that file'
+				}, outcome));
+			}
+		}
+		catch (crossOrigin) {
+			described = null;
+		}
+		if (!described) {
+			described = {
+				title: 'Could not download that file',
+				message: outcome.response
+					? 'The server answered with ' + outcome.response.status + '.'
+					: String(outcome.error && outcome.error.message ? outcome.error.message : outcome.error)
+			};
+		}
+
+		var actions = [{
+			label: 'Open in a browser tab',
+			run: function () {
+				window.open(url, '_blank', 'noopener');
+			}
+		}];
+
+		try {
+			if (parent !== window && typeof parent.notify === 'function') {
+				parent.notify({
+					level: 'error',
+					title: described.title,
+					message: described.message + '\n\n' + url,
+					source: 'Explorer',
+					actions: actions
+				});
+				return;
+			}
+		}
+		catch (crossOrigin) {
+			// Fall through to the dialog.
+		}
+		openInfoDialog(described.title, described.message + '\n\n' + url);
+	}
+
+	function describeFailure (context, err) {
+		try {
+			if (parent !== window && typeof parent.describeError === 'function') {
+				return parent.describeError(context, err);
+			}
+		}
+		catch (crossOrigin) {
+			// Fall through.
+		}
+		return {title: context, message: String(err && err.message ? err.message : err)};
+	}
+
+	// 'downloadSelected' -> 'Download selected failed'. Better than the raw key, and it
+	// costs nothing to be readable about which thing went wrong.
+	function readableActionName (name) {
+		var words = String(name).replace(/([A-Z])/g, ' $1').toLowerCase().trim();
+		return words.charAt(0).toUpperCase() + words.slice(1) + ' failed';
+	}
 
 	function peerIdToColor (id) {
 		var hash = 0;
@@ -3566,9 +4772,11 @@ async function openExplorer () {
 			return;
 		}
 
-		await Promise.all(Array.from(files).map(function (file) {
-			return onFileHandler(file);
-		}));
+		// Sequential for the same reason as the upload button: one dialog at a time.
+		var dropped = Array.from(files);
+		for (var d = 0; d < dropped.length; d++) {
+			await onFileHandler(dropped[d]);
+		}
 		await refreshCurrentDir(false);
 	}
 
@@ -3593,8 +4801,8 @@ async function openExplorer () {
 				moved++;
 			}
 			catch (err) {
-				console.error(err);
-				openInfoDialog('Move error', 'Could not move: ' + base + '\n' + String(err));
+				// Per item, so one refusal does not abandon the rest of the selection.
+				reportFailure('Could not move ' + base, err);
 			}
 		}
 		if (moved > 0) {
@@ -3622,8 +4830,7 @@ async function openExplorer () {
 				copied++;
 			}
 			catch (err) {
-				console.error(err);
-				openInfoDialog('Copy error', 'Could not copy: ' + base + '\n' + String(err));
+				reportFailure('Could not copy ' + base, err);
 			}
 		}
 		if (copied > 0) {
@@ -3648,9 +4855,12 @@ async function openExplorer () {
 		await writeFile(destPath, Buffer.from(content));
 	}
 
-	async function resolvePasteDestination (srcPath, targetFolderPath, operation) {
-		var baseName = path.basename(srcPath);
-		var destPath = path.join(targetFolderPath, baseName);
+	// Two things arrive in a folder: a path being copied or moved, and a File with no path
+	// of its own -- dropped, pasted from the clipboard, or picked with Upload. Both ask the
+	// same question when the name is taken, so both go through here. Returns null when the
+	// answer is "cancel".
+	async function resolveIncomingDestination (name, targetFolderPath, operation, sourceIsDirectory) {
+		var destPath = path.join(targetFolderPath, name);
 		var existing = await stat(destPath);
 		if (!existing) {
 			return {
@@ -3659,10 +4869,10 @@ async function openExplorer () {
 			};
 		}
 
-		var sourceStat = await stat(srcPath);
-		var canReplace = !!(sourceStat && existing && !sourceStat.isDirectory() && !existing.isDirectory());
+		// A directory is never replaced by one command, in either direction.
+		var canReplace = !sourceIsDirectory && !existing.isDirectory();
 		var decision = await askPasteConflict({
-			name: baseName,
+			name: name,
 			targetFolderPath: targetFolderPath,
 			canReplace: canReplace,
 			operation: operation
@@ -3680,9 +4890,37 @@ async function openExplorer () {
 		}
 
 		return {
-			destPath: await buildIndexedCopyPath(targetFolderPath, baseName),
+			destPath: await buildIndexedCopyPath(targetFolderPath, name),
 			replaceExisting: false
 		};
+	}
+
+	// Every route that produces a new file in a folder ends here: create, download, extract,
+	// convert, drop, paste, upload. Both of the underlying calls replace their destination
+	// without complaint -- writeFile overwrites, and fsRename replaces POSIX-style -- so
+	// there is no error to catch and the check has to happen before the write.
+	//
+	// Returns the path actually written, or null if the answer was "cancel".
+	async function writeNewFile (folderPath, name, contents, operation) {
+		var resolved = await resolveIncomingDestination(name, folderPath, operation || 'copy', false);
+		if (!resolved) {
+			return null;
+		}
+		if (resolved.replaceExisting) {
+			await unlink(resolved.destPath);
+		}
+		await writeFile(resolved.destPath, contents);
+		return resolved.destPath;
+	}
+
+	async function resolvePasteDestination (srcPath, targetFolderPath, operation) {
+		var sourceStat = await stat(srcPath);
+		return resolveIncomingDestination(
+			path.basename(srcPath),
+			targetFolderPath,
+			operation,
+			!!(sourceStat && sourceStat.isDirectory())
+		);
 	}
 
 	function askPasteConflict (payload) {
@@ -3738,9 +4976,21 @@ async function openExplorer () {
 	}
 
 	async function onFileHandler (file, filePath) {
-		var fname = file.name;
+		var target = filePath || file.name;
+		var destPath = path.join(state.cwd, target);
+
+		// A dropped, pasted or uploaded file used to overwrite whatever already had that
+		// name -- silently, with no undo. It now asks the same question a paste does.
+		//
+		// Only for a loose file, though: a dropped *folder* arrives here one call per file
+		// with a relative path, and prompting once per file would be worse than the problem
+		// it solves. That case is in docs/backlog.md.
 		var ab = await fileToAB(file);
-		await writeFile(path.join(state.cwd, filePath || fname), Buffer.from(ab));
+		if (target.indexOf('/') === -1) {
+			await writeNewFile(state.cwd, target, Buffer.from(ab));
+			return;
+		}
+		await writeFile(destPath, Buffer.from(ab));
 	}
 
 	async function getOpenWithApps (item) {
@@ -3827,12 +5077,6 @@ async function openExplorer () {
 		return appsPerItem[0].filter(function (app) {
 			return commonIds.has(app.id);
 		});
-	}
-
-	function findOpenWithApp (apps, appId) {
-		return (apps || []).find(function (app) {
-			return app.id === appId;
-		}) || null;
 	}
 
 	function getCatalogLabel (appId) {
@@ -4046,12 +5290,6 @@ async function openExplorer () {
 
 	function getNameByPath (p) {
 		return p.split('/').pop();
-	}
-
-	function copyBuffer (src) {
-		var dst = new ArrayBuffer(src.byteLength);
-		new Uint8Array(dst).set(new Uint8Array(src));
-		return dst;
 	}
 
 	function readFile (p) {

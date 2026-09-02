@@ -5,6 +5,7 @@
 
 import * as icons from './app-icons.js';
 import * as stats from './system-stats.js';
+import * as widgets from './widgets.js';
 
 var STYLE_ID = 'pixos-taskbar-style';
 
@@ -177,9 +178,51 @@ var CSS = `
 	display: none;
 }
 
+/* The tray readings lead where the desktop cards lead. Only the ones that do get the
+   cursor: a tray item that looks pressable and is not is the dead end this replaces. */
+.PixTray__item--open {
+	cursor: pointer;
+}
+
+.PixTray__item--open:hover {
+	background: rgba(255, 255, 255, .09);
+	color: #fff;
+}
+
 .PixTray__clock {
 	color: #fff;
 	font-variant-numeric: tabular-nums;
+}
+
+/* Only ever drawn while offline, so it can afford to be loud: it is the answer to every
+   "why did that fail" the system is about to be asked. */
+.PixTaskbar__dirty {
+	flex: none;
+	width: 7px;
+	height: 7px;
+	margin-left: 2px;
+	border-radius: 50%;
+	background: #ffb648;
+}
+
+.PixTaskbar__window--dirty .PixTaskbar__label {
+	color: #fff;
+}
+
+.PixTray__offline {
+	gap: 5px;
+	color: #ffb648;
+	font-size: 11px;
+	text-transform: uppercase;
+	letter-spacing: .06em;
+}
+
+.PixTray__offline::before {
+	content: '';
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background: #ffb648;
 }
 
 .PixTray__meter {
@@ -202,6 +245,26 @@ var CSS = `
 
 .PixTray__meterFill--critical {
 	background: #ff6b5e;
+}
+
+.PixTaskbar__overview {
+	flex: none;
+	display: flex;
+	align-items: center;
+	padding: 0 9px;
+	background: none;
+	border: none;
+	border-left: 1px solid rgba(255, 255, 255, .12);
+	color: #b8bec7;
+	font: inherit;
+	font-size: 14px;
+	cursor: pointer;
+}
+
+.PixTaskbar__overview:hover,
+.PixTaskbar__overview--active {
+	background: rgba(255, 255, 255, .12);
+	color: #fff;
 }
 
 .PixTaskbar__peek {
@@ -286,12 +349,24 @@ export function init (cfg) {
 
 	elements.tray = buildTray();
 
+	// Beside the peek strip, because both answer "get me back to something I can see".
+	elements.overview = document.createElement('button');
+	elements.overview.className = 'PixTaskbar__overview';
+	elements.overview.textContent = '\u29c9';
+	elements.overview.title = 'All windows (Ctrl/Cmd+Shift+K)';
+	elements.overview.onclick = function () {
+		if (options.onOverview) {
+			options.onOverview();
+		}
+	};
+
 	elements.peek = document.createElement('button');
 	elements.peek.className = 'PixTaskbar__peek';
 	elements.peek.title = 'Show desktop';
 	elements.peek.onclick = options.onPeek;
 
-	bar.append(elements.start, elements.desktops, elements.windows, elements.tray, elements.peek);
+	bar.append(elements.start, elements.desktops, elements.windows, elements.tray,
+		elements.overview, elements.peek);
 	host.append(bar);
 	elements.bar = bar;
 
@@ -301,6 +376,14 @@ export function init (cfg) {
 	render();
 
 	return bar;
+}
+
+// Called by the shell when the overview is opened or closed from anywhere -- the chord,
+// the palette -- so the button reflects the state rather than only causing it.
+export function setOverviewOpen (open) {
+	if (elements.overview) {
+		elements.overview.classList.toggle('PixTaskbar__overview--active', !!open);
+	}
 }
 
 // Called by the shell when peek is toggled from anywhere, so the button reflects it.
@@ -432,8 +515,9 @@ function renderWindows () {
 
 	windows.forEach(function (win) {
 		var button = document.createElement('button');
-		button.className = 'PixTaskbar__window' + (win.active ? ' PixTaskbar__window--active' : '');
-		button.title = win.path || win.title;
+		button.className = 'PixTaskbar__window' + (win.active ? ' PixTaskbar__window--active' : '')
+			+ (win.dirty ? ' PixTaskbar__window--dirty' : '');
+		button.title = (win.dirty ? 'Unsaved changes \u2014 ' : '') + (win.path || win.title);
 
 		// The window title is the full path for a file; the basename is what fits.
 		var text = win.path ? win.path.split('/').pop() : win.title;
@@ -447,6 +531,14 @@ function renderWindows () {
 		label.className = 'PixTaskbar__label';
 		label.textContent = text;
 		button.append(label);
+
+		// Only ever drawn for an app that says so. The shell cannot see inside an editor,
+		// so a window with no dot means "nothing has told us otherwise", not "saved".
+		if (win.dirty) {
+			var dot = document.createElement('span');
+			dot.className = 'PixTaskbar__dirty';
+			button.append(dot);
+		}
 
 		button.onclick = function () {
 			showWindow(win.id);
@@ -482,13 +574,54 @@ function buildTray () {
 	elements.clock = document.createElement('div');
 	elements.clock.className = 'PixTray__item PixTray__clock';
 
-	tray.append(elements.storage, elements.battery, elements.clock);
+	// First in the tray, and hidden whenever there is nothing to say.
+	elements.network = document.createElement('div');
+	elements.network.className = 'PixTray__item PixTray__offline PixTray__item--hidden';
+	elements.network.textContent = 'Offline';
+
+	tray.append(elements.network, elements.storage, elements.battery, elements.clock);
+
+	// The same destinations as the desktop widgets, and deliberately the same handler:
+	// widgets.openHandler ends a peek and reports a failure through window.notify, and
+	// both of those are as necessary here -- the tray is one of the surfaces that stays
+	// reachable during a peek, so a window opened from it would otherwise appear behind
+	// one. Nothing is bound for a reading with no widget behind it.
+	openFromTray(elements.clock, 'clock');
+	openFromTray(elements.storage, 'storage');
+	openFromTray(elements.battery, 'battery');
+	// Offline has no card of its own; System Info is where the network state is explained
+	// at length, which is the question this chip raises and cannot answer.
+	openFromTray(elements.network, 'battery');
+	// After the binding, so the tooltip carries the destination too.
+	trayTitle(elements.network, 'No network. PixOS and your files still work; anything '
+		+ 'that loads from the internet will not.');
+
 	return tray;
+}
+
+function openFromTray (element, widgetId) {
+	var widget = widgets.get(widgetId);
+	if (!widget || !widget.open || typeof widget.open.run !== 'function') {
+		return;
+	}
+	element.classList.add('PixTray__item--open');
+	// Kept on the element rather than in the closure: the tray rewrites these titles on
+	// every tick with the reading, and the destination has to survive that.
+	element.dataset.opens = widget.open.title || '';
+	element.onclick = widgets.openHandler(widget);
+}
+
+// The reading, then where pressing it goes. Both, because a tooltip that only named the
+// destination would have thrown away the one thing the tray is for.
+function trayTitle (element, text) {
+	element.title = element.dataset.opens ? text + ' — ' + element.dataset.opens : text;
 }
 
 function renderTray (state) {
 	elements.clock.textContent = stats.formatClock(state.now);
-	elements.clock.title = stats.formatDate(state.now);
+	trayTitle(elements.clock, stats.formatDate(state.now));
+
+	elements.network.classList.toggle('PixTray__item--hidden', state.online !== false);
 
 	renderMeter(elements.storage, state.storage && state.storage.supported
 		? {
@@ -525,7 +658,7 @@ function renderMeter (element, data) {
 	fill.className = 'PixTray__meterFill'
 		+ (severity > 0.9 ? ' PixTray__meterFill--critical' : severity > 0.75 ? ' PixTray__meterFill--warn' : '');
 	element.lastChild.textContent = data.label;
-	element.title = data.title;
+	trayTitle(element, data.title);
 }
 
 function batteryTitle (battery) {

@@ -218,6 +218,15 @@ import * as contextMenu from "./js/shell/context-menu.js";
 import * as session from "./js/shell/session.js";
 import * as startMenu from "./js/shell/start-menu.js";
 import * as palette from "./js/shell/command-palette.js";
+import * as notifications from "./js/shell/notifications.js";
+import * as failure from "./js/shell/failure.js";
+import * as stats from "./js/shell/system-stats.js";
+import * as tabs from "./js/shell/tabs.js";
+import * as fullscreen from "./js/shell/fullscreen.js";
+import * as overview from "./js/shell/overview.js";
+import * as fileSearch from "./js/shell/file-search.js";
+import * as openWith from "./js/shell/open-with.js";
+import * as bookmarks from "./js/shell/bookmarks.js";
 
 var winManager = new WM({
 	root: '#root',
@@ -226,6 +235,66 @@ var winManager = new WM({
 
 window.wm = winManager;
 window.desktop = desktop;
+
+// Set up before anything else in the boot sequence, so a failure *during* boot has
+// somewhere to be reported. The overlay layer already exists in the markup.
+notifications.init({host: document.getElementById('overlays')});
+
+// Reachable from inside any app iframe as parent.notify(...). The source label is not
+// optional and not the caller's to omit: a note has to say who raised it, or an app could
+// put words in the system's mouth.
+window.notify = function (input) {
+	var note = Object.assign({}, input || {});
+	if (!note.source) {
+		note.source = 'PixOS';
+	}
+	return notifications.notify(note);
+};
+window.dismissNotification = notifications.dismiss;
+
+// Exposed for apps, which cannot import shell modules -- they are installed into
+// BrowserFS and have to be self-contained. Explorer uses these to explain a failed
+// download; anything calling them should degrade if they are absent.
+window.describeFetchFailure = function (options) {
+	return failure.describeFetchFailure(Object.assign({
+		online: navigator.onLine,
+		pageOrigin: location.origin
+	}, options || {}));
+};
+window.describeError = function (context, error, options) {
+	return failure.describeError(context, error, Object.assign({
+		online: navigator.onLine
+	}, options || {}));
+};
+
+// The net. Every silent failure in the system lands here whether or not anyone thought to
+// catch it -- which is the point, because the ones worth finding are the ones nobody
+// expected. Both are capture-phase on window so nothing can swallow them first.
+window.addEventListener('unhandledrejection', function (e) {
+	var described = window.describeError('Something failed in the background', e.reason);
+	console.error('Unhandled rejection', e.reason);
+	notifications.notify({
+		level: 'error',
+		title: described.title,
+		message: described.message,
+		source: 'PixOS'
+	});
+});
+
+window.addEventListener('error', function (e) {
+    // Resource load failures (a missing <img>) also fire this, with no error object and a
+    // target that is not the window. Those are not worth interrupting anyone for.
+    if (!e.error) {
+        return;
+    }
+    console.error('Uncaught error', e.error);
+    notifications.notify({
+        level: 'error',
+        title: 'Something went wrong',
+        message: String(e.error.message || e.error),
+        source: 'PixOS'
+    });
+});
 
 var scope = location.pathname.replace(/\/[^\/]+$/, '/');
 
@@ -542,6 +611,11 @@ function fsOnInit () {
 			return loadDefaultAppAssociations();
 		})
 		.then(function () {
+			// Before the desktop: the election has to be under way before anything is in a
+			// position to write a settings file, and it takes a fraction of a second to
+			// settle during which nobody writes at all.
+			initTabs();
+			fullscreen.init();
 			return initDesktop();
 		})
 		.then(async function () {
@@ -668,6 +742,12 @@ function fsOnInit () {
 		var result = await PixosAppRegistry.installAppById(appId);
 		await window.refreshInstalledAppsRegistry();
 		scheduleInstalledAppSupportHydration([appId]);
+		return result;
+	};
+
+	window.uninstallAppById = async function (appId) {
+		var result = await PixosAppRegistry.uninstallAppById(appId);
+		await window.refreshInstalledAppsRegistry();
 		return result;
 	};
 
@@ -941,11 +1021,20 @@ function fsOnInit () {
 		return window.defaultAppAssociations;
 	}
 
+	// A rename carries the association across; an uninstall passes no new id, and then the
+	// entry is *removed* rather than set to nothing. A null left in the table is an
+	// extension that claims to have a default app and names none, which reads as an app
+	// that failed to launch instead of a file with no default.
 	async function updateDefaultAppAssociationId (oldId, newId) {
 		var changed = false;
 		Object.keys(window.defaultAppAssociations || {}).forEach(function (ext) {
 			if (window.defaultAppAssociations[ext] === oldId) {
-				window.defaultAppAssociations[ext] = newId;
+				if (newId) {
+					window.defaultAppAssociations[ext] = newId;
+				}
+				else {
+					delete window.defaultAppAssociations[ext];
+				}
 				changed = true;
 			}
 		});
@@ -968,8 +1057,56 @@ function fsOnInit () {
 
 	// The desktop is booted before the first window so that a failure anywhere later
 	// still leaves a surface with a working right-click menu.
+	// Two tabs of PixOS share one filesystem and one settings file. This elects one of them
+	// to write the settings; the other keeps working normally and says who is in charge.
+	// Deliberately not a lock on the *files* -- that race is real and unsolved, and the
+	// note below says so rather than implying otherwise.
+	function initTabs () {
+		tabs.init({});
+		var followerNote = null;
+
+		tabs.subscribe(function (isOwner, ownerId) {
+			if (followerNote !== null) {
+				notifications.dismiss(followerNote);
+				followerNote = null;
+			}
+			if (isOwner || ownerId === null) {
+				return;
+			}
+			followerNote = notifications.notify({
+				level: 'warn',
+				title: 'Another PixOS tab is in charge',
+				message: 'Your desktops, windows and recent apps are being saved by the '
+					+ 'other tab, so this one will not overwrite them. Files work normally '
+					+ 'here \u2014 but two tabs writing the same file at the same time is '
+					+ 'still a race, and this does not fix that.',
+				source: 'PixOS',
+				actions: [{
+					label: 'Take over',
+					run: function () { tabs.takeOver(); }
+				}]
+			});
+		});
+
+		// Hand it on rather than leaving the others following a tab that no longer exists.
+		// pagehide rather than unload: it is the one that fires on iOS and on a restored
+		// back/forward navigation.
+		window.addEventListener('pagehide', function () {
+			tabs.release();
+		});
+	}
+
 	async function initDesktop () {
 		var settings = await readJsonFile('/settings/desktop.json', {});
+
+		// Everything PixOS holds lives in IndexedDB, which the browser is free to evict
+		// under storage pressure -- with no warning and no way back. This asks it not to.
+		// Deliberately not awaited: Firefox may put a prompt in front of it, and the
+		// desktop should not wait behind a dialog the user did not ask for. The answer
+		// reaches the storage widget when it arrives.
+		stats.requestPersistence().catch(function (err) {
+			console.warn('persistent storage could not be requested', err);
+		});
 
 		appsModel.init({
 			listApps: listLaunchableApps,
@@ -977,7 +1114,19 @@ function fsOnInit () {
 				return readJsonFile('/settings/recent-apps.json', []);
 			},
 			writeRecents: function (ids) {
+				if (!tabs.isOwner()) {
+					return Promise.resolve();
+				}
 				return writeFilePromise('/settings/recent-apps.json', Buffer.from(JSON.stringify(ids, null, 2)));
+			},
+			readRecentFiles: function () {
+				return readJsonFile('/settings/recent-files.json', []);
+			},
+			writeRecentFiles: function (entries) {
+				if (!tabs.isOwner()) {
+					return Promise.resolve();
+				}
+				return writeFilePromise('/settings/recent-files.json', Buffer.from(JSON.stringify(entries, null, 2)));
 			}
 		});
 		await appsModel.load();
@@ -998,10 +1147,12 @@ function fsOnInit () {
 		startMenu.init({
 			host: document.getElementById('overlays'),
 			openApp: openApp,
+			openRecentFile: openRecentFile,
 			actions: [
 				{label: 'App Manager', run: function () { openApp('app-manager'); }},
 				{label: 'Wallpaper...', run: function () { desktop.openWallpaperPicker(); }},
-				{label: 'Show desktop', run: function () { desktop.togglePeek(); }}
+				{label: 'Show desktop', run: function () { desktop.togglePeek(); }},
+				{label: 'Fullscreen', run: function () { toggleFullscreen(); }}
 			],
 			onClose: function () {
 				taskbar.setStartOpen(false);
@@ -1015,8 +1166,29 @@ function fsOnInit () {
 			openApp: openApp,
 			openFile: openFile,
 			openPath: openPath,
+			openRecentFile: openRecentFile,
 			listFiles: listDirectoryEntries,
+			searchFiles: searchFiles,
+			describeSearch: fileSearch.describe,
 			commands: buildShellCommands
+		});
+
+		openWith.init({
+			host: document.getElementById('overlays'),
+			getApp: getLaunchableApp
+		});
+
+		overview.init({
+			host: document.getElementById('overlays'),
+			wm: winManager,
+			getApp: getLaunchableApp,
+			onShow: revealWindow,
+			onClose: function (id) {
+				winManager.closeWindow(id);
+			},
+			onToggle: function (open) {
+				taskbar.setOverviewOpen(open);
+			}
 		});
 
 		taskbar.init({
@@ -1031,12 +1203,16 @@ function fsOnInit () {
 			onPeek: function () {
 				desktop.togglePeek();
 			},
-			// Clicking a window button while peeking is a request to see that window, so
-			// it ends the peek as well as selecting the tab.
-			onShowWindow: function (id) {
-				desktop.setPeek(false);
-				winManager.focusWindow(id);
+			// A button, not only a chord. Ctrl+Alt+D and Ctrl+Space both turned out dead on
+			// someone's machine in earlier phases, so every route into the overview exists
+			// without one.
+			onOverview: function () {
+				overview.toggle();
 			},
+			// Clicking a window button is a request to *see* that window, which is more
+			// than selecting its tab: revealWindow also ends a peek and brings the
+			// window's desktop forward.
+			onShowWindow: revealWindow,
 			onDesktopMenu: openDesktopContextMenu
 		});
 
@@ -1064,6 +1240,7 @@ function fsOnInit () {
 			writeAside: function (data) {
 				return writeFilePromise('/settings/session-failed.json', Buffer.from(JSON.stringify(data, null, 2)));
 			},
+			canWrite: tabs.isOwner,
 			launch: launch
 		});
 
@@ -1096,6 +1273,51 @@ function fsOnInit () {
 		session.start();
 	}
 
+	// The browser's dialog is generic and cannot say what is unsaved, so the value is
+	// entirely in *when* it appears. Armed only while some window says it has unsaved work;
+	// a page that always asks is a page nobody reads.
+	window.addEventListener('beforeunload', function (e) {
+		if (!winManager.listDirty().length) {
+			return;
+		}
+		e.preventDefault();
+		// Required by older browsers; the string itself has been ignored for years.
+		e.returnValue = '';
+	});
+
+	// Entering announces what changed, because the whole value of the mode is knowing
+	// whether Ctrl/Cmd+W is about to cost you your desktop -- and where the browser will
+	// not give the key up, saying so is the entire point rather than a caveat.
+	async function toggleFullscreen () {
+		var info = fullscreen.describe();
+		if (!info.available) {
+			notifications.notify({level: 'warn', title: info.title, message: info.message, source: 'PixOS'});
+			return;
+		}
+		try {
+			var next = await fullscreen.toggle();
+			if (next.active) {
+				notifications.notify({
+					level: next.locked ? 'info' : 'warn',
+					title: info.title,
+					message: info.message,
+					source: 'PixOS'
+				});
+			}
+		}
+		catch (err) {
+			notifications.notify({
+				level: 'warn',
+				title: 'Could not go fullscreen',
+				message: 'The browser refused. Fullscreen has to be asked for by a click or '
+					+ 'a keypress, and some browsers refuse it in an embedded page.',
+				source: 'PixOS'
+			});
+		}
+	}
+
+	window.toggleFullscreen = toggleFullscreen;
+
 	window.startCleanSession = async function () {
 		await session.clear();
 		location.href = location.pathname + '?clean=1';
@@ -1119,6 +1341,15 @@ function fsOnInit () {
 		if (lastListing.path === dirPath && Date.now() - lastListing.at < LISTING_TTL) {
 			return Promise.resolve(lastListing.entries);
 		}
+		return readDirectory(dirPath).then(function (entries) {
+			lastListing = {path: dirPath, entries: entries, at: Date.now()};
+			return entries;
+		});
+	}
+
+	// Deliberately not cached: a tree walk reads hundreds of directories and would evict
+	// the one listing the palette is showing on every step.
+	function readDirectory (dirPath) {
 		return new Promise(function (resolve) {
 			fs.readdir(dirPath, function (err, names) {
 				if (err || !names) {
@@ -1131,12 +1362,24 @@ function fsOnInit () {
 							done({name: name, isDirectory: !!(stats && stats.isDirectory())});
 						});
 					});
-				})).then(function (entries) {
-					lastListing = {path: dirPath, entries: entries, at: Date.now()};
-					resolve(entries);
-				});
+				})).then(resolve);
 			});
 		});
+	}
+
+	// The palette asks for a walk and gets back a token it can cancel plus the promise.
+	// Splitting them is what lets the next keystroke stop this one without waiting for it.
+	function searchFiles (request) {
+		var token = fileSearch.createToken();
+		return {
+			token: token,
+			done: fileSearch.search({
+				readdir: readDirectory,
+				query: request.query,
+				root: request.root,
+				token: token
+			})
+		};
 	}
 
 	function openDesktopContextMenu (workspace, x, y, rename) {
@@ -1177,12 +1420,71 @@ function fsOnInit () {
 
 		return commands.concat([
 			{
+				title: 'All windows',
+				subtitle: 'Every window on every desktop, with a number to press. Ctrl/Cmd+Shift+K',
+				run: function () { overview.open(); }
+			},
+			(function () {
+				var focused = winManager.getActiveWindow();
+				return {
+					title: 'Close window',
+					// Outside fullscreen the browser owns Ctrl/Cmd+W, so this and the
+					// overview's Delete are the routes. Naming the window is the point:
+					// a close command that will not say what it closes is one nobody uses.
+					subtitle: focused
+						? (focused.path || focused.title) + (focused.dirty ? ' — has unsaved changes' : '')
+						: 'No window is focused',
+					run: function () {
+						var target = winManager.getActiveWindow();
+						if (target) {
+							winManager.closeWindow(target.id);
+						}
+					}
+				};
+			})(),
+			{
 				title: 'New desktop',
 				subtitle: 'Add a desktop and switch to it',
 				run: function () {
 					var created = winManager.createWorkspace({name: 'Desktop ' + (winManager.listWorkspaces().length + 1)});
 					winManager.switchTo(created.id);
 				}
+			},
+			(function () {
+				var info = fullscreen.describe();
+				return {
+					title: fullscreen.isActive() ? 'Leave fullscreen' : 'Fullscreen',
+					subtitle: fullscreen.isActive()
+						? 'Ctrl/Cmd+W goes back to the browser'
+						: info.title,
+					run: function () { toggleFullscreen(); }
+				};
+			})(),
+			{
+				title: 'Unsaved work',
+				subtitle: (function () {
+					var dirty = winManager.listDirty();
+					if (!dirty.length) {
+						return 'Nothing is waiting to be saved';
+					}
+					return dirty.map(function (win) {
+						return win.path || win.title;
+					}).join(', ');
+				})(),
+				// The browser's close dialog cannot tell you *which* window, so this can.
+				run: function () {
+					var dirty = winManager.listDirty();
+					if (dirty.length) {
+						winManager.focusWindow(dirty[0].id);
+					}
+				}
+			},
+			{
+				title: tabs.isOwner() ? 'This tab owns the session' : 'Take over the session',
+				subtitle: tabs.isOwner()
+					? 'Your desktops and windows are being saved from here'
+					: 'Another tab is saving the desktops and windows. Save from this one instead',
+				run: function () { tabs.takeOver(); }
 			},
 			{
 				title: 'Start clean session',
@@ -1216,7 +1518,26 @@ function fsOnInit () {
 		return e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Space';
 	}
 
+	// The overview's chord. Two of them, for the same reason the palette has two: a chord
+	// that turns out to be claimed by the OS is a feature nobody can reach, and this has
+	// happened twice already in this project. Neither is the only route -- the taskbar
+	// button and the palette command both open it.
+	function isOverviewChord (e) {
+		if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyK') {
+			return true;
+		}
+		return e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === 'Backquote';
+	}
+
 	function onShellHotkey (e) {
+		if (isOverviewChord(e)) {
+			e.preventDefault();
+			e.stopPropagation();
+			startMenu.close();
+			palette.close();
+			overview.toggle();
+			return;
+		}
 		if (isPaletteChord(e)) {
 			e.preventDefault();
 			e.stopPropagation();
@@ -1224,9 +1545,32 @@ function fsOnInit () {
 			palette.toggle();
 			return;
 		}
-		// Ctrl+1..9 switches desktops. If the OS claims it the way it claims Ctrl+Space,
-		// the taskbar strip and the palette's "Desktop: ..." entries still work.
-		if (e.ctrlKey && !e.metaKey && !e.altKey && /^Digit[1-9]$/.test(e.code)) {
+		// Ctrl/Cmd+W. Only reachable at all while fullscreen *and* the keyboard lock was
+		// granted -- otherwise the browser closed the tab before this ever ran, and
+		// handling it here would be a lie in code. Checked rather than assumed, because
+		// leaving fullscreen releases the lock without telling us in the keydown.
+		if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === 'KeyW') {
+			if (!fullscreen.isKeyboardLocked()) {
+				return;
+			}
+			e.preventDefault();
+			e.stopPropagation();
+			var focused = winManager.getActiveWindow && winManager.getActiveWindow();
+			var closeId = focused ? focused.id : null;
+			if (closeId === null) {
+				var open = winManager.listWindows(winManager.getActiveWorkspace());
+				closeId = open.length ? open[open.length - 1].id : null;
+			}
+			if (closeId !== null) {
+				winManager.closeWindow(closeId);
+			}
+			return;
+		}
+		// Ctrl+Shift+1..9 switches desktops. It was Ctrl+1..9, which is the browser's own
+		// tab switching on Windows and Linux -- it only ever worked here because macOS
+		// puts that on Cmd+1..9. If the OS claims this one too, the taskbar strip and the
+		// palette's "Desktop: ..." entries still work.
+		if (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && /^Digit[1-9]$/.test(e.code)) {
 			var workspaces = winManager.listWorkspaces();
 			var target = workspaces[Number(e.code.slice(5)) - 1];
 			if (target) {
@@ -1240,7 +1584,11 @@ function fsOnInit () {
 	async function persistDesktopSettings (patch) {
 		var settings = await readJsonFile('/settings/desktop.json', {});
 		var next = Object.assign({}, settings, patch);
-		await writeFile('/settings/desktop.json', Buffer.from(JSON.stringify(next, null, 2)));
+		// Applied in this tab either way -- the wallpaper you just picked should appear --
+		// but only written by the tab that owns the session. See js/shell/tabs.js.
+		if (tabs.isOwner()) {
+			await writeFile('/settings/desktop.json', Buffer.from(JSON.stringify(next, null, 2)));
+		}
 		return next;
 	}
 
@@ -1472,7 +1820,121 @@ window.openPath = openPath;
 window.openFile = openFile;
 window.openFiles = openFiles;
 window.openApp = openApp;
+// Installs first if it has to. The widgets are the callers; see openCatalogApp.
+window.openCatalogApp = openCatalogApp;
 window.openUrl = openUrl;
+window.openInBrowserTab = openInBrowserTab;
+// The file as the window, with no app around it -- the old silent fallback, now only ever
+// reached by asking for it.
+window.openRawFile = function (filePath) {
+	return launch({appId: null, paths: [filePath]});
+};
+// Explorer's *Open with...* is this dialog too, so the two cannot drift apart.
+window.openWithChooser = openWithChooser;
+window.OPEN_WITH_BROWSER_TAB = openWith.BROWSER_TAB;
+window.OPEN_WITH_RAW_WINDOW = openWith.RAW_WINDOW;
+
+// Adding a bookmark from outside the Bookmarks app -- Explorer's context menu is the
+// first caller, and it works whether or not Bookmarks is installed or open.
+//
+// Deliberately *not* behind the tab-ownership gate, unlike session.json and the recents.
+// This is a document the user edits, not a record of how this tab is arranged, and the
+// Bookmarks app itself writes it from any tab. A follower keeps full access to files.
+window.addBookmark = async function (entry) {
+	var doc;
+	try {
+		doc = await readBookmarksDocument();
+	}
+	catch (err) {
+		// Never write over a file we could not read. A bookmarks document that fails to
+		// parse is a file with something in it, and replacing it with a fresh one holding
+		// a single link would be the worst possible response to a typo.
+		notifications.notify({
+			level: 'error',
+			title: 'Could not add the bookmark',
+			message: 'Your bookmarks file (/settings/links.json) could not be read, so '
+				+ 'nothing was changed. Open it in an editor to see what is wrong with it.',
+			source: 'PixOS'
+		});
+		return null;
+	}
+
+	var result = bookmarks.addTo(doc, entry);
+	if (!result.ok) {
+		notifications.notify({
+			level: 'warn',
+			title: 'That is not an address PixOS can bookmark',
+			message: 'A bookmark has to be a web address or a path inside PixOS.',
+			source: 'PixOS'
+		});
+		return null;
+	}
+	if (result.duplicate) {
+		notifications.notify({
+			level: 'info',
+			title: 'Already bookmarked',
+			message: '"' + result.link.title + '" is already in ' + (result.group.name || 'your bookmarks') + '.',
+			source: 'PixOS'
+		});
+		return result.link;
+	}
+
+	try {
+		// saveFileLocal rather than the shell's own writeFilePromise, which lives inside
+		// the boot closure and is not reachable from here -- and which resolves on
+		// failure, so a write that never landed would still have been announced as one
+		// that did.
+		await window.saveFileLocal('/settings/links.json', Buffer.from(bookmarks.serialize(result.doc)));
+	}
+	catch (err) {
+		var failed = window.describeError('Could not add the bookmark', err);
+		notifications.notify({
+			level: 'error',
+			title: failed.title,
+			message: failed.message,
+			source: 'PixOS'
+		});
+		return null;
+	}
+	notifications.notify({
+		level: 'info',
+		title: 'Added to bookmarks',
+		message: '"' + result.link.title + '" is in ' + result.group.name + '.',
+		actions: [{
+			label: 'Open Bookmarks',
+			// A Bookmarks window that is already open read the file when it opened and
+			// will not see this; opening one now is what shows the change.
+			run: function () {
+				openApp('bookmarks');
+			}
+		}],
+		source: 'PixOS'
+	});
+	return result.link;
+};
+
+// Missing is not a failure -- the first bookmark added from Explorer creates the file.
+// Anything else is, and is passed on rather than flattened into an empty document.
+function readBookmarksDocument () {
+	return new Promise(function (resolve, reject) {
+		window.fs.readFile('/settings/links.json', function (err, content) {
+			if (err) {
+				if (err.code === 'ENOENT') {
+					resolve(null);
+					return;
+				}
+				reject(err);
+				return;
+			}
+			try {
+				resolve(JSON.parse(content.toString()));
+			}
+			catch (parseErr) {
+				reject(parseErr);
+			}
+		});
+	});
+}
 window.launch = launch;
 window.listLaunchableApps = listLaunchableApps;
 
@@ -1563,6 +2025,16 @@ var APP_LAUNCHERS = {
 				: entryPath;
 		},
 		deliver: function () {}
+	},
+	filmoskop: {
+		// The only app that presents. Without this attribute requestFullscreen() inside
+		// the iframe is refused outright, and *Present* would be a button that claims it
+		// went fullscreen and did not.
+		//
+		// Deliberately no `deliver`: it takes the file the ordinary way, and defining an
+		// empty one here — as explorer does, because it reads ?cwd instead — would mean
+		// the deck never arrives.
+		iframeAttrs: 'allowfullscreen'
 	},
 	treemap: {
 		url: function (descriptor, entryPath) {
@@ -1661,6 +2133,14 @@ async function launch (descriptor, restore) {
 	}
 	var url = launcher.url ? launcher.url(descriptor, entryPath) : entryPath;
 
+	// Recorded in the one funnel every route already goes through -- Explorer, the
+	// palette, a bookmark, a widget -- rather than in each of them, so a route added later
+	// feeds the list without being told to. A restore is not an opening: replaying the
+	// last session would otherwise rewrite the list into itself on every boot.
+	if (!restore) {
+		noteRecentPaths(descriptor.paths);
+	}
+
 	window.viewCounter++;
 	var frameId = 'view' + window.viewCounter;
 	var attributes = launcher.iframeAttrs ? ' ' + launcher.iframeAttrs : '';
@@ -1684,17 +2164,68 @@ async function launch (descriptor, restore) {
 		detached: restore ? restore.detached : false
 	});
 
+	// An app that loads part of itself from a CDN cannot work offline, and left to itself
+	// it fails with a bare "failed to fetch" from inside its own iframe -- where the shell
+	// cannot see it and the user has no idea what happened. Said plainly instead, once, at
+	// the moment it stops being able to work.
+	if (!external && appId && navigator.onLine === false && appNeedsNetwork(appId)) {
+		notifications.notify({
+			level: 'warn',
+			title: getAppName(appId) + ' needs the network',
+			message: 'It loads part of itself from the internet each time it opens, so it '
+				+ 'will not work until you are back online. The window is open either way.',
+			source: 'PixOS'
+		});
+	}
+
 	var frame = winManager.getFrame(record.id);
 
 	if (launcher.decorate) {
 		launcher.decorate(frame, descriptor);
 	}
-	frame.onload = function () {
-		if (launcher.deliver) {
-			launcher.deliver(frame, descriptor, prepared);
+	// The save contract. An app cannot be asked to know its window id, and the shell cannot
+	// work out which iframe called `parent.something()`, so the function is handed to the
+	// app already bound to its own window -- the same direction the shell already reaches
+	// in to call `openFile`. An app that may also run standalone feature-detects it.
+	function attachWindowApi (win, id) {
+		try {
+			win.markDirty = function (dirty) {
+				winManager.setDirty(id, dirty !== false);
+			};
+			win.pixosWindowId = id;
 		}
-		else {
-			deliverFile(frame, descriptor);
+		catch (crossOrigin) {
+			// photopea and anything else not served from our origin. Nothing to attach to,
+			// and nothing that could have called it anyway.
+		}
+	}
+
+	frame.onload = function () {
+		attachWindowApi(frame.contentWindow, record.id);
+		// An app whose own scripts failed to load still fires `load`, and then has no
+		// openFile() to call -- which surfaced as a bare "frame.contentWindow.openFile is
+		// not a function" from the global handler, naming an internal function instead of
+		// the app that did not start.
+		try {
+			if (launcher.deliver) {
+				launcher.deliver(frame, descriptor, prepared);
+			}
+			else {
+				deliverFile(frame, descriptor);
+			}
+		}
+		catch (err) {
+			console.error('Handing ' + (descriptor.paths[0] || 'the file') + ' to ' + appId + ' failed', err);
+			notifications.notify({
+				level: 'error',
+				title: (getAppName(appId) || appId) + ' could not open the file',
+				message: (navigator.onLine === false && appNeedsNetwork(appId))
+					? 'It loads part of itself from the internet, and you are offline, so it '
+						+ 'never finished starting. The window is open but empty.'
+					: 'The app did not finish loading, so there was nothing to hand the file '
+						+ 'to. Its own errors are in the browser console.',
+				source: 'PixOS'
+			});
 		}
 	};
 
@@ -1723,6 +2254,69 @@ function defaultWindowTitle (descriptor) {
 	return getAppName(descriptor.appId) || 'PixOS';
 }
 
+// Recording what was opened, for the launchers that offer it back. A directory reaches
+// launch() in exactly the same field as a file -- Explorer opens a folder as its path --
+// so which one it was is stored rather than guessed at click time, and corrected from the
+// filesystem when the entry is actually opened.
+function noteRecentPaths (paths) {
+	(paths || []).forEach(function (filePath) {
+		if (typeof filePath !== 'string' || filePath.charAt(0) !== '/') {
+			return;
+		}
+		window.fs.stat(filePath, function (err, stats) {
+			// A path that cannot be statted is still worth remembering: it opened.
+			appsModel.noteFile(filePath, !!(stats && stats.isDirectory())).catch(function (writeErr) {
+				console.warn('recent files could not be written', writeErr);
+			});
+		});
+	});
+}
+
+// Opening from a recent list, which is the one place a path is expected to have gone
+// away. The stat is the check and the answer at once: it says whether the entry is still
+// there and whether it is a folder, so a file that has become a directory -- or a stored
+// flag that was wrong -- still opens correctly.
+function openRecentFile (entry) {
+	var target = typeof entry === 'string' ? {path: entry} : (entry || {});
+	if (!target.path) {
+		return Promise.resolve();
+	}
+	return new Promise(function (resolve) {
+		window.fs.stat(target.path, function (err, stats) {
+			if (err) {
+				// Pruned on failure rather than swept periodically: statting a dozen paths
+				// every time a menu opens would cost more than being wrong once.
+				appsModel.forgetFile(target.path);
+				if (typeof window.notify === 'function') {
+					window.notify({
+						level: 'warn',
+						title: 'That file is no longer there',
+						message: target.path + ' could not be opened, so it has been removed from '
+							+ 'Recent files.',
+						source: 'PixOS'
+					});
+				}
+				resolve();
+				return;
+			}
+			resolve(stats && stats.isDirectory() ? openPath(target.path) : openFile(target.path));
+		});
+	});
+}
+
+// Showing a window from anywhere: the taskbar, the overview, a palette result. A window on
+// another desktop needs that desktop brought forward first, and any of these routes stays
+// reachable during a peek -- so both steps live here rather than in each caller, where
+// forgetting one reads as a dead click.
+function revealWindow (id) {
+	var win = winManager.getWindow(id);
+	desktop.setPeek(false);
+	if (win && win.workspace && win.workspace !== winManager.getActiveWorkspace()) {
+		winManager.switchTo(win.workspace);
+	}
+	winManager.focusWindow(id);
+}
+
 function openApp (appId) {
 	// Recorded here rather than in each launcher, so every route -- menu, start panel,
 	// palette, Explorer -- feeds the same recents list.
@@ -1730,11 +2324,224 @@ function openApp (appId) {
 	return launch({appId: appId});
 }
 
+// Opening an app that may not be on disk yet. The desktop widgets are the callers: a
+// widget is a shortcut to somewhere, and a shortcut whose destination happens to be an
+// uninstalled catalog app must not be the difference between a door and a dead end --
+// `launch` would throw "app treemap has no launch path" and the click would look dead.
+//
+// Installing is the same step the *Open with...* chooser takes when you pick an app it
+// has marked as not installed yet, and for the same reason: it is what the person asking
+// meant. It is not silent -- App Manager lists what it installed, and the app opens in
+// front of you.
+async function openCatalogApp (appId, paths) {
+	var installed = (window.apps || []).some(function (app) {
+		return app && app.id === appId;
+	});
+	if (!installed) {
+		if (typeof window.installAppById !== 'function') {
+			throw new Error('There is no way to install ' + appId + ' from here');
+		}
+		await window.installAppById(appId);
+	}
+	if (paths && paths.length) {
+		appsModel.noteLaunch(appId);
+		return launch({appId: appId, paths: paths.slice()});
+	}
+	return openApp(appId);
+}
+
+// The extensions where "the path is the window" is the right answer rather than the worst
+// one available. A page is already a window: this is how a local app's own index.html
+// opens, and how App Manager is reached. Everything else with no default gets asked about
+// instead of silently landing in the browser's default rendering of it.
+var SELF_OPENING_EXTENSIONS = ['html', 'htm'];
+
 async function openFile (filePath, appId) {
 	if (!appId) {
 		appId = await getDefaultAppForPath(filePath);
 	}
+	if (!appId && shouldAskHowToOpen(filePath)) {
+		// A folder handed to openFile is Explorer's, not a question -- the chooser would
+		// be offering to open a directory in a text editor. Callers that know say so by
+		// calling openPath; a bookmark, an app's `parent.openFile` or a path typed into
+		// the palette may not, and only the filesystem actually knows.
+		if (await isDirectoryPath(filePath)) {
+			return openPath(filePath);
+		}
+		return chooseHowToOpen(filePath);
+	}
 	return launch({appId: appId, paths: [filePath]});
+}
+
+function isDirectoryPath (filePath) {
+	return new Promise(function (resolve) {
+		window.fs.stat(filePath, function (err, stats) {
+			resolve(!err && !!stats && stats.isDirectory());
+		});
+	});
+}
+
+function shouldAskHowToOpen (filePath) {
+	// Without the extension machinery there is no way to tell a page from a spreadsheet,
+	// and the old behaviour -- the path is the window -- is the safer of the two answers
+	// to a question that cannot be asked.
+	if (!filePath || typeof window.getExtensionCandidates !== 'function') {
+		return false;
+	}
+	return !window.getExtensionCandidates(filePath).some(function (ext) {
+		return SELF_OPENING_EXTENSIONS.indexOf(ext) !== -1;
+	});
+}
+
+// Resolves with whatever the choice led to, or null if the dialog was cancelled -- a
+// caller that awaits openFile() has to be able to tell "nothing opened" from "a window
+// opened", and a promise that never settles would hang every one of them on an Esc.
+async function chooseHowToOpen (filePath) {
+	var picked = await openWithChooser({paths: [filePath]});
+	if (!picked) {
+		return null;
+	}
+	if (picked.kind === openWith.BROWSER_TAB) {
+		return openInBrowserTab(filePath);
+	}
+	if (picked.kind === openWith.RAW_WINDOW) {
+		return launch({appId: null, paths: [filePath]});
+	}
+	return launch({appId: picked.appId, paths: [filePath]});
+}
+
+// The one chooser in the system, for both routes into it: a file the shell has no default
+// for, and Explorer's own *Open with...*. Explorer used to draw its own, which meant two
+// dialogs that came up in nearly the same situation and looked nothing alike -- and only
+// one of them knew about the browser tab. Explorer still decides what to *do* with the
+// answer (it can navigate in place, and it can open several files at once); what it no
+// longer decides is what the question looks like.
+//
+// Installing and remembering happen here, because they are the same in both cases and
+// getting their order wrong is the same mistake in both.
+// request: {paths, apps, extension, title, subtitle, universal, extras}
+// Resolves with {kind, appId} or null.
+async function openWithChooser (request) {
+	var cfg = request || {};
+	var paths = (cfg.paths || []).filter(Boolean);
+	var extension = cfg.extension !== undefined
+		? String(cfg.extension || '')
+		: firstExtension(paths.length === 1 ? paths[0] : '');
+	var apps = cfg.apps || await compatibleAppsForFile(paths[0]);
+
+	var picked = await openWith.open({
+		title: cfg.title || null,
+		subtitle: cfg.subtitle || (paths.length === 1 ? paths[0] : paths.length + ' files'),
+		extension: extension,
+		universal: cfg.universal !== false,
+		apps: apps,
+		extras: cfg.extras || []
+	});
+	if (!picked) {
+		return null;
+	}
+	var choice = picked.choice || {};
+	if (choice.kind !== 'app') {
+		return {kind: choice.kind, appId: null};
+	}
+
+	// Installing comes first, and not only because it takes longer: an association can
+	// only name an installed app, so setting the default before the install would throw
+	// and lose the preference the user just asked for.
+	if (choice.install && typeof window.installAppById === 'function') {
+		try {
+			await window.installAppById(choice.appId);
+		}
+		catch (err) {
+			var described = window.describeError('Could not install ' + (choice.label || choice.appId), err);
+			notifications.notify({
+				level: 'error',
+				title: described.title,
+				message: described.message + ' Nothing was opened.',
+				source: 'PixOS'
+			});
+			return null;
+		}
+	}
+	if (picked.setDefault && typeof window.setDefaultAppForExtension === 'function') {
+		try {
+			await window.setDefaultAppForExtension(extension, choice.appId);
+		}
+		catch (err) {
+			// Remembering the choice failed; opening the file was still what was asked
+			// for, so it happens anyway and only the preference is reported lost.
+			notifications.notify({
+				level: 'warn',
+				title: 'Could not remember that choice',
+				message: '.' + extension + ' files will keep asking. '
+					+ window.describeError('', err).message,
+				source: 'PixOS'
+			});
+		}
+	}
+	return {kind: 'app', appId: choice.appId};
+}
+
+function firstExtension (filePath) {
+	if (!filePath || typeof window.getExtensionCandidates !== 'function') {
+		return '';
+	}
+	return window.getExtensionCandidates(filePath)[0] || '';
+}
+
+// The same list Explorer's own *Open with...* builds, from the same shell functions --
+// installed apps that can handle the file, then catalog apps that could once installed.
+async function compatibleAppsForFile (filePath) {
+	if (typeof window.getFileCompatibilityProfile !== 'function'
+		|| typeof window.isAppCompatibleWithProfile !== 'function') {
+		return [];
+	}
+	var profile = await window.getFileCompatibilityProfile(filePath);
+	var found = [];
+	var seen = {};
+	var installed = window.apps || [];
+	for (var i = 0; i < installed.length; i++) {
+		if (await window.isAppCompatibleWithProfile(installed[i].id, profile)) {
+			seen[installed[i].id] = true;
+			found.push({
+				id: installed[i].id,
+				label: getAppName(installed[i].id) || installed[i].id,
+				installed: true
+			});
+		}
+	}
+	var catalog = typeof window.getInstallableApps === 'function' ? window.getInstallableApps() : [];
+	for (var j = 0; j < catalog.length; j++) {
+		if (seen[catalog[j].id]) {
+			continue;
+		}
+		if (!await window.isAppCompatibleWithProfile(catalog[j].id, profile)) {
+			continue;
+		}
+		found.push({
+			id: catalog[j].id,
+			label: catalog[j].label || catalog[j].name || catalog[j].id,
+			installed: false
+		});
+	}
+	return found;
+}
+
+// The file handed to the browser itself, outside PixOS. It is served by the service
+// worker like everything else, so a pdf or a video gets the viewer the browser already
+// has and PixOS does not. Reachable from any app, since Explorer offers it too.
+function openInBrowserTab (filePath) {
+	var address = new URL('/__browserfs__' + filePath, location.href).href;
+	var tab = window.open(address, '_blank');
+	if (!tab) {
+		notifications.notify({
+			level: 'warn',
+			title: 'The browser blocked that tab',
+			message: 'Allow pop-ups for this site, or open the address yourself: ' + address,
+			source: 'PixOS'
+		});
+	}
+	return null;
 }
 
 async function openFiles (paths, appId) {
@@ -1784,9 +2591,22 @@ function buildDesktopMenu () {
 		submenu = [{label: 'No applications installed', disabled: true}];
 	}
 
+	var files = appsModel.listRecentFiles(8).map(function (entry) {
+		return {
+			label: (entry.path.split('/').pop() || entry.path) + (entry.dir ? '/' : ''),
+			hint: entry.path.replace(/\/[^/]*$/, '') || '/',
+			action: function () { openRecentFile(entry); }
+		};
+	});
+
 	return [
 		{label: 'Applications', submenu: submenu},
+		{
+			label: 'Recent files',
+			submenu: files.length ? files : [{label: 'Nothing opened yet', disabled: true}]
+		},
 		{label: 'Search...', hint: 'Ctrl+K', action: function () { palette.open(); }},
+		{label: 'All windows', hint: 'Ctrl+Shift+K', action: function () { overview.open(); }},
 		{separator: true},
 		{label: 'New Explorer', action: function () { openApp('explorer'); }},
 		{label: 'App Manager', action: function () { openApp('app-manager'); }},
@@ -1977,6 +2797,23 @@ async function getDefaultAppForPath (path) {
 		return await window.isAppCompatibleWithProfile(appId, profile) ? appId : null;
 	}
 	return appId;
+}
+
+// Either record saying so is enough, deliberately. The installed record is a partial,
+// derived view built by hand field by field in js/app-registry.js, and this exact field
+// has been dropped from one of those lists twice -- which is what kept the warning from
+// ever appearing. The catalog record is the manifest itself. Reading only the installed
+// one meant a field missing from a single enumeration silenced the whole feature; reading
+// both means it takes two omissions, not one.
+function appNeedsNetwork (appId) {
+	var installed = (window.apps || []).find(function (entry) {
+		return entry.id === appId;
+	});
+	if (installed && installed.needsNetwork) {
+		return true;
+	}
+	var catalog = typeof window.getCatalogApp === 'function' ? window.getCatalogApp(appId) : null;
+	return !!(catalog && catalog.needsNetwork);
 }
 
 function getAppEntryPath (appId) {

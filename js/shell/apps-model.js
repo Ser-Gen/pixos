@@ -1,27 +1,61 @@
-// One answer to "what can I launch, and what did I launch recently".
+// One answer to "what can I launch, and what did I open recently".
 //
 // The desktop menu, the start menu and the command palette all read from here, so they
 // cannot disagree about what exists or about the order things appear in. The registry
 // lookup itself stays in the shell -- this wraps it with recency and matching.
+//
+// Recent *files* live here for the same reason recent apps do: three surfaces show them
+// and one list is the only way they agree. They are stored as {path, dir} rather than bare
+// paths, because reopening a folder and reopening a file are different calls and asking
+// the filesystem again at click time would make the menu wait on a stat.
 
 var listApps = function () { return []; };
 var readRecents = function () { return Promise.resolve([]); };
 var writeRecents = function () { return Promise.resolve(); };
+var readRecentFiles = function () { return Promise.resolve([]); };
+var writeRecentFiles = function () { return Promise.resolve(); };
 
 var recents = [];
+var recentFiles = [];
 
 var RECENT_LIMIT = 8;
+var FILE_LIMIT = 12;
 
 export function init (cfg) {
 	listApps = cfg.listApps || listApps;
 	readRecents = cfg.readRecents || readRecents;
 	writeRecents = cfg.writeRecents || writeRecents;
+	readRecentFiles = cfg.readRecentFiles || readRecentFiles;
+	writeRecentFiles = cfg.writeRecentFiles || writeRecentFiles;
 }
 
 export async function load () {
 	var stored = await readRecents();
 	recents = Array.isArray(stored) ? stored.filter(function (id) { return typeof id === 'string'; }) : [];
+	recentFiles = normalizeFiles(await readRecentFiles());
 	return recents;
+}
+
+// A bare string is the shape a hand-edited file is most likely to be in, and it costs one
+// line to accept -- the same tolerance /settings/preinstalled.json already has.
+function normalizeFiles (stored) {
+	if (!Array.isArray(stored)) {
+		return [];
+	}
+	return stored
+		.map(function (entry) {
+			if (typeof entry === 'string') {
+				return {path: entry, dir: false};
+			}
+			if (entry && typeof entry.path === 'string') {
+				return {path: entry.path, dir: !!entry.dir};
+			}
+			return null;
+		})
+		.filter(function (entry) {
+			return entry && entry.path.charAt(0) === '/';
+		})
+		.slice(0, FILE_LIMIT);
 }
 
 export function listAll () {
@@ -67,6 +101,38 @@ export function noteLaunch (appId) {
 
 export function getRecentIds () {
 	return recents.slice();
+}
+
+export function listRecentFiles (limit) {
+	return recentFiles.slice(0, limit || FILE_LIMIT);
+}
+
+// Every route into launch() feeds this, which is why it takes a path rather than being
+// called from each launcher: an entry point added later gets it for free.
+export function noteFile (filePath, isDirectory) {
+	if (typeof filePath !== 'string' || filePath.charAt(0) !== '/') {
+		return Promise.resolve();
+	}
+	recentFiles = [{path: filePath, dir: !!isDirectory}].concat(recentFiles.filter(function (entry) {
+		return entry.path !== filePath;
+	})).slice(0, FILE_LIMIT);
+	return writeRecentFiles(recentFiles);
+}
+
+// A recent file that has been deleted is dropped when opening it fails, rather than left
+// as an entry that does nothing every time it is clicked. Nothing scans the list ahead of
+// time: statting a dozen paths on every menu open would cost more than being wrong once.
+export function forgetFile (filePath) {
+	var before = recentFiles.length;
+	recentFiles = recentFiles.filter(function (entry) {
+		return entry.path !== filePath;
+	});
+	if (recentFiles.length === before) {
+		return Promise.resolve(false);
+	}
+	return Promise.resolve(writeRecentFiles(recentFiles)).then(function () {
+		return true;
+	});
 }
 
 // Higher is better, null means no match. The tiers matter more than the numbers: an

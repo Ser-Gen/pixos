@@ -171,6 +171,12 @@ export async function save () {
 	if (!enabled || saving) {
 		return;
 	}
+	// A second tab of PixOS shares this file, and last writer wins. Only the tab that owns
+	// the session writes it -- see js/shell/tabs.js. Skipped rather than queued: what the
+	// follower would write is a different desktop, not a later version of this one.
+	if (options.canWrite && !options.canWrite()) {
+		return;
+	}
 	saving = true;
 	try {
 		await options.write(wm.serialize());

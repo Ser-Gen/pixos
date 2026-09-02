@@ -10,6 +10,10 @@
       "manifestPath": "/apps/bookmarks/pixos.app.json"
     },
     {
+      "id": "calendar",
+      "manifestPath": "/apps/calendar/pixos.app.json"
+    },
+    {
       "id": "djvujs",
       "manifestPath": "/apps/djvujs/pixos.app.json"
     },
@@ -20,6 +24,10 @@
     {
       "id": "emulatorjs",
       "manifestPath": "/apps/emulatorjs/pixos.app.json"
+    },
+    {
+      "id": "filmoskop",
+      "manifestPath": "/apps/filmoskop/pixos.app.json"
     },
     {
       "id": "image",
@@ -72,6 +80,10 @@
     {
       "id": "sheetjs",
       "manifestPath": "/apps/sheetjs/pixos.app.json"
+    },
+    {
+      "id": "system-info",
+      "manifestPath": "/apps/system-info/pixos.app.json"
     },
     {
       "id": "terminal",

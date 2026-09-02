@@ -30,21 +30,25 @@
     {"path": "/apps/ace/index.html"},
     {"path": "/apps/ace/pixos_supported"},
 
-    {"path": "/apps/7z/main.js"},
-    {"path": "/apps/7z/7zz.wasm"},
-    {"path": "/apps/7z/7zz.es6.min.js"},
+    {"path": "/apps/7z/js/parse.js", "refresh": true},
+    {"path": "/apps/7z/js/archive.js", "refresh": true},
+    {"path": "/apps/7z/vendor/js7z.js"},
+    {"path": "/apps/7z/vendor/js7z.wasm"},
 
     {"path": "/apps/app-catalog.js", "refresh": true},
     {"path": "/apps/registry.json", "refresh": true}
   ],
 
-  "apps": ["bookmarks", "markdown-viewer"],
+  "apps": ["bookmarks", "markdown-viewer", "calendar", "system-info", "filmoskop"],
 
   "seed": [
-    {"path": "/home/about.md", "from": "/templates/about.md"}
+    {"path": "/home/about.md", "from": "/templates/about.md"},
+    {"path": "/home/talk.deck.md", "from": "/templates/talk.deck.md"},
+    {"path": "/settings/filmoskop-blocks/thanks.md", "from": "/templates/thanks.block.md"}
   ],
 
   "defaultApps": {
-    "md": "markdown-viewer"
+    "md": "markdown-viewer",
+    "deck.md": "filmoskop"
   }
 }

@@ -1,12 +1,12 @@
 {
   "id": "ace",
   "name": "ace",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entryPath": "/apps/ace/index.html",
   "files": [
     {
       "path": "/apps/ace/index.html",
-      "hash": "sha256:32d7b09cc259699cb0bc09febfd1350bb6566bd467c2f5f899c0dc90ce0d72f5"
+      "hash": "sha256:a29b711ccfd4948157daa2db7316e3e881c068300ece4ee94b592f265fd71890"
     },
     {
       "path": "/apps/ace/pixos_supported",
@@ -14,7 +14,7 @@
     },
     {
       "path": "/apps/ace/pixos.app.json",
-      "hash": "sha256:1abd09f002fe00f7ec8eddf30134917ff29352f0c0070391b88c42bb70794296"
+      "hash": "sha256:757d549aee327a9a41a3f25b567a73e84b886e395c095e0a7a82124c8c235144"
     }
   ],
   "supported": {
@@ -25,5 +25,7 @@
       "js"
     ]
   },
-  "supportsText": true
+  "supportsText": true,
+  "needsNetwork": true,
+  "autosave": true
 }

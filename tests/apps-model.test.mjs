@@ -59,6 +59,57 @@ await model.noteLaunch('treemap');
 check('relaunching moves rather than duplicates', model.getRecentIds().slice(0, 3), ['treemap', 'explorer', 'ace']);
 check('no duplicates survive', model.getRecentIds().filter(id => id === 'treemap').length, 1);
 
+// --- recent files ---
+//
+// Same list, different shape: a file entry has to remember whether it was a folder, or
+// clicking it would need a stat before it could decide which call to make.
+
+let files = null;
+model.init({
+	listApps: () => APPS,
+	readRecents: async () => [],
+	writeRecents: async () => {},
+	readRecentFiles: async () => [
+		{path: '/home/report.md', dir: false},
+		'/home/notes.txt',
+		{path: '/home/photos', dir: true}
+	],
+	writeRecentFiles: async entries => { files = entries; }
+});
+await model.load();
+
+check('stored file entries come back in order',
+	model.listRecentFiles().map(f => f.path), ['/home/report.md', '/home/notes.txt', '/home/photos']);
+check('a bare path is accepted and read as a file',
+	model.listRecentFiles()[1], {path: '/home/notes.txt', dir: false});
+check('a folder stays a folder', model.listRecentFiles()[2].dir, true);
+
+await model.noteFile('/home/photos', true);
+check('opening one moves it to the front rather than duplicating it',
+	model.listRecentFiles().map(f => f.path), ['/home/photos', '/home/report.md', '/home/notes.txt']);
+check('and is persisted', files[0], {path: '/home/photos', dir: true});
+
+await model.noteFile('/settings/session.json');
+check('a new file leads the list', model.listRecentFiles()[0].path, '/settings/session.json');
+check('the limit is respected', model.listRecentFiles(2).length, 2);
+
+check('a relative path is not a path this system has',
+	(await model.noteFile('home/report.md'), model.listRecentFiles()[0].path), '/settings/session.json');
+check('and neither is nothing at all',
+	(await model.noteFile(null), model.listRecentFiles()[0].path), '/settings/session.json');
+
+check('forgetting a deleted file drops it', await model.forgetFile('/home/report.md'), true);
+check('and it is gone', model.listRecentFiles().some(f => f.path === '/home/report.md'), false);
+check('and the file was rewritten without it',
+	files.some(f => f.path === '/home/report.md'), false);
+check('forgetting one that was never there writes nothing',
+	await model.forgetFile('/home/nope.txt'), false);
+
+model.init({listApps: () => APPS, readRecents: async () => [], writeRecents: async () => {},
+	readRecentFiles: async () => ({not: 'an array'}), writeRecentFiles: async () => {}});
+await model.load();
+check('a settings file of the wrong shape is ignored, not fatal', model.listRecentFiles(), []);
+
 // An app can be uninstalled while its id is still in the recents file.
 model.init({listApps: () => APPS.filter(a => a.id !== 'treemap'), readRecents: async () => ['treemap', 'ace'], writeRecents: async () => {}});
 await model.load();

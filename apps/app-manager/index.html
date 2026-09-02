@@ -84,6 +84,11 @@
 			color: #ffd49a;
 		}
 
+		.badge--auto {
+			background: rgba(111, 179, 255, 0.2);
+			color: #a9cfff;
+		}
+
 		.AppCard__exts,
 		.AppCard__status {
 			font-size: 12px;
@@ -114,6 +119,13 @@
 		button:disabled {
 			cursor: default;
 			opacity: 0.6;
+		}
+
+		/* The one button here that deletes something. It is not red until you are over it:
+		   a permanently alarming button in a list of twenty-eight apps is just noise. */
+		button.danger:hover {
+			background: #7a3430;
+			border-color: #a8564f;
 		}
 
 		.dialog-backdrop {
@@ -276,6 +288,15 @@ function renderCard (app, installedSet, installedRecords) {
 	if (isConflict) {
 		badges += '<span class="badge badge--warn">id conflict</span>';
 	}
+	// Which editors keep your work without being told to. The point of declaring it is
+	// that the answer used to differ between two apps opening the same file, with nothing
+	// anywhere saying which was which.
+	if (app.autosave || (installedRecord && installedRecord.autosave)) {
+		badges += '<span class="badge badge--auto" title="Writes your changes to the file as you type">saves automatically</span>';
+	}
+	if (app.needsNetwork || (installedRecord && installedRecord.needsNetwork)) {
+		badges += '<span class="badge badge--warn" title="Loads part of itself from the internet and will not work offline">needs network</span>';
+	}
 
 	var actions = '';
 	if (isConflict) {
@@ -292,6 +313,12 @@ function renderCard (app, installedSet, installedRecords) {
 					(updateInfo.localModified ? ' data-force="1"' : '') + '>Update' +
 					(updateInfo.localModified ? ' anyway' : '') + '</button>';
 			}
+			// The other half of Install, and for a long time the missing one: without it
+			// the only way to remove an app was to delete its folder in Explorer, which
+			// left this list still showing it as installed until someone pressed Rescan.
+			// Local apps are not offered here on purpose -- those folders are the user's
+			// own work, and Explorer is where you delete your own files.
+			actions += '<button type="button" class="danger" data-type="uninstall" data-app-id="' + escapeHtml(app.id) + '">Uninstall</button>';
 		}
 	}
 	else if (isLocal && app.localStatus === 'active') {
@@ -320,6 +347,10 @@ document.addEventListener('click', async function (e) {
 
 	if (button.dataset.type === 'install') {
 		await handleInstall(button);
+		return;
+	}
+	if (button.dataset.type === 'uninstall') {
+		await handleUninstall(button);
 		return;
 	}
 	if (button.dataset.type === 'check-update') {
@@ -412,6 +443,43 @@ async function handleInstall (button) {
 		console.error(err);
 		button.disabled = false;
 		button.textContent = 'Install';
+	}
+}
+
+// "Its folder", said precisely when we can and vaguely when we cannot -- never wrongly.
+function folderOf (appId) {
+	var app = typeof parent.getCatalogApp === 'function' ? parent.getCatalogApp(appId) : null;
+	var match = /^(\/apps\/[^/]+)\//.exec((app && app.entryPath) || '');
+	return match ? 'Its folder ' + match[1] : 'Its folder under /apps';
+}
+
+async function handleUninstall (button) {
+	var appId = button.dataset.appId;
+	if (typeof parent.uninstallAppById !== 'function') {
+		window.alert('This copy of PixOS cannot uninstall apps.');
+		return;
+	}
+	// The folder is named, because this deletes one -- and it is read off the app rather
+	// than built from the id, which are not always the same word (`monaco` lives in
+	// `monaco-cdn`). Anything the app wrote elsewhere -- your files, its settings -- is not
+	// in that folder and is not touched.
+	if (!window.confirm('Uninstall "' + appId + '"?\n\n' + folderOf(appId)
+		+ ' is deleted, and any file type it was the default for goes back to asking. '
+		+ 'You can install it again from this list.')) {
+		return;
+	}
+	button.disabled = true;
+	button.textContent = 'uninstalling...';
+	try {
+		await parent.uninstallAppById(appId);
+		delete updateInfoById[appId];
+		await render();
+	}
+	catch (err) {
+		console.error(err);
+		window.alert('Could not uninstall ' + appId + ': ' + ((err && err.message) || err));
+		button.disabled = false;
+		button.textContent = 'Uninstall';
 	}
 }
 

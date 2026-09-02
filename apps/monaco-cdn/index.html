@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Monaco editor</title>
-<link rel="stylesheet" data-name="vs/editor/editor.main" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/editor/editor.main.min.css">
+<link rel="stylesheet" data-name="vs/editor/editor.main" href="vendor/vs/editor/editor.main.css">
 	<style>
 		html,
 		body,
@@ -45,14 +45,25 @@
 			</select>
 		</div>
 	</div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs/loader.min.js"></script>
+<script src="vendor/vs/loader.js"></script>
 
 <script type="module">
 
-// require is provided by loader.min.js.
+// require is provided by loader.js.
+//
+// Monaco lives in vendor/vs rather than on a CDN, so this app works with no network at
+// all -- see vendor/README.md for the version and where it came from. The path is
+// resolved to an absolute URL rather than left relative: the AMD loader resolves `paths`
+// against its own notion of a base, and this app is served from
+// /__browserfs__/apps/monaco-cdn/, which is not where the page thinks it is.
+//
+// Being same-origin has a second effect worth knowing about. Monaco runs its language
+// services in a web worker loaded from vs/base/worker/workerMain.js; from a CDN that is a
+// cross-origin worker, which the browser refuses, so those services never actually ran.
+// They do now.
 require.config({
 	paths: {
-		'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.0/min/vs'
+		'vs': new URL('vendor/vs', document.baseURI).href
 	}
 });
 
@@ -85,7 +96,10 @@ window.openFile = async function (src, name) {
 		monaco.editor.setModelLanguage(editor.getModel(), mode);
 		modesPicker.value = mode;
 
-		editor.onDidChangeModelContent(onUpdateDebounced);
+		editor.onDidChangeModelContent(function () {
+			if (typeof markDirty === 'function') { markDirty(true); }
+			onUpdateDebounced();
+		});
 
 		modesPicker.onchange = function (e) {
 			monaco.editor.setModelLanguage(editor.getModel(), this.value);
@@ -108,10 +122,19 @@ window.openFile = async function (src, name) {
 			return result;
 		}
 
+		// The save contract: the window shows a dot while there is an edit that has not
+		// reached the filesystem yet, and stops showing one when it has. The gap is short
+		// -- this autosaves -- but it is not nothing, and the browser's close warning is
+		// armed from exactly this.
 		function onUpdate () {
 			const editorValue = editor.getModel().getValue();
 
-			parent.saveFileLocal(path, editorValue, name, type);
+			Promise.resolve(parent.saveFileLocal(path, editorValue, name, type)).then(function () {
+				if (typeof markDirty === 'function') { markDirty(false); }
+			}, function () {
+				// The shell reports the failure; the dot staying is what says it is still
+				// unsaved.
+			});
 		}
 
 		function setModesOptions () {

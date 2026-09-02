@@ -1,0 +1,52 @@
+{
+  "id": "filmoskop",
+  "name": "Filmoskop",
+  "version": "1.2.2",
+  "entryPath": "/apps/filmoskop/index.html",
+  "files": [
+    {
+      "path": "/apps/filmoskop/favicon.svg",
+      "hash": "sha256:a8cb0d7291933d11a63e09d1d7ed62608a97406429360cdf20f220b06f82d316"
+    },
+    {
+      "path": "/apps/filmoskop/index.html",
+      "hash": "sha256:0c373d8556e75bcdc8784eb89a0de1458ac65e25bafbc58e3d1f87649935f6be"
+    },
+    {
+      "path": "/apps/filmoskop/js/deck.js",
+      "hash": "sha256:b68cf939b9171508e0c4771d0976a2391cd76af95ebf1a76ea2ca772e774d88d"
+    },
+    {
+      "path": "/apps/filmoskop/pixos_supported",
+      "hash": "sha256:7191f53bf8680c3aefe82ee96f5726087975726366f5bbe8dabb304721de441a"
+    },
+    {
+      "path": "/apps/filmoskop/pixos.app.json",
+      "hash": "sha256:5caa0ca1876db28987285ef30cc97ad90c2e0ac1328c62628061f746eae1b095"
+    },
+    {
+      "path": "/apps/filmoskop/speaker.html",
+      "hash": "sha256:1db5319b05f9923712046b5c6e5ab0ea53db3a3e8ab097761d0065370f09eda5"
+    },
+    {
+      "path": "/apps/filmoskop/vendor/comark.mjs",
+      "hash": "sha256:91ccb623c575aad9c9adcd8b5decea2e91a9966b0345a6fa92357d014a3cde83"
+    },
+    {
+      "path": "/apps/filmoskop/vendor/prism.js",
+      "hash": "sha256:73ae0c317d81fa9c816168e75e326c7043d8578e8a4f3af63d014e61af20d2c7"
+    },
+    {
+      "path": "/apps/filmoskop/vendor/README.md",
+      "hash": "sha256:3b5133c7cdffd44b4e5ab3131f6739ea0ccccef976871d0bac157e9a7da7ff1e"
+    }
+  ],
+  "icon": "/apps/filmoskop/favicon.svg",
+  "supported": {
+    "extensions": [
+      "deck.md",
+      "md"
+    ]
+  },
+  "autosave": true
+}

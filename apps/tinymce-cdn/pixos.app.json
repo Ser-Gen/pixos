@@ -1,12 +1,12 @@
 {
   "id": "tinymce",
   "name": "tinymce",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "entryPath": "/apps/tinymce-cdn/index.html",
   "files": [
     {
       "path": "/apps/tinymce-cdn/index.html",
-      "hash": "sha256:37cc45e0d1e8b31507f487743e9c0e45cf8e177c7918ce26cf5378af4c95312d"
+      "hash": "sha256:12d834ae92d94c0136ce4a6f3cf849ea8f5605968e01990fa3bbb1002a6fe64a"
     },
     {
       "path": "/apps/tinymce-cdn/pixos_supported",
@@ -14,7 +14,543 @@
     },
     {
       "path": "/apps/tinymce-cdn/pixos.app.json",
-      "hash": "sha256:2c5a2f37b42bcdfbb3b0aa65e79fa29547e97c397b220968a72c1113a97b3155"
+      "hash": "sha256:7982e3348625664d39e6313ed4ed7930eab67c110155420a3a46996d1c569583"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/README.md",
+      "hash": "sha256:f842a38620a8d919a2852664d3005ebbc35bf404e512977683a2bca65a1a23da"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/icons/default/icons.min.js",
+      "hash": "sha256:f046dc4ebc739916555327c31649a7dd724b3511da35e1a907b4d92db26dcf4d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/license.md",
+      "hash": "sha256:2fcd38ecec1bedcf12c8fc7b6d874537028ae36a03ce9d4e9a243ea8371fe7ea"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/models/dom/model.min.js",
+      "hash": "sha256:b3790b8868fea4fae707f8838563ceaa4f191e0b3e704b9b05de507692dd263e"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/notices.txt",
+      "hash": "sha256:658de17590bce4a2fa0c158f9780fae02f75309906cdc7e285e05ab9b166f156"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/accordion/plugin.min.js",
+      "hash": "sha256:57858305a2339f4c1f0b6d18d624c1868b3645a229c2b092d5a6311e79536cd8"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/advlist/plugin.min.js",
+      "hash": "sha256:26042b3d1380f8c5b6a8ea3212a6c009f59e211f09032ab7ddccc4866cfda06f"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/anchor/plugin.min.js",
+      "hash": "sha256:0cd21f09c1eab48cd1b77bb8de3497f20aae99748bef3145619930990d508dc3"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/autolink/plugin.min.js",
+      "hash": "sha256:0c88dbb5b98a8891e671884bd22a2ba227f3d8273520746419c88138ded14d1c"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/autoresize/plugin.min.js",
+      "hash": "sha256:da703490abb15d2b23bbcf385ee081d3e543953e4c574e241d4ba881c221053f"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/autosave/plugin.min.js",
+      "hash": "sha256:1e85f698dd4b5412803acf5147082f83af203ab3d248c1e4bc89dba465e8180c"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/charmap/plugin.min.js",
+      "hash": "sha256:7777c9d8a94431e2a52937ecf8352d9d595602fe0fe2b81708d3321e30d72a63"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/code/plugin.min.js",
+      "hash": "sha256:47daa9d619922549424552e47e0d67a8e94b3b206e1f02a97735839e9bddea9b"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/codesample/plugin.min.js",
+      "hash": "sha256:0db6b61f20b16bdeec85ec4683dced461aaa16cb2d19fef0d9618252ce8c382e"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/directionality/plugin.min.js",
+      "hash": "sha256:e3c25a3170fed894b5c5fcc10ab7ad6a15e0302558e51901da8339a41a7cd57d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/emoticons/js/emojiimages.min.js",
+      "hash": "sha256:1a7cf49f6b0da134e9bb86f6b052dfa8e7c19d910c6cb75f7c9a24256d9e4edb"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/emoticons/js/emojis.min.js",
+      "hash": "sha256:66f71a7fc7094165772664ff37a327c75090fbc646186b7e89c6e39d0676cdf1"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/emoticons/plugin.min.js",
+      "hash": "sha256:9bc0fd5f3c74c6c71072c35d153caa650980fa9d6e46f22232634926d0ef7930"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/fullscreen/plugin.min.js",
+      "hash": "sha256:a020850c9524b0109d6c261de7b4f12739b86622cb8dd3f6f1949eb873c7139e"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ar.js",
+      "hash": "sha256:aae87ae81e6758bb134912b0488498054cb34f9809cc6befa73c37fe35ebc714"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/bg_BG.js",
+      "hash": "sha256:4ed8eaf52d8042a5b06f6e01794bec9c524a385fe54d765e9289b8471332c476"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/bg-BG.js",
+      "hash": "sha256:b70f5b6fff279a7264edc6c2b7276fb0fd984cbc0e5ff9e0a2a89ed4ddd0b1fd"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ca.js",
+      "hash": "sha256:cf3efbf1918788a56dc7d9672d644f759f55d8a65b66d7faaf5c1093c60c9152"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/cs.js",
+      "hash": "sha256:09eabd55f71ab4ba53e0ac5bf0bf7a89296d855b70f1e01ab2b19fca3fe526a3"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/da.js",
+      "hash": "sha256:22857b275c79339cff13512254d46d9a19b81bce51c54ff4cfb87f1d25a3cdc7"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/de.js",
+      "hash": "sha256:353cea8fef4b2c4aaf42820b0752459a6bd936413381554544006b85cf1e65ad"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/el.js",
+      "hash": "sha256:b120fb86ac0200bedcfafa5470090fd1aadf4d3966cf3b8b02ab28ee7d27737d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/en.js",
+      "hash": "sha256:74c398ce4d10b08bc1e4166392965c8641c886a36e7cf65386987d4685a44e46"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/es.js",
+      "hash": "sha256:621772b620bb646ef9cf9a3b0a1a1f7234fba45af2fe1b350c4dfa2c890a7a50"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/eu.js",
+      "hash": "sha256:083fd2a9b10072036c14452e910a965f4db643e08a9580d7b499bb8896359827"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/fa.js",
+      "hash": "sha256:e04b73eb0700e42b7095c9e32250e8d318d2972bfbb79daec597855f788f2182"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/fi.js",
+      "hash": "sha256:c71edaaae9d774bb349a43b2bdaab0e00a83144a7ab3dcf35a610cd5c22c436b"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/fr_FR.js",
+      "hash": "sha256:d0b3ad703e750e2a714f3bcae6e5177614c156147bdab044a23d1940477cad0b"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/fr-FR.js",
+      "hash": "sha256:7dfd0d1e147468b0dfb367b07a9511d26cb4e5f8f912b79577c62f023a913faf"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/he_IL.js",
+      "hash": "sha256:6178faac0a53c23af0979468d20175e20211cf547f74d6fabdb5ddc7587793b0"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/he-IL.js",
+      "hash": "sha256:bc2e8bc74523d7d8bbc833de218354ede193a8d65cf4a8658ccb1a2a1f92c774"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/hi.js",
+      "hash": "sha256:74a1947d455896f2573b00eb8118996b685193fb3684cb1b230b19942595a12c"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/hr.js",
+      "hash": "sha256:a03e59a0dd65c7529fd167300b31db4eb1d34deecd49823a46219ac65831261c"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/hu_HU.js",
+      "hash": "sha256:9092e3de8a93654f99ba73e65ca75a9459a547125036d611bea9fb84b74d63b1"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/hu-HU.js",
+      "hash": "sha256:9fa01416c50a9a87bd591a20ddca97ab25ed3d258beec7d6736c698e5daf33cb"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/id.js",
+      "hash": "sha256:0d53b4a2c7d45ddd8643a798dd395a0f8a6a0722638ef9d15a4a946e3a9d8652"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/it.js",
+      "hash": "sha256:813e71b23ae94e74c1e66d854488feb2f5b65bb3748c5bfc2fead35a931954cb"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ja.js",
+      "hash": "sha256:92153b640c26154754b4c5d41112542d69b82440ce88d9f7abb55eb47551f63c"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/kk.js",
+      "hash": "sha256:235da4e4864e9c4f5400ef9afdef877cf9077d6329b73bf3703961dd4faa6dc2"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ko_KR.js",
+      "hash": "sha256:9c414069fd55dc6bc4dda5aa25ef13d9364c83b089fd40c818061c282f2e0c90"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ko-KR.js",
+      "hash": "sha256:5b1d9a748b6b64c709bb11f1eef44686c94f4b707d6ea8da6273ba4e84badeec"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ms.js",
+      "hash": "sha256:137d45cebe18d85f9675ff7b5f94c4b5db7398b65bc2c4a079e20d0397d24f32"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/nb_NO.js",
+      "hash": "sha256:bf8343cea466fb0bdd27d8de1b72fc390c3fa1145b2bcd4040f57b7fd94d2952"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/nb-NO.js",
+      "hash": "sha256:fc6738ed8b46d5ce40d00d6cb273528aa4d7f5e96f4064d8c661ec4606aaaaac"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/nl.js",
+      "hash": "sha256:fcd6bcb64c05598ff1a903dd90cdf9a3cd285d580d436ccf78eff99f0ec053da"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/pl.js",
+      "hash": "sha256:6a3cf7148c4467e25f2444c568a51b1445744423ae99ffad8ad432294caa0c45"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/pt_BR.js",
+      "hash": "sha256:717dc0b6538a108d1e987909dac97becac841b3e0b908b2b4d9466d71bc9d055"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/pt_PT.js",
+      "hash": "sha256:fc4b879cb0d58c58e2708bee5618a037a1a7dc03783b31bfef42d1c5abf15176"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/pt-BR.js",
+      "hash": "sha256:dd908a68b989d77ac84b8a7761791eb8cc02b7207a36775913f2d61990bdaaac"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/pt-PT.js",
+      "hash": "sha256:985dda81960d37e8b4493adaa27fdaaae6fa2ae65ab3a3c67aa796d3c3a994fb"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ro.js",
+      "hash": "sha256:43e2c4e203cd10a44d27ab1dacd69de7febe207b259b756448ef94ada6b7fdf2"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/ru.js",
+      "hash": "sha256:4b9dfaceba0f965eea48f1c1b4fe116b753337bc3567b35a8b9ec9e167522076"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/sk.js",
+      "hash": "sha256:cde939aca54e3f5027de462f365a36a1f7e55078c46c38a1d8ffdfcce3e8fbc7"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/sl_SI.js",
+      "hash": "sha256:e23874b3f5bc1abadf95689f0203186171c8454c7283a31dee1fb2689daea448"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/sl-SI.js",
+      "hash": "sha256:a1e978fb9af4d0f3574436f445b1609af4aa0c0ce63813612ce09d27994bdcf8"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/sv_SE.js",
+      "hash": "sha256:b846f52322216ef35772ad9942f917156ce2c7ca8cf0e6e6c68db5531426dffa"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/sv-SE.js",
+      "hash": "sha256:1fdbc66b3c385fe411cab2e5edc8f818eb19f476c452c6b9538cf580751d1084"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/th_TH.js",
+      "hash": "sha256:f31074a2ddbb66781ed77f3732010534d38eb6904456c5f1a80544faf8451c63"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/th-TH.js",
+      "hash": "sha256:4b7738a4ecb258a9fffd7a8ddd45690a308c15ad4581a21df7b457cd2ed10eba"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/tr.js",
+      "hash": "sha256:eb7543620fe39aeedaeb10fb0ca5bb5db6b9c8c62b549a011857dd444d49751e"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/uk.js",
+      "hash": "sha256:0d8625dae70a854a24a3b876c8022ecb23a89d0cc864bdbbac1874739308a410"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/vi.js",
+      "hash": "sha256:a38410226618792ef52f55c7dbdf5954bf451305aef346c6aaf9b0774effda69"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/zh_CN.js",
+      "hash": "sha256:006fd3a2fa6df1f1f8b79d96b196e7e4cb13677ce0d3ae10250322cc272721de"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/zh_TW.js",
+      "hash": "sha256:83731a78b55509d7b8b076ed734efe7207c57fea4df482ed36c772009fcb6147"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/zh-CN.js",
+      "hash": "sha256:ffb9a1f59afa1564b252f8d76b77e25dfd7cbfa3504bcc4db9b0b9600adca731"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/js/i18n/keynav/zh-TW.js",
+      "hash": "sha256:4afedd89b5edf7c685a924f4ae02e26cf021cf5cb42ad3e862aa75a0c2bdad91"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/help/plugin.min.js",
+      "hash": "sha256:d8f00ac041218fdfe1909dacc2a8b506961269397a106637d3a71348aff7ba41"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/image/plugin.min.js",
+      "hash": "sha256:00fdc11f94a64553a19b24c2cc6f9763272cd16c59ea09af803e0e7aa49ac76b"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/importcss/plugin.min.js",
+      "hash": "sha256:e35f6df58fc845088237208480ac890c2471f51f344d379dca199397ad101d0f"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/insertdatetime/plugin.min.js",
+      "hash": "sha256:5413b8c847fd2a1e0ac374d41510b1513f36e131b33fe62e728a6441ed66b6ca"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/link/plugin.min.js",
+      "hash": "sha256:33e0dc25bdab261cc7e53ad8e1f1d4817d1cdecfb66a17191bc6c2ff55b56666"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/lists/plugin.min.js",
+      "hash": "sha256:c71815e8f8b7f8804fb8c6396835cb5cab8f1a94fabc4ba7ce6772c465a69847"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/media/plugin.min.js",
+      "hash": "sha256:43bcce3455d294de7ff13ac00531b7e890fd094ecfcd0db63caeb70d8ac9567e"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/nonbreaking/plugin.min.js",
+      "hash": "sha256:7fcb4a11df8f3afe1a7edfbe0939e306d1123192c3a6fa576173ef07374a31a6"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/pagebreak/plugin.min.js",
+      "hash": "sha256:262d42bbfebf2f0aab8dcc9e60a3c2271d4ea3bdbddcf263ed2be356f7718543"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/preview/plugin.min.js",
+      "hash": "sha256:e28779a4269a7cd15eb91702638db36dbe256666b485e17ab984011625414af0"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/quickbars/plugin.min.js",
+      "hash": "sha256:6157476cb2e71d03883723e3adf68284c1499f710ae88a399a6bd6a339d849b5"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/save/plugin.min.js",
+      "hash": "sha256:bbe57897674d638d69ff2fb69374b234fb3a9276b2e6a9fe49d684b11e653c83"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/searchreplace/plugin.min.js",
+      "hash": "sha256:677ecac1a7e1be0ad5b30a9c9bf921bb2a89954bff67b02a55b02d9426d56804"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/table/plugin.min.js",
+      "hash": "sha256:cb65eaef4b8daa05a381bfd4dd0685b16218ad25df6ff6d4571258599be9803d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/visualblocks/plugin.min.js",
+      "hash": "sha256:34792e0ee7ae63ec30205ab2f04c6702fe5a97c028652f5a4085db97aa325691"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/visualchars/plugin.min.js",
+      "hash": "sha256:a91c608703daff619b586a90538556ed3ebbf319cb80647136263dd849276788"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/plugins/wordcount/plugin.min.js",
+      "hash": "sha256:39767b2a7fa91dbef9f3ea958a57f102d54fb78be0f14735cc2ee37ac80e9ff3"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/dark/content.js",
+      "hash": "sha256:143f7d8edb58c441973f08a55b3caa3f7209912a7ac59fd435aefdbb5e16a095"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/dark/content.min.css",
+      "hash": "sha256:8ba507276d65640b3b55fc6183c63c0bf6d5a15010711a4acb163e6f3d2fe269"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/default/content.js",
+      "hash": "sha256:70abbc227c485613b8a4ca5d394aec9cc7f987f44587cbec71195dca6db6dca3"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/default/content.min.css",
+      "hash": "sha256:8fbc7f18efefe59b8b7d692d25e0c4283aa4100eaba292e1cdda0cd32e20fc88"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/document/content.js",
+      "hash": "sha256:17b7e8f28929a21ad6f8381cb45fc2bc65bebf4361726be5983e551f5cfcedc9"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/document/content.min.css",
+      "hash": "sha256:e85bd15d4415b37ddc129a72f6e70d5462b142a19a69fc40c68111b9406af87d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/tinymce-5-dark/content.js",
+      "hash": "sha256:8ce32248f259dd7dda01ea36672b0265fc7384b3991a53596340c6c9b47559f1"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/tinymce-5-dark/content.min.css",
+      "hash": "sha256:594677b662a41739e2eef429c8ea24fccfda327ebe6ce6277c174da453d0fcce"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/tinymce-5/content.js",
+      "hash": "sha256:cfd3e6ba5ec7241df1c68f76a5b0192aa5089fb68abfa594f72fadadb30d67ac"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/tinymce-5/content.min.css",
+      "hash": "sha256:8fbc7f18efefe59b8b7d692d25e0c4283aa4100eaba292e1cdda0cd32e20fc88"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/writer/content.js",
+      "hash": "sha256:6e64e16bdc5365f9e243cadf754e25eaa471dbec4727159ea09d4718318d4580"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/content/writer/content.min.css",
+      "hash": "sha256:72d046347f68cd058bbaa8246a28826b132d25d4b466891d5296111b82c11682"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/content.inline.js",
+      "hash": "sha256:4a9d2c1f137606612c41775acac237ab39f7a1083c2a77687c665f3e6291683b"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/content.inline.min.css",
+      "hash": "sha256:679af4eab27a518d30c06c451ac8fdab4b347b82cd9d0f4e91fbf12f6da1bee8"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/content.js",
+      "hash": "sha256:eb5339a5566e040a2f041d82ea462d03eb39578ff78fcb535288189e9158f32d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/content.min.css",
+      "hash": "sha256:5c26280af6955140969918ccde41bb16f3b20393f0f01132f73b3f6a55bbd1c2"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/skin.js",
+      "hash": "sha256:7bafb6f257a9eea4ac5930ab8d77d0bdbf9cb6b1a2a41a41df6ca9ec01826460"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/skin.min.css",
+      "hash": "sha256:495d348c65e313159182a8d0afa3220859d4a24181ff4521fc2d3aaf13390065"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/skin.shadowdom.js",
+      "hash": "sha256:e8d7d4fbe2730b55df04bb40bde5b69827da653e213eb642891c961a44cb1f5c"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide-dark/skin.shadowdom.min.css",
+      "hash": "sha256:d8a9f2d384edd57a6e04e52cd58bb3f5c4a566da539b08c1eaeb7f918a42c262"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/content.inline.js",
+      "hash": "sha256:445175742c6f70fef87cd4b3e0e60a4c409fe6a7b25062d83b2a519f949661fe"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/content.inline.min.css",
+      "hash": "sha256:679af4eab27a518d30c06c451ac8fdab4b347b82cd9d0f4e91fbf12f6da1bee8"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/content.js",
+      "hash": "sha256:35a9999a294293ecf4e29d7e2cd5ee231a69d8e900f0ddb5b94ee10ec6fe194d"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/content.min.css",
+      "hash": "sha256:f33bf1a16533c75ea10b95166ba3fabe6fa2063aa4495390c2751f33e9ed8c11"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/skin.js",
+      "hash": "sha256:13d6ad5fe69483e801056b7ff0d72b5e8bc777c5a0cae2ff115231e5e8e4171f"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/skin.min.css",
+      "hash": "sha256:530b8b09d48d0a0fcfaa3b6a9148ea34d63aa5402f9dff065ca7afb16197fb4b"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/skin.shadowdom.js",
+      "hash": "sha256:7d7b34f9979790bd1b7028fc36ef275345f8d59a91e08c85e9941efbba2d37bc"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/oxide/skin.shadowdom.min.css",
+      "hash": "sha256:d8a9f2d384edd57a6e04e52cd58bb3f5c4a566da539b08c1eaeb7f918a42c262"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/content.inline.js",
+      "hash": "sha256:9a1e44259045051401f2120f4fca303e67510ad425108d301bf3dbdd94ffe1c9"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/content.inline.min.css",
+      "hash": "sha256:679af4eab27a518d30c06c451ac8fdab4b347b82cd9d0f4e91fbf12f6da1bee8"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/content.js",
+      "hash": "sha256:f35c19a94447d7e4768fb0178e66e2d0dd2d73b430871d73fa9ef0b13cb9b792"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/content.min.css",
+      "hash": "sha256:3dc58c266128f37299a93b00961f2ed6649eb413c2d7a85803fe6549513b56af"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/skin.js",
+      "hash": "sha256:8be73806d669f54794d1c7a54f8becb12b969554ee35a72e2c8c9d0130621d39"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/skin.min.css",
+      "hash": "sha256:03aeea60ebf6bf89beb5483d648481f512db8ac3de057e532f691204834d1c65"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/skin.shadowdom.js",
+      "hash": "sha256:4848aeb61f2c5c3457ee5489d4d6c8e3d35707b323fd408da8244065ec528051"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5-dark/skin.shadowdom.min.css",
+      "hash": "sha256:d8a9f2d384edd57a6e04e52cd58bb3f5c4a566da539b08c1eaeb7f918a42c262"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/content.inline.js",
+      "hash": "sha256:a4bdbfec4153a0fce8668e5fce75a2aafa78cf8f99f807830991b4bf13f0bc88"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/content.inline.min.css",
+      "hash": "sha256:679af4eab27a518d30c06c451ac8fdab4b347b82cd9d0f4e91fbf12f6da1bee8"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/content.js",
+      "hash": "sha256:6e65fb4e04d6964ad8a3f5f8c4d8deb94e03f84247e430711bdb72c4cb718021"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/content.min.css",
+      "hash": "sha256:f33bf1a16533c75ea10b95166ba3fabe6fa2063aa4495390c2751f33e9ed8c11"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/skin.js",
+      "hash": "sha256:881f771b4131b7175cb1856eee6ba11ca1a333bd26dc9eb839434da1b5637a88"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/skin.min.css",
+      "hash": "sha256:96e1d86dc45cc20ee24043ef71102350adc98fea759654ecc5f3ad39765de6a5"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/skin.shadowdom.js",
+      "hash": "sha256:5f526cd2523c825a45387d5f850fdbfd4c42d3bda1480161c8cf5eaa6288cd52"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/skins/ui/tinymce-5/skin.shadowdom.min.css",
+      "hash": "sha256:d8a9f2d384edd57a6e04e52cd58bb3f5c4a566da539b08c1eaeb7f918a42c262"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/themes/silver/theme.min.js",
+      "hash": "sha256:007d3c4ed76a899262e9ca4220ac4bf91076780a3324d3a944f4f3edfc5644c7"
+    },
+    {
+      "path": "/apps/tinymce-cdn/vendor/tinymce/tinymce.min.js",
+      "hash": "sha256:9b6e7f2cc56f22229cde2c8b3309c7c8e08a7195c34a8b6e2ba516f1cda56b8c"
     }
   ],
   "supported": {

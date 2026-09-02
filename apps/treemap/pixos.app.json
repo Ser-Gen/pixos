@@ -1,7 +1,7 @@
 {
   "id": "treemap",
   "name": "Disk Treemap",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "entryPath": "/apps/treemap/index.html",
   "files": [
     {
@@ -50,7 +50,7 @@
     },
     {
       "path": "/apps/treemap/pixos.app.json",
-      "hash": "sha256:5a7031f73e2d44dd7fe2d9da7b9ef4f1ed03a32ec0dc46f7922772543ca248fc"
+      "hash": "sha256:78c8f3fd15471d4424662a1c445392fcc81e873f51edf067d5b9e6b86dbdd391"
     },
     {
       "path": "/apps/treemap/test-data/readme.txt",
@@ -69,5 +69,6 @@
       "hash": "sha256:2396099c6c084fa4b9beac9f0d52cf3be9cf8d47040ef127883d532b5790cd74"
     }
   ],
-  "icon": "/apps/treemap/favicon.svg"
+  "icon": "/apps/treemap/favicon.svg",
+  "needsNetwork": true
 }

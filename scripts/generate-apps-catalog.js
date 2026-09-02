@@ -211,6 +211,15 @@ function buildManifestBody (appDir, stub, config) {
 	if (stub.supportsText) {
 		manifest.supportsText = true;
 	}
+	// Declared by hand in the stub: an app that loads part of itself from the network can
+	// never work offline, and the shell would otherwise let it open and fail with a bare
+	// "failed to fetch" that says nothing about why.
+	if (stub.needsNetwork) {
+		manifest.needsNetwork = true;
+	}
+	if (stub.autosave) {
+		manifest.autosave = true;
+	}
 	if (stub.supportedMimeTypes) {
 		manifest.supportedMimeTypes = stub.supportedMimeTypes;
 	}

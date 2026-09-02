@@ -311,25 +311,107 @@ export default class WM {
 	// the shell listens inside them and republishes what it hears. Capture phase, so an
 	// app that swallows its own events is still heard.
 	//
-	// An app that nests a cross-origin iframe of its own -- photopea does -- is opaque
-	// below this level, and neither shortcuts nor dismissal will fire from down there.
-	bridgeInput (frame) {
+	// **An app's own iframes are the same problem one level further down.** tinymce edits
+	// in a nested same-origin iframe it builds itself, so a keystroke in the document you
+	// are actually typing into reaches neither the app's document nor the shell -- which is
+	// why every shell chord was dead in that editor and nowhere else. So the bridge follows
+	// nested frames, and keeps following: that iframe is created long after load and is
+	// rebuilt whenever the editor is, which a one-time scan would miss both times.
+	//
+	// An app that nests a *cross-origin* iframe -- photopea does -- is still opaque below
+	// this level, and neither shortcuts nor dismissal will fire from down there.
+	bridgeInput (frame, id) {
 		var wm = this;
+		if (!frame) {
+			return;
+		}
+		if (!frame.__pixosBridgeLoad) {
+			frame.__pixosBridgeLoad = true;
+			frame.addEventListener('load', function () {
+				// A fresh document has none of our listeners and none of our flags, so this
+				// is a re-bridge rather than a duplicate.
+				wm.bridgeDocument(frameDocument(frame), id);
+			});
+		}
+		this.bridgeDocument(frameDocument(frame), id);
+	}
+
+	bridgeDocument (doc, id) {
+		var wm = this;
+		if (!doc) {
+			return;
+		}
 		try {
-			var doc = frame.contentDocument;
-			if (!doc || doc.__pixosInputBridge) {
-				return;
+			if (!doc.__pixosInputBridge) {
+				doc.__pixosInputBridge = true;
+				doc.addEventListener('keydown', function (e) {
+					wm.noteInteraction(id);
+					wm.emit('keydown', e);
+				}, true);
+				doc.addEventListener('mousedown', function (e) {
+					wm.noteInteraction(id);
+					wm.emit('mousedown', e);
+				}, true);
 			}
-			doc.__pixosInputBridge = true;
-			doc.addEventListener('keydown', function (e) {
-				wm.emit('keydown', e);
-			}, true);
-			doc.addEventListener('mousedown', function (e) {
-				wm.emit('mousedown', e);
-			}, true);
+			this.watchForFrames(doc, id);
+			this.bridgeFrames(doc, id);
 		}
 		catch (err) {
 			// Cross-origin: nothing to listen to, and not worth logging on every window.
+		}
+	}
+
+	// Only added nodes are inspected, never the whole document again: an editor mutates its
+	// DOM constantly, and a re-scan per mutation would be a querySelectorAll per keystroke.
+	watchForFrames (doc, id) {
+		var wm = this;
+		if (doc.__pixosBridgeObserver || typeof MutationObserver !== 'function') {
+			return;
+		}
+		var root = doc.documentElement || doc.body;
+		if (!root) {
+			return;
+		}
+		doc.__pixosBridgeObserver = new MutationObserver(function (records) {
+			records.forEach(function (record) {
+				Array.prototype.forEach.call(record.addedNodes || [], function (node) {
+					if (!node || node.nodeType !== 1) {
+						return;
+					}
+					if (node.tagName === 'IFRAME') {
+						wm.bridgeInput(node, id);
+					}
+					else if (node.querySelectorAll) {
+						wm.bridgeFrames(node, id);
+					}
+				});
+			});
+		});
+		doc.__pixosBridgeObserver.observe(root, {childList: true, subtree: true});
+	}
+
+	bridgeFrames (root, id) {
+		var wm = this;
+		try {
+			Array.prototype.forEach.call(root.querySelectorAll('iframe'), function (nested) {
+				wm.bridgeInput(nested, id);
+			});
+		}
+		catch (err) {
+			// A cross-origin frame among them is not a reason to skip the rest.
+		}
+	}
+
+	// Which window is "the focused one" has to follow the pointer and the keyboard, not
+	// only GoldenLayout's tab selection. Two panes side by side are both visible, so
+	// selecting one tab and then typing in the other left the shell naming the wrong
+	// window -- and "Close window" closing it.
+	noteInteraction (id) {
+		if (id === undefined || id === null || this.activeWindowId === id) {
+			return;
+		}
+		if (this.windows.has(id)) {
+			this.focusWindow(id);
 		}
 	}
 
@@ -509,6 +591,11 @@ export default class WM {
 			// around it. Until then the orphan sweep below must leave it alone, or it
 			// would be reaped the moment it is created.
 			detached: !!cfg.detached,
+			// Whether the app in this window has unsaved work. Reported by the app, never
+			// guessed: the shell cannot see inside an editor, and a guess would either
+			// nag about nothing or stay silent about something. Not serialized -- a
+			// restored window has no unsaved state, because nothing carried it across.
+			dirty: false,
 			element: null,
 			container: null,
 			item: null
@@ -532,7 +619,7 @@ export default class WM {
 			// addEventListener, not .onload: callers assign that property themselves to
 			// hand the app its file.
 			frame.addEventListener('load', function () {
-				wm.bridgeInput(frame);
+				wm.bridgeInput(frame, id);
 			});
 		}
 
@@ -584,6 +671,37 @@ export default class WM {
 		return true;
 	}
 
+	// The dot on the title and the taskbar button. Returns true when it actually changed,
+	// so callers can skip the redraw an app that reports on every keystroke would cause.
+	setDirty (id, dirty) {
+		var record = this.windows.get(id);
+		if (!record || record.dirty === !!dirty) {
+			return false;
+		}
+		record.dirty = !!dirty;
+		if (record.item && typeof record.item.setTitle === 'function') {
+			record.item.setTitle(this.decorateTitle(record));
+		}
+		this.emit('changed');
+		return true;
+	}
+
+	decorateTitle (record) {
+		return (record.dirty ? '\u25cf ' : '') + record.title;
+	}
+
+	// Every window with unsaved work, for the thing that has to ask "is it safe to close".
+	listDirty () {
+		var _this = this;
+		return Array.from(this.windows.values())
+			.filter(function (record) {
+				return record.dirty;
+			})
+			.map(function (record) {
+				return _this.describe(record.id);
+			});
+	}
+
 	setTitle (id, title) {
 		var record = this.windows.get(id);
 		if (!record) {
@@ -591,7 +709,7 @@ export default class WM {
 		}
 		record.title = title;
 		if (record.item && typeof record.item.setTitle === 'function') {
-			record.item.setTitle(title);
+			record.item.setTitle(this.decorateTitle(record));
 		}
 		this.emit('changed');
 		return true;
@@ -599,6 +717,10 @@ export default class WM {
 
 	getWindow (id) {
 		return this.describe(id);
+	}
+
+	getActiveWindow () {
+		return this.activeWindowId === null ? null : this.describe(this.activeWindowId);
 	}
 
 	// No argument lists every window; a workspace id narrows it to that desktop.
@@ -639,6 +761,7 @@ export default class WM {
 			path: record.path,
 			launch: record.launch,
 			workspace: record.workspace,
+			dirty: !!record.dirty,
 			active: this.activeWindowId === record.id
 		};
 	}
@@ -689,6 +812,15 @@ export default class WM {
 				console.error('WM listener for "' + event + '" failed', err);
 			}
 		});
+	}
+}
+
+function frameDocument (frame) {
+	try {
+		return frame.contentDocument;
+	}
+	catch (crossOrigin) {
+		return null;
 	}
 }
 

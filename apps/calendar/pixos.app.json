@@ -1,0 +1,25 @@
+{
+  "id": "calendar",
+  "name": "Calendar",
+  "version": "1.0.1",
+  "entryPath": "/apps/calendar/index.html",
+  "files": [
+    {
+      "path": "/apps/calendar/favicon.svg",
+      "hash": "sha256:81744052ca51fe768512a4cbb9a218790d385b7c78e4e79c6ab4be5a73f7b630"
+    },
+    {
+      "path": "/apps/calendar/index.html",
+      "hash": "sha256:1b101e5dc6cb45135ae431accd15f7d6e21d8d3bc345c8472cc051219e008d64"
+    },
+    {
+      "path": "/apps/calendar/js/calendar.js",
+      "hash": "sha256:9de9b68889cbc557fa8d34d9f3e559996c8d79e74be2c4fbd1c1f310fa5574fb"
+    },
+    {
+      "path": "/apps/calendar/pixos.app.json",
+      "hash": "sha256:848abd91967404f5e22a9ac5857b7f19a92b023e501db188d34e461dfa5329be"
+    }
+  ],
+  "icon": "/apps/calendar/favicon.svg"
+}

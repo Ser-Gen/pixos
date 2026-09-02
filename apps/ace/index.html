@@ -51,13 +51,69 @@
 		wrap: "free",
 		wrapMethod: 'auto',
 	});
-function openFile (src) {
+function openFile (src, fileName) {
 	path = src;
+	name = fileName || name;
 
 	fetch(path).then(r=>r.text()).then(text => {
+		loading = true;
 		editor.setValue(text);
+		editor.clearSelection();
+		loading = false;
+		markClean();
 	});
 }
+
+// The save contract.
+//
+// ace used to save on Ctrl+S and nowhere else, while monaco -- the other editor for the
+// same files -- saved on every keystroke. Which of your edits survived closing the tab
+// depended on which editor you happened to open, and nothing on screen said which one you
+// were in. Both autosave now, and both report whether there is anything outstanding, so
+// the window shows a dot and the browser only argues about closing when there is a reason.
+//
+// Ctrl+S still works and still means "now, not in a moment". It is not the only thing
+// standing between you and losing an hour any more.
+var SAVE_DELAY = 700;
+var saveTimer = null;
+var loading = false;
+
+function markDirtyState (dirty) {
+	if (typeof markDirty === 'function') {
+		markDirty(dirty);
+	}
+}
+
+function markClean () {
+	markDirtyState(false);
+}
+
+function saveNow () {
+	clearTimeout(saveTimer);
+	saveTimer = null;
+	if (handler) {
+		Promise.resolve(parent.saveFile(handler, editor.getValue())).then(markClean, function () {});
+		return;
+	}
+	if (!path) {
+		return;
+	}
+	Promise.resolve(parent.saveFileLocal(path, editor.getValue(), name, type))
+		.then(markClean, function () {
+			// The shell raises the card; the dot staying put is what says it is still
+			// unsaved, which is the whole point of reporting it.
+		});
+}
+
+editor.on('change', function () {
+	// setValue() while opening a file is not an edit.
+	if (loading) {
+		return;
+	}
+	markDirtyState(true);
+	clearTimeout(saveTimer);
+	saveTimer = setTimeout(saveNow, SAVE_DELAY);
+});
 
 addEventListener('keydown', function (e) {
 	if (
@@ -68,13 +124,7 @@ addEventListener('keydown', function (e) {
 		&& e.keyCode === 83
 	) {
 		e.preventDefault();
-
-		if (handler) {
-			parent.saveFile(handler, editor.getValue());
-		}
-		else {
-			parent.saveFileLocal(path, editor.getValue(), name, type);
-		}
+		saveNow();
 	}
 });
 

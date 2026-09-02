@@ -92,6 +92,56 @@
 		});
 	}
 
+	function fsIsDirectory (dirPath) {
+		return new Promise(function (resolve) {
+			getFs().stat(dirPath, function (err, stats) {
+				resolve(!err && !!stats && typeof stats.isDirectory === 'function' && stats.isDirectory());
+			});
+		});
+	}
+
+	function fsUnlink (filePath) {
+		return new Promise(function (resolve, reject) {
+			getFs().unlink(filePath, function (err) {
+				if (err) {
+					reject(err);
+				}
+				else {
+					resolve();
+				}
+			});
+		});
+	}
+
+	function fsRmdir (dirPath) {
+		return new Promise(function (resolve, reject) {
+			getFs().rmdir(dirPath, function (err) {
+				if (err) {
+					reject(err);
+				}
+				else {
+					resolve();
+				}
+			});
+		});
+	}
+
+	// Depth first, because BrowserFS has no recursive remove and rmdir refuses a folder
+	// with anything in it.
+	async function removeTree (targetPath) {
+		if (await fsIsDirectory(targetPath)) {
+			var entries = await fsReaddir(targetPath);
+			for (var i = 0; i < entries.length; i++) {
+				await removeTree(getPath().join(targetPath, entries[i]));
+			}
+			await fsRmdir(targetPath);
+			return;
+		}
+		if (await fsStat(targetPath)) {
+			await fsUnlink(targetPath);
+		}
+	}
+
 	function normalizeManifest (raw, defaults) {
 		if (!raw || !raw.id) {
 			return null;
@@ -123,6 +173,8 @@
 			version: raw.version || '1.0.0',
 			entryPath: raw.entryPath || (defaults && defaults.entryPath) || null,
 			icon: raw.icon || (defaults && defaults.icon) || null,
+			needsNetwork: !!raw.needsNetwork,
+			autosave: !!raw.autosave,
 			files: files,
 			supportedExtensions: supportedExtensions,
 			supportedMimeTypes: Array.isArray(raw.supportedMimeTypes) ? raw.supportedMimeTypes.slice() : [],
@@ -320,6 +372,9 @@
 					supportedExtensions: manifest ? manifest.supportedExtensions : [],
 					supportedMimeTypes: manifest ? manifest.supportedMimeTypes : [],
 					supportsText: manifest ? manifest.supportsText : false,
+					needsNetwork: !!(manifest && manifest.needsNetwork),
+				autosave: !!(manifest && manifest.autosave),
+					autosave: !!(manifest && manifest.autosave),
 					manifestPath: hasManifest ? manifestPath : null,
 					localStatus: 'broken',
 					status: 'broken'
@@ -340,6 +395,10 @@
 				supportedExtensions: manifest ? manifest.supportedExtensions : [],
 				supportedMimeTypes: manifest ? manifest.supportedMimeTypes : [],
 				supportsText: manifest ? manifest.supportsText : false,
+				// The third place a manifest field has to be listed by hand. Leaving it out
+				// here means the shell sees the flag on a *catalog* app and not on the
+				// installed copy -- which is every app you actually run.
+				needsNetwork: !!(manifest && manifest.needsNetwork),
 				manifestPath: hasManifest ? manifestPath : null,
 				localStatus: 'active',
 				status: 'active'
@@ -363,6 +422,10 @@
 			// shell asks for `name`, and this record is the only thing it ever sees.
 			name: manifest.name || manifest.id,
 			icon: manifest.icon || null,
+			// Enumerated, like every other field here -- this record is all the shell ever
+			// sees of a manifest, and a field left out of this list silently does not exist.
+			needsNetwork: !!manifest.needsNetwork,
+			autosave: !!manifest.autosave,
 			version: manifest.version || '1.0.0',
 			entryPath: manifest.entryPath,
 			files: manifest.files || [],
@@ -560,6 +623,11 @@
 					source: 'local',
 					installed: true,
 					version: app.version,
+					// The fourth place this field has to be named by hand, and the second
+					// one to have dropped it silently. These records are `window.apps`,
+					// which is what the shell reads before launching anything.
+					needsNetwork: !!app.needsNetwork,
+					autosave: !!app.autosave,
 					supportedExtensions: seededLocal.length ? seededLocal : null,
 					supportStatus: seededLocal.length || !hasSupportFile ? 'ready' : 'idle',
 					localStatus: app.localStatus
@@ -575,6 +643,7 @@
 				id: app.id,
 				source: 'catalog',
 				installed: true,
+				needsNetwork: !!app.needsNetwork,
 				version: state && state.installedVersion ? state.installedVersion : app.version,
 				installedVersion: state && state.installedVersion ? state.installedVersion : null,
 				supportedExtensions: seeded.length ? seeded : null,
@@ -693,6 +762,58 @@
 			id: appId,
 			name: app.label,
 			version: app.version
+		};
+	}
+
+	// Which folder an app occupies. Not `dirname(entryPath)` -- an entry point one level
+	// down would make that a *subfolder*, and this deletes what it is given. Always
+	// /apps/<one segment>, and anything else is refused rather than guessed at.
+	function appFolderFor (app) {
+		var entry = String((app && app.entryPath) || '');
+		var match = /^\/apps\/([^/]+)\//.exec(entry);
+		return match ? '/apps/' + match[1] : null;
+	}
+
+	// The counterpart to installAppById, and the thing App Manager had no button for: the
+	// only way to remove an app was to delete its folder in Explorer, which left the
+	// registry believing it was still there until the next Rescan -- an app that had
+	// stopped working and could not be got rid of.
+	//
+	// What it deliberately does not touch is /settings/preinstalled.json. That file
+	// records what preinstall has already done, and the rule is that anything it put there
+	// and the user then removed stays removed; clearing the record here would put the app
+	// back on the next boot, which is the opposite of what was asked for.
+	async function uninstallAppById (appId) {
+		if (RESERVED_IDS.indexOf(appId) > -1) {
+			throw new Error(appId + ' is part of PixOS itself and cannot be uninstalled');
+		}
+		var app = getApp(appId) || getCatalogApp(appId);
+		if (!app) {
+			throw new Error('Unknown app: ' + appId);
+		}
+		var folder = appFolderFor(app);
+		if (!folder) {
+			throw new Error('Cannot tell which folder ' + appId + ' occupies, so nothing '
+				+ 'was removed. Delete it in Explorer and press Rescan apps.');
+		}
+
+		await removeTree(folder);
+		await removeTree(installedStatePath(appId));
+		delete installedStateCache[appId];
+
+		// An association pointing at an app that is gone turns "open this file" into a
+		// window that cannot load. Dropped rather than kept for a possible reinstall: the
+		// file opens through the chooser again, which is a question, not a failure.
+		if (typeof deps.updateDefaultAppAssociations === 'function') {
+			await deps.updateDefaultAppAssociations(appId, null);
+		}
+
+		await buildAppRegistry();
+
+		return {
+			id: appId,
+			name: app.label || app.name || appId,
+			folder: folder
 		};
 	}
 
@@ -858,6 +979,7 @@
 		getManagerApps: getManagerApps,
 		scanInstalledApps: scanInstalledApps,
 		installAppById: installAppById,
+		uninstallAppById: uninstallAppById,
 		checkAppUpdate: checkAppUpdate,
 		detectLocalModifications: detectLocalModifications,
 		updateAppById: updateAppById,

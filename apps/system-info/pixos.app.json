@@ -1,0 +1,25 @@
+{
+  "id": "system-info",
+  "name": "System Info",
+  "version": "1.0.0",
+  "entryPath": "/apps/system-info/index.html",
+  "files": [
+    {
+      "path": "/apps/system-info/favicon.svg",
+      "hash": "sha256:d497968f63ad5c89841b167b9b7b0ffc5ef847704de22baef9e2f5839918b5dd"
+    },
+    {
+      "path": "/apps/system-info/index.html",
+      "hash": "sha256:ca7a3cc302a0ee2a1d294415de321882312a08b99b2d957c056e43e8d656f791"
+    },
+    {
+      "path": "/apps/system-info/js/probe.js",
+      "hash": "sha256:3d6fdec397a69339bf860e601a939ed58845c2699d7376f31fd9b708349ad351"
+    },
+    {
+      "path": "/apps/system-info/pixos.app.json",
+      "hash": "sha256:48c5c0d2b6ab00cd437626dcb31a09efd5ecc6cbe3ea7211df8c575eeec04843"
+    }
+  ],
+  "icon": "/apps/system-info/favicon.svg"
+}
