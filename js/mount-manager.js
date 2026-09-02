@@ -254,6 +254,43 @@
 		});
 	};
 
+	// A folder on another machine. Unlike every other mount here, the filesystem object is
+	// built by the caller -- `js/shell/peer-fs.js` -- because it needs the peer session to
+	// talk over and this module knows nothing about connections. What it does own is the
+	// same thing it owns for the others: the mount point, the record, and telling the
+	// service worker that the shape of the filesystem changed.
+	MountManager.prototype.mountPeer = function (peerFs, mountPoint, name, cb) {
+		var self = this;
+		var beginErr = self._beginMount(mountPoint, cb);
+		if (beginErr !== null) return;
+		if (!peerFs || typeof peerFs.readdir !== 'function') {
+			self._finishMount(mountPoint);
+			return cb(new Error('A peer filesystem was not supplied'));
+		}
+		self._ensureMntDir(mountPoint, function (dirErr) {
+			if (dirErr) {
+				self._finishMount(mountPoint);
+				return cb(dirErr);
+			}
+			try {
+				self._getRootFS().mount(mountPoint, peerFs);
+				self._mounts[mountPoint] = {
+					type: 'peer',
+					name: name || 'peer',
+					// Phase 17 is read-only, and the record says so: Explorer reads this
+					// to decide what to offer on a mounted folder.
+					readOnly: true
+				};
+				self._notifySW();
+				self._finishMount(mountPoint);
+				cb(null);
+			} catch (e) {
+				self._finishMount(mountPoint);
+				cb(e);
+			}
+		});
+	};
+
 	MountManager.prototype.umount = function (mountPoint) {
 		if (!this._mounts[mountPoint]) {
 			throw new Error('Mount point ' + mountPoint + ' is not managed by MountManager');

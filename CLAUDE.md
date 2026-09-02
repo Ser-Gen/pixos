@@ -16,8 +16,10 @@ run in iframes. Pure static site — no build step, no backend.
   overlay, `file-search.js` the tree walk behind it, `open-with.js` the chooser for a
   file with no default app, `bookmarks.js` the shell's half of `/settings/links.json`,
   `session.js` desktops/windows persistence, `tabs.js` (which tab may write the settings),
-  `fullscreen.js`, `app-icons.js`, `context-menu.js`. `js/goldenlayout/` holds only the
-  vendor bundle now.
+  `peers.js` the connection to another PixOS + `peers-panel.js` its one surface +
+  `peer-fs.js` a shared folder as a BrowserFS backend,
+  `fullscreen.js`, `app-icons.js`, `context-menu.js`. `js/goldenlayout/` and `js/peerjs/`
+  hold only vendor bundles.
 - `js/app-registry.js` — install / update / scan apps. `js/mount-manager.js` — zip, iso,
   native-dir and files3 mounts.
 - `apps/7z/` — not an app: the archive engine Explorer uses. `js/parse.js` is pure (which
@@ -43,7 +45,7 @@ run in iframes. Pure static site — no build step, no backend.
   scheduled goes there, including things deliberately rejected and why. Read it before
   proposing work; move an item into a plan rather than copying it.
 - `docs/ux-improvements-plan.md` (phases 1–5, built) and `docs/reliability-plan.md`
-  (phases 6–15, all built) are the scheduled work, each phase with a browser
+  (phases 6–17, all built) are the scheduled work, each phase with a browser
   checklist beside it (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
 
@@ -437,6 +439,42 @@ cost is that such a frame gets no cookies: a site you are signed in to renders s
 widget, `apps/markdown-viewer/js/markdown.js` for the app. An app is installed *into*
 BrowserFS and must be self-contained, so the shell cannot share a module with one. Both
 copies are covered by `npm test`; if you change the accepted syntax, change both.
+
+**Another machine is a session, and the wire is a closed list.** `js/shell/peers.js` owns
+the connection — not Explorer, because a shared folder is a *mount*, a call is not a file
+manager's business and a phone driving this machine is not either; apps get only
+`window.peers.list()` / `.sendFile()` / `.open()`, never connect or identity. Five things
+are load-bearing. `parseMessage` accepts exactly nine message types and returns null for
+everything else, bounding every field it does accept: what arrives was written by someone
+else's machine, and the share this replaces took an HTML document over the wire and
+`new Function`'d it. An incoming file is a **question** (a note with Accept/Refuse) that
+lands in `/home/received` and never on top of an existing name — `fileName()` keeps only
+the last path segment, `cleanName()` strips control characters before a peer's own name is
+drawn in the panel that reports on it. The **id is stable** (`/settings/peers.json`) so a
+reconnect needs no fresh link, which also makes it a stable identifier — hence shown,
+copyable and resettable. **One tab holds the connection**, because a peer id registers with
+a broker once; a follower says so. And **vendoring PeerJS did not remove the broker**: WebRTC
+needs an introducer, by default the PeerJS cloud, so the host is configurable for a LAN
+`peerjs-server` and the panel names whichever is in use. Explorer's old *Share* is
+untouched and is replaced by the peer mount later.
+
+**A shared folder is a mount, and one function is the boundary.** `mount-manager.js` gains
+`mountPeer`; the filesystem object comes from `js/shell/peer-fs.js` because it needs the
+peer session to talk over. Once the folder is a mount, Explorer, the palette, the apps and
+`sw.js` all reach it without knowing peers exist — that is the whole reason it is not a
+window with a file list in it. Four things are load-bearing. `resolveShared(root, path)` in
+`peers.js` normalises `..`, backslashes and control characters and refuses anything landing
+outside the root; a path from the wire is always *relative to the share*, sharing `/` is
+refused, and a refused path gets **the same answer as an ungranted peer** so probing learns
+nothing. The **host approves every mount** (a note with *Let them* / *No*) and the grant
+lives for the connection, written nowhere. The backend is a **plain object, not a
+subclass** — the vendored BrowserFS exports no base class, so the interface it implements
+(`readdir`, `stat(path, isLstat, cb)`, `readFile(path, encoding, flag, cb)`, `exists`,
+`realpath`, plus the metadata answers) was established by experiment; `supportsSynch()` is
+false because there is no synchronous way to ask another machine anything. And **latency is
+designed for**: every call has a deadline, listings and stats are cached 4 s (Explorer stats
+every row it draws), file contents never are, and a read is capped at 32 MB because it
+crosses in one message.
 
 **Two kinds of app.** *Catalog* apps live in `apps/`, are discovered via `registry.json`, and
 must be installed (copied into BrowserFS). *Local* apps are folders the user creates under

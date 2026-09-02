@@ -563,7 +563,12 @@
 
 <script src="../jszip.3.10.1.min.js"></script>
 <script src="../file-type.19.0.0.js"></script>
-<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<!-- Served by PixOS itself rather than by unpkg: this app is an iframe on the shell's own
+     origin, so an absolute path reaches the same file index.html loads. Sharing used to be
+     dead on an offline boot because of this one tag. The *guest* half below is still on a
+     CDN, because the page it sends runs from a data: URL with no origin of its own to
+     resolve against -- that whole design is replaced by the peer mount in a later phase. -->
+<script src="/js/peerjs/peerjs.min.js"></script>
 <script type="module">
 // Only the rules -- which files are archives, what 7-Zip's output means. The engine
 // itself is 1.4 MB of WebAssembly and is loaded on the first extraction, not here.
@@ -3159,6 +3164,42 @@ async function openExplorer () {
 			[{label: 'Open ' + folder, run: function () { navigateTo(destPath); }}]);
 	}
 
+	// The shell owns the connection; this only asks who is on it. A submenu rather than a
+	// dialog because the answer is a short list of names, and disabled with the reason
+	// when it is empty -- an entry that opens an empty picker is the dead end this whole
+	// pattern keeps having to undo.
+	function sendToPeerMenu (filePath) {
+		var connected = (parent !== window && parent.peers && parent.peers.list)
+			? parent.peers.list()
+			: null;
+		if (!connected) {
+			return {label: 'Send to peer', disabled: true};
+		}
+		if (!connected.length) {
+			return {
+				label: 'Send to peer — nobody connected',
+				action: function () { parent.peers.open(); }
+			};
+		}
+		return {
+			label: 'Send to peer',
+			submenu: connected.map(function (peer) {
+				return {
+					label: peer.name,
+					action: function () {
+						Promise.resolve(parent.peers.sendFile(peer.id, filePath)).then(function () {
+							report('Offered ' + getNameByPath(filePath) + ' to ' + peer.name,
+								'They have to accept it before anything is sent.', 'info');
+						}, function (err) {
+							report('Could not send ' + getNameByPath(filePath),
+								(err && err.message) || String(err));
+						});
+					}
+				};
+			})
+		};
+	}
+
 	function getRowMenuItems (path) {
 		var selected = getSelectedItems();
 		if (selected.length > 1) {
@@ -3189,6 +3230,15 @@ async function openExplorer () {
 					{label: 'Add Online File', action: actions.addOnlineFile}
 				]}
 			];
+			// The shell holds which folder is shared, because it is the shell that answers
+			// when somebody asks to open it. Explorer only offers the folder.
+			if (parent !== window && parent.peers && parent.peers.share) {
+				var shared = parent.peers.getShare();
+				dirMenuItems.push({separator: true});
+				dirMenuItems.push(shared === item.path
+					? {label: 'Stop sharing with peers', action: function () { actions.stopSharing(); }}
+					: {label: 'Share with peers…', action: function () { actions.shareWithPeers(item.path); }});
+			}
 			// Only under the shell: it is the shell that owns the bookmarks document.
 			if (typeof parent.addBookmark === 'function') {
 				dirMenuItems.push({separator: true});
@@ -3216,6 +3266,7 @@ async function openExplorer () {
 			// Top level rather than in Tools, unlike *Extract…*: compressing applies to
 			// anything, extracting only to an archive.
 			{label: 'Compress…', action: function () { actions.compress(item.path); }},
+			sendToPeerMenu(item.path),
 			{label: 'Rename', action: function () { actions.rename(item.path); }},
 			{label: 'Download', action: actions.downloadSelected},
 			{label: 'Delete', action: actions.deleteSelected},
@@ -4214,9 +4265,38 @@ async function openExplorer () {
 			renderToolbarState();
 		},
 
+		// One folder at a time, on purpose: every extra root is another boundary to get
+		// right, and the panel can only honestly report a list it can show.
+		shareWithPeers: function (dirPath) {
+			try {
+				parent.peers.share(dirPath);
+				report('Sharing ' + getNameByPath(dirPath),
+					'A connected peer can ask to open it, and you answer. They can read '
+					+ 'everything in it and nothing outside it, and they cannot write.',
+					'info', [{label: 'Show the Peers panel', run: function () { parent.peers.open(); }}]);
+				refreshCurrentDir(false);
+			}
+			catch (err) {
+				report('Could not share that folder', (err && err.message) || String(err));
+			}
+		},
+
+		stopSharing: function () {
+			parent.peers.share(null);
+			report('Stopped sharing', 'Anyone who had it open has been told, and their '
+				+ 'copy of the folder is gone.', 'info');
+			refreshCurrentDir(false);
+		},
+
 		shareFiles: async function () {
 			if (typeof Peer === 'undefined') {
-				openInfoDialog('Share', 'PeerJS library is not loaded');
+				// It ships with PixOS now, so this is a broken install rather than a
+				// network problem -- and saying which is the whole difference between a
+				// message you can act on and one you cannot.
+				report('Sharing is unavailable', 'The peer library did not load. It is part '
+					+ 'of PixOS (js/peerjs) rather than something fetched from the internet, '
+					+ 'so this means the page was served incompletely — reload the tab.',
+					'warn');
 				return;
 			}
 			var sharePath = normalizePath(state.cwd);

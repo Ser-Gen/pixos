@@ -1,17 +1,17 @@
 {
-  "id": "explorer",
-  "name": "Explorer",
-  "version": "1.6.0",
-  "entryPath": "/apps/explorer/index.html",
-  "files": [
-    {
-      "path": "/apps/explorer/favicon.svg",
-      "hash": "sha256:7c2c881ed9bca57362d361225e0ca7eab227686528cad2de8771d5461d114fa3"
-    },
-    {
-      "path": "/apps/explorer/index.html",
-      "hash": "sha256:26843d79af8176068b5180ffb5c3f252f3f2526c86ac9236f5944592f85f1ebe"
-    }
-  ],
-  "icon": "/apps/explorer/favicon.svg"
+	"id": "explorer",
+	"name": "Explorer",
+	"version": "1.8.0",
+	"entryPath": "/apps/explorer/index.html",
+	"files": [
+		{
+			"path": "/apps/explorer/favicon.svg",
+			"hash": "sha256:7c2c881ed9bca57362d361225e0ca7eab227686528cad2de8771d5461d114fa3"
+		},
+		{
+			"path": "/apps/explorer/index.html",
+			"hash": "sha256:b2f35a6f5e658bf39b6ee6a9f0dc866333c3d5c4668254f46c11f6d92bddd637"
+		}
+	],
+	"icon": "/apps/explorer/favicon.svg"
 }

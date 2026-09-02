@@ -571,6 +571,17 @@ function buildTray () {
 	elements.battery.className = 'PixTray__item';
 	elements.battery.innerHTML = '<span class="PixTray__meter"><span class="PixTray__meterFill"></span></span><span></span>';
 
+	// Only ever drawn while somebody is connected to this machine. That is the point of
+	// it: an open channel to another computer must be visible from wherever you are, not
+	// only inside the panel that opened it.
+	elements.peers = document.createElement('div');
+	elements.peers.className = 'PixTray__item PixTray__item--open PixTray__item--hidden';
+	elements.peers.onclick = function () {
+		if (options.onPeers) {
+			options.onPeers();
+		}
+	};
+
 	elements.clock = document.createElement('div');
 	elements.clock.className = 'PixTray__item PixTray__clock';
 
@@ -579,7 +590,8 @@ function buildTray () {
 	elements.network.className = 'PixTray__item PixTray__offline PixTray__item--hidden';
 	elements.network.textContent = 'Offline';
 
-	tray.append(elements.network, elements.storage, elements.battery, elements.clock);
+	tray.append(elements.network, elements.peers, elements.storage, elements.battery,
+		elements.clock);
 
 	// The same destinations as the desktop widgets, and deliberately the same handler:
 	// widgets.openHandler ends a peek and reports a failure through window.notify, and
@@ -615,6 +627,24 @@ function openFromTray (element, widgetId) {
 // destination would have thrown away the one thing the tray is for.
 function trayTitle (element, text) {
 	element.title = element.dataset.opens ? text + ' — ' + element.dataset.opens : text;
+}
+
+// Called by the shell whenever the peer session changes. The count, not the detail: the
+// panel is one click away and is where "who, and how well" belongs.
+export function setPeers (state) {
+	if (!elements.peers) {
+		return;
+	}
+	var links = (state && state.links) || [];
+	elements.peers.classList.toggle('PixTray__item--hidden', !links.length);
+	if (!links.length) {
+		return;
+	}
+	elements.peers.textContent = '⇄ ' + links.length;
+	elements.peers.title = links.map(function (link) {
+		return link.name + ' — ' + (link.ping === null || link.ping === undefined
+			? 'measuring latency' : Math.round(link.ping) + ' ms');
+	}).join('\n') + '\n\nOpen the Peers panel';
 }
 
 function renderTray (state) {

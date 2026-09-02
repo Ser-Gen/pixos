@@ -36,6 +36,11 @@
 <script src="js/app-registry.js"></script>
 
 <script src="js/goldenlayout/goldenlayout.min.js"></script>
+<!-- PeerJS, vendored: it was loaded from unpkg, which made every peer feature dead on an
+     offline boot with nothing on screen saying why. It is an IIFE that sets window.Peer,
+     not a module, so it cannot be imported -- js/shell/peers.js reads the global and says
+     so when it is missing. See js/peerjs/README.md. -->
+<script src="js/peerjs/peerjs.min.js"></script>
 <link rel="stylesheet" href="js/goldenlayout/goldenlayout-base.css">
 <link rel="stylesheet" href="js/goldenlayout/goldenlayout-dark-theme.css">
 <style>
@@ -224,6 +229,9 @@ import * as stats from "./js/shell/system-stats.js";
 import * as tabs from "./js/shell/tabs.js";
 import * as fullscreen from "./js/shell/fullscreen.js";
 import * as overview from "./js/shell/overview.js";
+import * as peers from "./js/shell/peers.js";
+import * as peersPanel from "./js/shell/peers-panel.js";
+import * as peerFs from "./js/shell/peer-fs.js";
 import * as fileSearch from "./js/shell/file-search.js";
 import * as openWith from "./js/shell/open-with.js";
 import * as bookmarks from "./js/shell/bookmarks.js";
@@ -1178,6 +1186,155 @@ function fsOnInit () {
 			getApp: getLaunchableApp
 		});
 
+		// One connection to another PixOS, and the one place that says who is on it. The
+		// shell owns this rather than Explorer because a shared folder is a mount, a call
+		// is not a file manager's business, and a phone driving this machine is not
+		// either -- Explorer is one caller among several to come.
+		peers.init({
+			read: function () {
+				return readJsonFile(peers.SETTINGS_PATH, null);
+			},
+			write: function (data) {
+				return writeFilePromise(peers.SETTINGS_PATH, Buffer.from(JSON.stringify(data, null, 2)));
+			},
+			// A peer id can only be registered with a broker once, so the tab that owns
+			// the session owns the connection too. A second tab watches.
+			canWrite: tabs.isOwner,
+			readFile: function (filePath) {
+				return new Promise(function (resolve, reject) {
+					window.fs.readFile(filePath, function (err, buffer) {
+						if (err) {
+							reject(err);
+						}
+						else {
+							resolve(buffer);
+						}
+					});
+				});
+			},
+			readdir: function (dirPath) {
+				return new Promise(function (resolve, reject) {
+					window.fs.readdir(dirPath, function (err, list) {
+						if (err) {
+							reject(err);
+						}
+						else {
+							resolve(list || []);
+						}
+					});
+				});
+			},
+			stat: function (filePath) {
+				return new Promise(function (resolve, reject) {
+					window.fs.stat(filePath, function (err, stats) {
+						if (err) {
+							reject(err);
+						}
+						else {
+							resolve(stats);
+						}
+					});
+				});
+			},
+			// Mounting a folder is a bigger question than accepting one file, and it is
+			// asked the same way: a note naming who and which folder, with Accept and
+			// Refuse. Holding a peer id gets you as far as asking.
+			askMount: function (request) {
+				return new Promise(function (resolve) {
+					var decided = false;
+					var answer = function (accepted) {
+						if (!decided) {
+							decided = true;
+							resolve(accepted);
+						}
+					};
+					notifications.notify({
+						level: 'warn',
+						title: request.from + ' wants to open a folder you shared',
+						message: request.folder + ' — they would be able to read everything '
+							+ 'in it and everything under it, until you stop sharing or they '
+							+ 'disconnect. They cannot write.',
+						source: 'PixOS',
+						actions: [
+							{label: 'Let them', run: function () { answer(true); }},
+							{label: 'No', run: function () { answer(false); }}
+						]
+					});
+				});
+			},
+			// The far side stopped sharing, or the connection went. Either way the mount
+			// is now a folder whose every call fails, which is worse than no folder.
+			onUnshare: function (peerId) {
+				unmountPeer(peerId);
+			},
+			// An incoming file is a question with a name and a size on it, never an
+			// event: a peer that can write into this filesystem because you once pressed
+			// Connect is not a peer, it is an intruder.
+			ask: function (offer) {
+				return new Promise(function (resolve) {
+					var decided = false;
+					var answer = function (accepted) {
+						if (!decided) {
+							decided = true;
+							resolve(accepted);
+						}
+					};
+					notifications.notify({
+						level: 'warn',
+						title: offer.from + ' wants to send you a file',
+						message: offer.name + ' — ' + peers.formatBytes(offer.size)
+							+ '. It would be saved into ' + peers.INBOX + '.',
+						source: 'PixOS',
+						actions: [
+							{label: 'Accept', run: function () { answer(true); }},
+							{label: 'Refuse', run: function () { answer(false); }}
+						]
+					});
+				});
+			},
+			saveIncoming: async function (name, parts) {
+				await checkAndCreateDestinationPath(peers.INBOX);
+				var taken = await new Promise(function (resolve) {
+					window.fs.readdir(peers.INBOX, function (err, list) {
+						resolve(err ? [] : (list || []));
+					});
+				});
+				// Never on top of something already there -- not one of yours, and not an
+				// earlier file of the same name from somebody else.
+				var target = path.join(peers.INBOX, peers.freeName(name, taken));
+				await writeFilePromise(target, Buffer.concat(parts.map(function (part) {
+					return Buffer.from(part);
+				})));
+				return target;
+			},
+			onSaved: function (info) {
+				notifications.notify({
+					level: 'info',
+					title: 'Received ' + info.name,
+					message: 'From ' + info.from + ', saved as ' + info.path,
+					source: 'PixOS',
+					actions: [{label: 'Open it', run: function () { openFile(info.path); }}]
+				});
+			},
+			onFailed: function (info) {
+				notifications.notify({
+					level: 'error',
+					title: 'Could not save ' + info.name,
+					message: (info.error && info.error.message) || 'The write failed.',
+					source: 'PixOS'
+				});
+			}
+		});
+		peers.load();
+
+		peersPanel.init({
+			host: document.getElementById('overlays'),
+			onMount: function (peerId) {
+				return mountPeerFolder(peerId);
+			}
+		});
+
+
 		overview.init({
 			host: document.getElementById('overlays'),
 			wm: winManager,
@@ -1209,11 +1366,21 @@ function fsOnInit () {
 			onOverview: function () {
 				overview.toggle();
 			},
+			onPeers: function () {
+				peersPanel.toggle();
+			},
 			// Clicking a window button is a request to *see* that window, which is more
 			// than selecting its tab: revealWindow also ends a peek and brings the
 			// window's desktop forward.
 			onShowWindow: revealWindow,
 			onDesktopMenu: openDesktopContextMenu
+		});
+
+		// The tray is the only place an open connection is visible from every window, so
+		// it is fed from the session directly rather than polled. After taskbar.init, or
+		// the first state would arrive before there is anything to draw it into.
+		peers.subscribe(function (state) {
+			taskbar.setPeers(state);
 		});
 
 		window.addEventListener('keydown', onShellHotkey, true);
@@ -1423,6 +1590,20 @@ function fsOnInit () {
 				title: 'All windows',
 				subtitle: 'Every window on every desktop, with a number to press. Ctrl/Cmd+Shift+K',
 				run: function () { overview.open(); }
+			},
+			{
+				title: 'Peers',
+				// The subtitle is the reading, because "is anyone connected to my machine"
+				// is the question this command exists to answer and the palette can answer
+				// it without being opened.
+				subtitle: (function () {
+					var state = peers.snapshot();
+					return state.links.length
+						? state.links.length + (state.links.length === 1 ? ' machine is' : ' machines are')
+							+ ' connected to this one'
+						: 'Connect to another PixOS, and see who is connected to this one';
+				}()),
+				run: function () { peersPanel.open(); }
 			},
 			(function () {
 				var focused = winManager.getActiveWindow();
@@ -1815,6 +1996,103 @@ function fsOnInit () {
 	}
 
 }
+
+// --- somebody else's folder, mounted ------------------------------------------------------
+//
+// The point of a mount rather than a window with a file list in it: once it is a
+// filesystem, Explorer, the palette, the apps and the service worker all reach it without
+// being told about peers at all.
+
+var peerMounts = {};
+
+function peerMountPoint (peerId, name) {
+	// Named after the peer, not the folder: two peers may share folders with the same
+	// name, and the question you are answering when you look at /mnt is whose it is.
+	return '/mnt/' + (name || 'peer') + ' (' + peerId.replace(/^pixos-/, '').slice(0, 6) + ')';
+}
+
+async function mountPeerFolder (peerId) {
+	if (peerMounts[peerId]) {
+		return peerMounts[peerId];
+	}
+	var label = await peers.mountRequest(peerId);
+	var backend = peerFs.create({
+		name: label,
+		Stats: window.fs.Stats || BrowserFS.BFSRequire('fs').Stats,
+		call: function (op, filePath) {
+			return peers.fsCall(peerId, op, filePath);
+		}
+	});
+	var point = peerMountPoint(peerId, label);
+	await new Promise(function (resolve, reject) {
+		window.mountManager.mountPeer(backend, point, label, function (err) {
+			if (err) {
+				reject(err);
+			}
+			else {
+				resolve();
+			}
+		});
+	});
+	peerMounts[peerId] = point;
+	notifications.notify({
+		level: 'info',
+		title: 'Mounted ' + label,
+		message: 'It is at ' + point + ', read-only, for as long as they keep sharing it.',
+		source: 'PixOS',
+		actions: [{label: 'Open it', run: function () { openPath(point); }}]
+	});
+	return point;
+}
+
+function unmountPeer (peerId) {
+	var point = peerMounts[peerId];
+	if (!point) {
+		return;
+	}
+	delete peerMounts[peerId];
+	try {
+		window.mountManager.umount(point);
+	}
+	catch (err) {
+		// Already gone, which is the same outcome.
+	}
+	notifications.notify({
+		level: 'info',
+		title: 'That shared folder is gone',
+		message: point + ' is no longer mounted — they stopped sharing it, or the '
+			+ 'connection ended.',
+		source: 'PixOS'
+	});
+}
+
+// What an app may do with the peer session, and deliberately no more: see who is
+// connected and hand one of them a file. Connecting, disconnecting and the identity itself
+// are the shell's, because they are decisions about who may reach this machine and an app
+// is not the place those get made. Explorer is the first caller.
+window.peers = {
+	list: function () {
+		return peers.snapshot().links.filter(function (link) {
+			return link.state === 'open';
+		}).map(function (link) {
+			return {id: link.id, name: link.name, ping: link.ping};
+		});
+	},
+	sendFile: function (peerId, filePath) {
+		return peers.sendFile(peerId, filePath);
+	},
+	open: function () {
+		peersPanel.open();
+	},
+	// Sharing is a decision about this machine's files, so the *asking* is an app's and
+	// the answering is not: Explorer offers the folder, the shell holds which one it is.
+	share: function (filePath) {
+		return peers.setShare(filePath);
+	},
+	getShare: function () {
+		return peers.getShare();
+	}
+};
 
 window.openPath = openPath;
 window.openFile = openFile;
@@ -2607,6 +2885,7 @@ function buildDesktopMenu () {
 		},
 		{label: 'Search...', hint: 'Ctrl+K', action: function () { palette.open(); }},
 		{label: 'All windows', hint: 'Ctrl+Shift+K', action: function () { overview.open(); }},
+		{label: 'Peers...', action: function () { peersPanel.open(); }},
 		{separator: true},
 		{label: 'New Explorer', action: function () { openApp('explorer'); }},
 		{label: 'App Manager', action: function () { openApp('app-manager'); }},

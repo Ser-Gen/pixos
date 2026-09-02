@@ -59,6 +59,9 @@ check('the actions table was found and read', actionNames.size > 15, true);
 
 const menus = new Function('shell', `
 	var parent = shell.parent;
+	// Explorer is an iframe: comparing parent with window is how it asks whether a shell
+	// is there at all, and several menu entries turn on that answer.
+	var window = shell.window || {};
 	var navigator = {platform: 'MacIntel'};
 	var state = ${JSON.stringify({recording: false, selectedPaths: [], cwd: '/home'})};
 	state.selectedPaths = new Set(shell.selected.map(function (i) { return i.path; }));
@@ -73,6 +76,9 @@ const menus = new Function('shell', `
 	function isImageExtension (p) { return /\\.(png|jpg|jpeg|gif|webp)$/i.test(p); }
 	function hasInternalClipboard () { return false; }
 	${fn('getCurrentFolderItem')}
+	${fn('sendToPeerMenu')}
+	function getNameByPath (p) { return String(p).split('/').pop(); }
+	function report () {}
 	${fn('getRowMenuItems')}
 	${fn('getMultiMenuItems')}
 	${fn('getEmptyAreaMenuItems')}
@@ -100,12 +106,17 @@ const items = {'/home/notes.csv': FILE, '/home/shot.png': IMAGE, '/home/docs': D
 	'/home/holiday.tar.gz': ZIP};
 
 function build (selected, shellApi) {
+	var noShell = shellApi === null;
+	var stand = {};
 	return menus({
 		selected: selected,
 		items: items,
 		actions: actions,
 		archiveNames: archiveNames,
-		parent: shellApi || {}
+		// Passing null means "opened outside PixOS", where parent *is* window and every
+		// entry that needs the shell has to notice.
+		parent: noShell ? stand : (shellApi || {}),
+		window: noShell ? stand : {}
 	});
 }
 
@@ -259,5 +270,61 @@ check('when both refuse it reports failure rather than pretending',
 		fakeDocument(false)), false);
 check('and an execCommand that throws is a failure, not an exception',
 	await clipboard({}, fakeDocument(new Error('no'))), false);
+
+// --- sending a file to a connected peer -------------------------------------------------
+//
+// The shell owns the connection; Explorer only asks who is on it. An entry that opens an
+// empty picker is the dead end this project keeps having to undo, so with nobody connected
+// the entry says so and leads to the panel instead.
+
+function rowMenu (item, shellApi) {
+	return build([item], shellApi).getRowMenuItems(item.path);
+}
+
+const noPeers = rowMenu(FILE, {peers: {list: () => [], open: () => {}}});
+const withPeers = rowMenu(FILE, {peers: {
+	list: () => [{id: 'pixos-aaaaaaaa', name: 'Laptop'}, {id: 'pixos-bbbbbbbb', name: 'Phone'}],
+	sendFile: () => Promise.resolve(),
+	open: () => {}
+}});
+
+const entry = list => list.filter(row => row.label && row.label.indexOf('Send to peer') === 0)[0];
+
+check('with nobody connected the entry says so rather than opening an empty list',
+	entry(noPeers).label.includes('nobody connected'), true);
+check('and it leads somewhere anyway', typeof entry(noPeers).action, 'function');
+check('with peers connected it is a submenu of them', entry(withPeers).submenu.length, 2);
+check('named by the names they gave', entry(withPeers).submenu[0].label, 'Laptop');
+check('outside the shell entirely there is nothing to send to, and it is disabled',
+	entry(rowMenu(FILE, null)).disabled, true);
+
+// --- sharing a folder with peers ---------------------------------------------------------
+//
+// The shell holds which folder is shared, because it is the shell that answers when
+// somebody asks to open it. Explorer only offers the folder — and the entry has to say
+// which of the two things it will do, or "Share" on an already-shared folder is a button
+// whose meaning you have to remember.
+
+const peerApi = shared => ({
+	peers: {
+		share: () => {},
+		getShare: () => shared,
+		open: () => {},
+		list: () => [],
+		sendFile: () => {}
+	}
+});
+
+const sharedFolderMenu = shared => build([DIR], peerApi(shared)).getRowMenuItems('/home/docs');
+const shareEntry = list => list.filter(row => row.label && /shar/i.test(row.label))[0];
+
+check('an unshared folder is offered for sharing',
+	shareEntry(sharedFolderMenu(null)).label, 'Share with peers…');
+check('the folder that is already shared offers to stop',
+	shareEntry(sharedFolderMenu('/home/docs')).label, 'Stop sharing with peers');
+check('a different folder being shared does not change this one\'s entry',
+	shareEntry(sharedFolderMenu('/home/other')).label, 'Share with peers…');
+check('and outside the shell there is nobody to share with, so nothing is offered',
+	shareEntry(build([DIR], null).getRowMenuItems('/home/docs')), undefined);
 
 process.exit(report('explorer-menus') ? 1 : 0);
