@@ -1323,6 +1323,63 @@ function fsOnInit () {
 					message: (info.error && info.error.message) || 'The write failed.',
 					source: 'PixOS'
 				});
+			},
+			// A conversation is a file per peer, so the three things a file needs. It is
+			// deliberately *not* behind the tab-ownership gate: only the tab holding the
+			// connection can receive a message anyway, and deleting a conversation is the
+			// user acting on a document of their own, the way bookmarks are.
+			readChat: function (filePath) {
+				return readJsonFile(filePath, null);
+			},
+			writeChat: function (filePath, data) {
+				return new Promise(function (resolve, reject) {
+					writeFile(filePath, Buffer.from(JSON.stringify(data, null, 2)), function (err) {
+						if (err) {
+							reject(err);
+						}
+						else {
+							resolve();
+						}
+					});
+				});
+			},
+			removeChat: function (filePath) {
+				return new Promise(function (resolve, reject) {
+					window.fs.unlink(filePath, function (err) {
+						// Already gone is the outcome that was asked for.
+						if (err && err.code !== 'ENOENT') {
+							reject(err);
+						}
+						else {
+							resolve();
+						}
+					});
+				});
+			},
+			// Raised once per peer until you look at the conversation, never once per
+			// message. The source stays PixOS and the peer's name is *content*: a peer
+			// picks its own label, and a label of "PixOS" must not be able to borrow the
+			// system's voice.
+			onChat: function (info) {
+				notifications.notify({
+					level: 'info',
+					title: 'Message from ' + info.from,
+					message: info.text.length > 140 ? info.text.slice(0, 140) + '…' : info.text,
+					source: 'PixOS',
+					actions: [{
+						label: 'Open the conversation',
+						run: function () { peersPanel.openChat(info.id); }
+					}]
+				});
+			},
+			onChatFailed: function (err) {
+				notifications.notify({
+					level: 'warn',
+					title: 'The conversation is not being saved',
+					message: ((err && err.message) || 'The write failed.')
+						+ ' Messages still arrive, but they will be gone on reload.',
+					source: 'PixOS'
+				});
 			}
 		});
 		peers.load();

@@ -338,8 +338,137 @@ check('and says so when the file and the live connection disagree, rather than d
 	+ 'working connection on its own',
 	/brokerStale/.test(panel), true);
 
+// Phase 18 removed Explorer's own share, and these three checks are the whole reason it
+// was worth removing rather than leaving alone. It ran a second peer connection of its
+// own, and what it sent a guest was a page of HTML with a script in it that the guest's
+// browser evaluated — including `new Function(d.js)` on data straight off the wire. The
+// mount replaced all of it: Explorer now asks the shell which folder is shared, and the
+// only thing crossing the wire is the closed message list above.
 const explorer = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
-check('Explorer loads it from here too, which is what killed sharing offline',
-	/src="\/js\/peerjs\/peerjs\.min\.js"/.test(explorer), true);
+check('Explorer no longer opens a peer connection of its own',
+	/new Peer\s*\(/.test(explorer), false);
+check('and no longer builds a page for another machine to run',
+	/data:text\/html|new Function\(/.test(explorer), false);
+check('so it does not load the peer library at all — the shell owns the session',
+	/peerjs\.min\.js/.test(explorer), false);
+
+// --- a message ----------------------------------------------------------------------------
+//
+// Chat is the first thing on this connection that is *kept*, so it is the first thing a
+// peer could leave behind on your disk. Two rules carry that: what a message may be, and
+// whose clock it is stamped with.
+
+const BELL = String.fromCharCode(7);
+const ESCAPE = String.fromCharCode(27);
+const NEWLINE = String.fromCharCode(10);
+
+check('a message is text and nothing else',
+	peers.parseMessage({type: 'chat', text: 'hello', name: 'Not you', html: '<b>'}),
+	{type: 'chat', text: 'hello'});
+check('an empty message is not a message',
+	peers.parseMessage({type: 'chat', text: '   '}), null);
+check('nor is one that is not a string',
+	peers.parseMessage({type: 'chat', text: {toString: 1}}), null);
+check('somebody is typing carries nothing at all',
+	peers.parseMessage({type: 'chat-typing', text: 'x'}), {type: 'chat-typing'});
+
+check('a message loses the control characters that would let it draw over the panel',
+	peers.chatText('hi' + BELL + ESCAPE + '[31m there'), 'hi[31m there');
+check('but keeps the line break, because a message may be two lines',
+	peers.chatText('one' + NEWLINE + 'two'), 'one' + NEWLINE + 'two');
+check('fifty blank lines cannot scroll your conversation away',
+	peers.chatText('a' + NEWLINE.repeat(50) + 'b'), 'a' + NEWLINE + NEWLINE + 'b');
+check('and it is cut to length', peers.chatText('x'.repeat(5000)).length, 2000);
+check('whitespace alone is nothing to say', peers.chatText('  ' + NEWLINE + ' '), null);
+
+// The file a conversation is kept in is named after the id, so the id is the thing that
+// must not be able to name a file somewhere else.
+check('a conversation is a file named after the peer',
+	peers.chatPath('pixos-abcdefghij'), peers.CHAT_DIR + '/pixos-abcdefghij.json');
+check('and an id that is not one names no file at all',
+	peers.chatPath('pixos-../../settings/session'), null);
+check('nor does a missing one', peers.chatPath(undefined), null);
+
+// The sender does not get to say when. Two machines disagree about the time as a matter of
+// course, and a peer choosing its own could put its message at the top of your history.
+const stamped = peers.addChat([], peers.parseMessage({type: 'chat', text: 'hi', at: 5}));
+check('an arriving message is stamped with this machine\'s clock, never the sender\'s',
+	stamped[0].at > 1600000000000, true);
+check('and is filed as incoming unless it is one of yours', stamped[0].way, 'in');
+check('one of yours is filed as outgoing',
+	peers.addChat([], {text: 'hi', way: 'out'})[0].way, 'out');
+check('an empty message never reaches the log', peers.addChat([], {text: '  '}).length, 0);
+
+let long = [];
+for (let i = 0; i < 400; i++) {
+	long = peers.addChat(long, {text: 'm' + i, way: 'out'});
+}
+check('a conversation has an end, and it is the oldest that goes', long.length, 300);
+check('the newest is the one kept', long[long.length - 1].text, 'm399');
+
+// The log is a file, and a file can be edited into something that is not a log.
+check('a log that is not a log reads as an empty one', peers.chatFrom('nonsense'), []);
+check('so does one with no messages in it', peers.chatFrom({messages: 'all of them'}), []);
+check('entries with nothing to say are dropped rather than drawn as blanks',
+	peers.chatFrom({messages: [{text: ''}, {text: 'real'}]}).length, 1);
+check('a stored message keeps its own control-character rule',
+	peers.chatFrom({messages: [{text: 'a' + BELL + 'b'}]})[0].text, 'ab');
+check('and a way that is not one of the two becomes incoming',
+	peers.chatFrom({messages: [{text: 'x', way: 'sideways'}]})[0].way, 'in');
+
+check('typing is true only for as long as nobody said so again',
+	peers.isTyping(1000, 1000 + peers.TYPING_FOR - 1), true);
+check('and expires on its own, with no timer to forget to clear',
+	peers.isTyping(1000, 1000 + peers.TYPING_FOR), false);
+
+check('nothing here holds a message for a peer who is not connected',
+	/They are not connected[\s\S]{0,120}holds a message for later/.test(peersModule), true);
+check('and a note is raised once per peer rather than once per message',
+	/state\.noted = true;\s*deps\.onChat/.test(peersModule), true);
+check('a conversation on screen is read, which is what makes unread mean anything',
+	/export function readingChat/.test(peersModule), true);
+
+// The panel redraws every three seconds, because that is how often a ping lands. A composer
+// rebuilt on that schedule would take the focus, the caret and the half-typed line with it.
+check('the conversation is not part of what the panel rebuilds',
+	/body\.innerHTML = '';[\s\S]{0,200}refreshChat\(\)/.test(panel), true);
+check('and what is drawn of a message is its text, not its markup',
+	/text\.textContent = message\.text/.test(panel), true);
+check('a draft survives closing the conversation, and is never written down',
+	/drafts\[chatView\.id\] = chatView\.input\.value/.test(panel), true);
+
+const taskbarSource = fs.readFileSync(new URL('../js/shell/taskbar.js', import.meta.url), 'utf8');
+check('the tray counts unread across every conversation, not only the connected ones',
+	/state\.chats[\s\S]{0,200}chat\.unread/.test(taskbarSource), true);
+
+// The one part of the session that can be driven with no connection at all: a conversation
+// is read from a file, and what it does when that file is missing, unreadable or nonsense
+// is the difference between a panel that opens and one that does not.
+const written = [];
+const removed = [];
+peers.init({
+	readChat: async where => (where.indexOf('aaaaaaaaaa') === -1
+		? null
+		: {messages: [{text: 'said before', way: 'in', at: 1}]}),
+	writeChat: async (where, data) => { written.push([where, data]); },
+	removeChat: async where => { removed.push(where); }
+});
+
+const OLD = 'pixos-aaaaaaaaaa';
+const NEW = 'pixos-bbbbbbbbbb';
+check('a conversation is read from its file the first time it is asked for',
+	(await peers.loadChat(OLD)).map(m => m.text), ['said before']);
+check('a peer with no file yet has an empty conversation rather than an error',
+	await peers.loadChat(NEW), []);
+check('and reading it again does not go back to the file',
+	peers.chatOf(OLD).length, 1);
+check('nothing was written by reading', written.length, 0);
+
+await peers.deleteChat(OLD);
+check('deleting one deletes the file it lives in', removed, [peers.chatPath(OLD)]);
+check('and empties it here without waiting to be told again', peers.chatOf(OLD), []);
+
+check('a summary names the peer even when nothing is connected',
+	peers.chatSummary(NEW).id, NEW);
 
 process.exit(report('peers') ? 1 : 0);

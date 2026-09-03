@@ -57,8 +57,21 @@ export var MAX_READ = 32 * 1024 * 1024;
 // once already, which is why file-search races every read against a deadline.
 export var CALL_TIMEOUT = 20000;
 
+// A message is text and nothing else, and it is bounded like everything else that arrives
+// from another machine. 2 KB is a long message and a short essay; a peer that wants to
+// send you a document sends a file, where there is a question with a size on it.
+var MAX_CHAT_TEXT = 2000;
+// A conversation is kept, so it has to have an end. The oldest go first.
+var MAX_CHAT_LOG = 300;
+// How long a "typing" stays true without another one. Deliberately longer than the 3 s
+// ping that redraws the panel, so the line does not flicker between keystrokes.
+export var TYPING_FOR = 5000;
+
 export var SETTINGS_PATH = '/settings/peers.json';
 export var INBOX = '/home/received';
+// One file per peer, because a conversation is a document about one person: deleting it is
+// then deleting a file, and reading it in Explorer is reading a file.
+export var CHAT_DIR = '/settings/peer-chats';
 
 // --- identity ------------------------------------------------------------------------
 
@@ -223,6 +236,17 @@ export function parseMessage (raw) {
 			: null;
 	case 'file-done':
 		return token(raw.id) ? {type: 'file-done', id: token(raw.id)} : null;
+
+	// A message carries text and nothing else -- no id, no timestamp, no name. The name is
+	// the one from `hello` on this connection, and the time is this machine's clock: a
+	// sender that chooses its own could put its message at the top of your conversation,
+	// or in next week, and the first thing you would blame is your own history file.
+	case 'chat':
+		return chatText(raw.text) ? {type: 'chat', text: chatText(raw.text)} : null;
+	// The smallest message there is, and deliberately: "somebody is writing" is worth
+	// knowing and nothing about it is worth a field.
+	case 'chat-typing':
+		return {type: 'chat-typing'};
 
 	// A shared folder. The guest asks for whatever the host is sharing -- it never names a
 	// path, because naming one would make "which folder" a question the *guest* answers.
@@ -454,6 +478,81 @@ export function chunkPlan (size, chunkSize) {
 	return offsets;
 }
 
+// --- what a message is ------------------------------------------------------------------
+//
+// Text, and only text. It is drawn with `textContent` wherever it is drawn, so this is not
+// the escaping — that would be a single point of failure for something a stranger writes.
+// This is the *shape*: newlines survive because a message may be two lines, every other
+// control character does not, because those are what let a line pretend to be part of the
+// panel around it.
+
+export function chatText (value) {
+	if (typeof value !== 'string') {
+		return null;
+	}
+	// Split on the line break, strip the control characters from each line, put it back
+	// together: the newline survives because it is the separator rather than a character
+	// this has to make an exception for, and the class doing the stripping is the same
+	// tested one every other field from the wire goes through.
+	var text = value
+		.replace(/\r\n?/g, '\n')
+		.split('\n')
+		.map(function (line) {
+			return line.replace(CONTROL, '');
+		})
+		.join('\n')
+		.slice(0, MAX_CHAT_TEXT)
+		// A message that is fifty blank lines is a message that scrolls yours away.
+		.replace(/\n{3,}/g, '\n\n')
+		.trim();
+	return text || null;
+}
+
+export function chatPath (id) {
+	return isValidPeerId(id) ? CHAT_DIR + '/' + id + '.json' : null;
+}
+
+// A stored conversation is a file, and a file can be edited, truncated or replaced by
+// something that is not a conversation at all. Read as defensively as anything off the
+// wire: a log that will not parse becomes an empty one rather than an exception at boot.
+export function chatFrom (raw) {
+	var data = raw && typeof raw === 'object' ? raw : {};
+	var messages = Array.isArray(data.messages) ? data.messages : [];
+	var out = [];
+	messages.forEach(function (entry) {
+		var text = entry && chatText(entry.text);
+		if (!text) {
+			return;
+		}
+		out.push({
+			at: typeof entry.at === 'number' && isFinite(entry.at) ? entry.at : 0,
+			way: entry.way === 'out' ? 'out' : 'in',
+			text: text
+		});
+	});
+	return out.slice(-MAX_CHAT_LOG);
+}
+
+// The clock is always this machine's, never the sender's. Two machines disagree about the
+// time as a matter of course, and a peer choosing its own timestamps could put its message
+// at the top of your conversation, or in next week.
+export function addChat (messages, entry) {
+	var text = entry && chatText(entry.text);
+	if (!text) {
+		return Array.isArray(messages) ? messages.slice(-MAX_CHAT_LOG) : [];
+	}
+	var next = (Array.isArray(messages) ? messages : []).concat([{
+		at: typeof entry.at === 'number' && isFinite(entry.at) ? entry.at : Date.now(),
+		way: entry.way === 'out' ? 'out' : 'in',
+		text: text
+	}]);
+	return next.slice(-MAX_CHAT_LOG);
+}
+
+export function isTyping (at, now) {
+	return typeof at === 'number' && (now || Date.now()) - at < TYPING_FOR;
+}
+
 // --- the session ---------------------------------------------------------------------------
 //
 // Everything above is pure and tested. Everything below touches the library, the clock and
@@ -517,6 +616,9 @@ export function snapshot () {
 		// What this machine is offering, and to whom. "Who can read my files" has to have
 		// an answer on screen, and this is where it comes from.
 		share: share,
+		// Every conversation this session knows about, connected or not: unread that
+		// vanished when somebody disconnected would be unread you never read.
+		chats: Object.keys(chats).map(chatSummary),
 		links: Object.keys(links).map(function (id) {
 			var link = links[id];
 			return {
@@ -525,6 +627,8 @@ export function snapshot () {
 				state: link.state,
 				granted: !!link.granted,
 				ping: medianPing(link.samples),
+				unread: chats[id] ? chats[id].unread : 0,
+				typing: isTyping(link.typingAt),
 				transfers: link.transfers.map(function (transfer) {
 					return {
 						id: transfer.id,
@@ -1022,6 +1126,176 @@ export function fsCall (id, op, path) {
 
 // --- receiving ------------------------------------------------------------------------------
 
+// --- the conversation ---------------------------------------------------------------------
+//
+// The one part of a peer connection that is *kept*. A file per peer under `CHAT_DIR`, so a
+// conversation is a document: readable in Explorer, deletable in Explorer, and gone for
+// good when it is deleted. That is the whole argument for a file rather than a table in
+// `peers.json` — everything else in that file is settings, and a conversation is not.
+//
+// Three rules that are easy to get wrong and impossible to see afterwards. The **clock is
+// always this machine's**, never the sender's (see `addChat`). A message is **appended and
+// written, never rewritten** — the log is not a document two machines edit. And a peer that
+// is not connected cannot leave you a message: there is no store-and-forward here and
+// nothing pretending there is, so `sendChat` fails loudly rather than queueing into a void.
+
+var chats = {};
+// One chain for every write rather than one per peer. Writes are rare and the order
+// between two different files does not matter, but two writes racing on the *same* file
+// would interleave a whole-file JSON write, and the loser takes the log with it.
+var chatWrites = Promise.resolve();
+var typingSent = {};
+
+function chatState (id) {
+	if (!chats[id]) {
+		chats[id] = {id: id, messages: [], unread: 0, loaded: false, noted: false, reading: false};
+	}
+	return chats[id];
+}
+
+function nameOf (id) {
+	if (links[id]) {
+		return links[id].name;
+	}
+	var remembered = settings.known.filter(function (entry) {
+		return entry.id === id;
+	})[0];
+	return remembered ? remembered.name : id;
+}
+
+// Read once per peer, lazily: a machine with forty conversations should not read forty
+// files at boot to draw a panel nobody has opened.
+export async function loadChat (id) {
+	var state = chatState(id);
+	if (state.loaded) {
+		return state.messages.slice();
+	}
+	state.loaded = true;
+	var where = chatPath(id);
+	if (where && deps.readChat) {
+		try {
+			state.messages = chatFrom(await deps.readChat(where));
+		}
+		catch (err) {
+			// No file yet is the ordinary case, and a file that will not parse is handled
+			// by chatFrom rather than here. Either way an empty conversation is the truth.
+			state.messages = [];
+		}
+	}
+	announce();
+	return state.messages.slice();
+}
+
+export function chatOf (id) {
+	return chatState(id).messages.slice();
+}
+
+export function chatSummary (id) {
+	var state = chatState(id);
+	return {id: id, name: nameOf(id), unread: state.unread, count: state.messages.length};
+}
+
+function record (id, entry) {
+	chatWrites = chatWrites.then(function () {
+		return loadChat(id);
+	}).then(function () {
+		var state = chatState(id);
+		state.messages = addChat(state.messages, entry);
+		announce();
+		var where = chatPath(id);
+		if (!where || !deps.writeChat) {
+			return null;
+		}
+		return deps.writeChat(where, {
+			id: id,
+			// Whatever they were calling themselves when this was written. A name is
+			// decoration and may change; the id is what the file is named after.
+			name: nameOf(id),
+			messages: state.messages
+		});
+	}).catch(function (err) {
+		// The message is on screen either way. Saying so once is the honest answer: a
+		// conversation that silently stops being written down is worse than one that says
+		// it is not being written down.
+		if (deps.onChatFailed) {
+			deps.onChatFailed(err);
+		}
+	});
+	return chatWrites;
+}
+
+export function sendChat (id, text) {
+	var message = chatText(text);
+	if (!message) {
+		return Promise.resolve(null);
+	}
+	if (!send(id, {type: 'chat', text: message})) {
+		return Promise.reject(new Error('They are not connected, so the message was not '
+			+ 'sent. Nothing here holds a message for later.'));
+	}
+	return record(id, {text: message, way: 'out'}).then(function () {
+		return message;
+	});
+}
+
+// Throttled here rather than in the panel, so every surface that ever sends one gets the
+// same rate and none of them has to remember to.
+export function sendTyping (id) {
+	var now = Date.now();
+	if (typingSent[id] && now - typingSent[id] < 2500) {
+		return false;
+	}
+	typingSent[id] = now;
+	return send(id, {type: 'chat-typing'});
+}
+
+// Which conversation is on screen. Unread is not a count of messages received, it is a
+// count of messages received *while you were not looking* — so the surface showing one has
+// to say so, and only one can be open at a time.
+export function readingChat (id) {
+	Object.keys(chats).forEach(function (key) {
+		chats[key].reading = false;
+	});
+	if (id) {
+		var state = chatState(id);
+		state.reading = true;
+		state.unread = 0;
+		state.noted = false;
+	}
+	announce();
+}
+
+export async function deleteChat (id) {
+	var state = chatState(id);
+	state.messages = [];
+	state.unread = 0;
+	state.loaded = true;
+	var where = chatPath(id);
+	if (where && deps.removeChat) {
+		await deps.removeChat(where);
+	}
+	announce();
+}
+
+function chatArrived (link, message) {
+	var state = chatState(link.id);
+	// They have stopped typing: they have said it.
+	link.typingAt = 0;
+	record(link.id, {text: message.text, way: 'in'});
+	if (state.reading) {
+		announce();
+		return;
+	}
+	state.unread++;
+	// One note per peer until you look, not one per message. A conversation is a burst of
+	// short lines, and a notification for each of six of them is six notifications.
+	if (!state.noted && deps.onChat) {
+		state.noted = true;
+		deps.onChat({id: link.id, from: link.name, text: message.text});
+	}
+	announce();
+}
+
 function receive (link, message) {
 	// Not a message this system speaks. Dropped without an answer: a peer probing for what
 	// is here should learn nothing from the reply it does not get.
@@ -1044,6 +1318,13 @@ function receive (link, message) {
 		return;
 	case 'bye':
 		drop(link.id, 'closed');
+		return;
+	case 'chat':
+		chatArrived(link, message);
+		return;
+	case 'chat-typing':
+		link.typingAt = Date.now();
+		announce();
 		return;
 	case 'file-offer':
 		offered(link, message);

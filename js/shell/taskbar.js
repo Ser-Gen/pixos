@@ -636,15 +636,21 @@ export function setPeers (state) {
 		return;
 	}
 	var links = (state && state.links) || [];
-	elements.peers.classList.toggle('PixTray__item--hidden', !links.length);
-	if (!links.length) {
+	// Unread is counted across every conversation, not only the connected ones: somebody
+	// can say something and disconnect, and that message is still waiting for you.
+	var unread = ((state && state.chats) || []).reduce(function (total, chat) {
+		return total + (chat.unread || 0);
+	}, 0);
+	elements.peers.classList.toggle('PixTray__item--hidden', !links.length && !unread);
+	if (!links.length && !unread) {
 		return;
 	}
-	elements.peers.textContent = '⇄ ' + links.length;
+	elements.peers.textContent = '⇄ ' + links.length + (unread ? ' ✉ ' + unread : '');
 	elements.peers.title = links.map(function (link) {
 		return link.name + ' — ' + (link.ping === null || link.ping === undefined
 			? 'measuring latency' : Math.round(link.ping) + ' ms');
-	}).join('\n') + '\n\nOpen the Peers panel';
+	}).join('\n') + (unread ? '\n\n' + unread + ' unread message' + (unread === 1 ? '' : 's')
+		: '') + '\n\nOpen the Peers panel';
 }
 
 function renderTray (state) {

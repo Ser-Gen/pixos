@@ -45,7 +45,7 @@ run in iframes. Pure static site — no build step, no backend.
   scheduled goes there, including things deliberately rejected and why. Read it before
   proposing work; move an item into a plan rather than copying it.
 - `docs/ux-improvements-plan.md` (phases 1–5, built) and `docs/reliability-plan.md`
-  (phases 6–17, all built) are the scheduled work, each phase with a browser
+  (phases 6–18, all built) are the scheduled work, each phase with a browser
   checklist beside it (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
 
@@ -455,8 +455,31 @@ reconnect needs no fresh link, which also makes it a stable identifier — hence
 copyable and resettable. **One tab holds the connection**, because a peer id registers with
 a broker once; a follower says so. And **vendoring PeerJS did not remove the broker**: WebRTC
 needs an introducer, by default the PeerJS cloud, so the host is configurable for a LAN
-`peerjs-server` and the panel names whichever is in use. Explorer's old *Share* is
-untouched and is replaced by the peer mount later.
+`peerjs-server` and the panel names whichever is in use. Explorer's old *Share* — a second
+peer connection, in the app, that sent the guest a page of HTML and script their browser
+then evaluated — was removed once the mount had been walked; `tests/peers.test.mjs` checks
+Explorer contains no `new Peer(`, no `data:text/html` and no `new Function(`, because that
+is the property the removal was for, not the line count. It also removed a bug nothing else
+could see: the peer share and the old one both wrote a `stopSharing` into the same `actions`
+object, the second silently won, and *Stop sharing with peers* in the folder menu had never
+once done anything. `tests/explorer-menus.test.mjs` now refuses a duplicate action name.
+
+**A conversation is a file, and the panel that shows it must not be redrawn.** Chat adds
+two types to the closed list — `chat` (one bounded string) and `chat-typing` (nothing at
+all) — and lands in `/settings/peer-chats/<peer id>.json`, one file per peer, capped at 300
+messages, read lazily and parsed as defensively as the wire. Four things are load-bearing.
+**The clock is this machine's**: a message carries no timestamp, because a sender choosing
+its own could put its line at the top of your history. **The composer is not part of what
+`render()` rebuilds** — a ping lands every 3 s and every ping redraws the panel, so the
+conversation is a second column with its own lifetime and `refreshChat()` appends only what
+is new, never reassigning `disabled` on the field being typed into; drafts live in memory
+per peer and are never written down. **Unread means "while you were not looking"**, so the
+panel tells the module which conversation is on screen (`readingChat`) and a note is raised
+**once per peer**, not once per message. And the note is `source: 'PixOS'` with the peer's
+name in the *title*, because a peer picks its own label and one labelled "PixOS" must not
+borrow the system's voice. Nothing here holds a message for a disconnected peer — sending
+fails and the text goes back in the composer. Chat is deliberately **not** in `window.peers`:
+an app being able to say something as you is not the same as an app offering a file.
 
 **A shared folder is a mount, and one function is the boundary.** `mount-manager.js` gains
 `mountPeer`; the filesystem object comes from `js/shell/peer-fs.js` because it needs the

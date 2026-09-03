@@ -47,15 +47,24 @@ function fn (name) {
 // Every action the real table has, as a name. The menus are checked against this rather
 // than against a list written here, which would go stale the first time one is renamed.
 const actionNames = new Set();
+const actionOrder = [];
 {
 	const table = source.slice(source.indexOf('\tvar actions = {'));
 	const pattern = /^\t\t([A-Za-z0-9_]+): (?:async )?function/gm;
 	let match;
 	while ((match = pattern.exec(table))) {
 		actionNames.add(match[1]);
+		actionOrder.push(match[1]);
 	}
 }
 check('the actions table was found and read', actionNames.size > 15, true);
+// This is not tidiness. The peer share and the old share both wrote a `stopSharing`, and
+// in one object literal the second silently wins — so *Stop sharing with peers* in the
+// folder menu called the old one with no argument and did nothing at all, with no error
+// anywhere. Every other check in this file passed while that was true: the entry named an
+// action that existed, and it ran.
+check('and no action is written twice, where the second would silently shadow the first',
+	actionOrder.filter((name, i) => actionOrder.indexOf(name) !== i), []);
 
 const menus = new Function('shell', `
 	var parent = shell.parent;

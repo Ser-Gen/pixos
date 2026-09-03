@@ -149,13 +149,118 @@ var CSS = `
 .PixPeers__barFill { position: absolute; inset: 0 auto 0 0; background: #6fb3ff; }
 
 .PixPeers__empty { font-size: 12px; color: #8a919c; }
+
+/* --- the conversation ------------------------------------------------------------------
+   Its own column, and its own lifetime: everything to the left of it is thrown away and
+   rebuilt on every state announcement, which happens every three seconds because that is
+   how often a ping updates. Rebuilding a composer on that schedule would take the focus,
+   the caret and the half-typed line with it. */
+
+.PixPeers__panes { flex: 1 1 auto; display: flex; min-height: 0; }
+
+.PixPeers__chat {
+	flex: 1 1 380px;
+	max-width: 520px;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	border-left: 1px solid rgba(255, 255, 255, .1);
+	background: rgba(18, 21, 26, .6);
+}
+
+.PixPeers__chatHead {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 12px 16px 10px;
+	border-bottom: 1px solid rgba(255, 255, 255, .08);
+}
+
+.PixPeers__chatWho { font-size: 13px; color: #fff; }
+.PixPeers__chatState { font-size: 11px; color: #8a919c; }
+
+.PixPeers__log {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	padding: 12px 16px;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.PixPeers__msg {
+	max-width: 88%;
+	padding: 6px 10px;
+	border-radius: 10px;
+	font-size: 13px;
+	line-height: 1.45;
+	/* A message is somebody else's text and may be a wall of it, or one word 400
+	   characters long. Both have to stay inside this column. */
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	background: rgba(255, 255, 255, .07);
+	align-self: flex-start;
+}
+
+.PixPeers__msg--out { align-self: flex-end; background: rgba(111, 179, 255, .18); }
+.PixPeers__when { font-size: 10px; color: #8a919c; margin-top: 3px; }
+
+.PixPeers__composer {
+	flex: none;
+	display: flex;
+	gap: 8px;
+	padding: 10px 16px 14px;
+	border-top: 1px solid rgba(255, 255, 255, .08);
+}
+
+.PixPeers__composer textarea {
+	flex: 1 1 auto;
+	min-width: 0;
+	resize: none;
+	font: inherit;
+	font-size: 13px;
+	line-height: 1.4;
+	padding: 6px 9px;
+	color: #e4e4e4;
+	background: rgba(255, 255, 255, .07);
+	border: 1px solid rgba(255, 255, 255, .16);
+	border-radius: 3px;
+}
+
+.PixPeers__composer textarea:disabled { opacity: .5; }
+
+.PixPeers__badge {
+	flex: none;
+	min-width: 18px;
+	padding: 1px 5px;
+	border-radius: 9px;
+	background: #6fb3ff;
+	color: #10141a;
+	font-size: 11px;
+	font-weight: bold;
+	text-align: center;
+}
+
+/* One column at a time when there is not room for two: a conversation squeezed into
+   160px is not a conversation. */
+@media (max-width: 720px) {
+	.PixPeers--chatting .PixPeers__body { display: none; }
+	.PixPeers__chat { max-width: none; border-left: none; }
+}
 `;
 
 var host = null;
 var element = null;
+var body = null;
 var deps = {};
 var unsubscribe = null;
 var latest = null;
+// The conversation on screen, if any. Kept out of `render()` on purpose -- see the CSS.
+var chatView = null;
+// Half-typed lines, per peer, for as long as this panel object lives. Never written down:
+// a draft is not a message, and the one place it must not turn up is the history file.
+var drafts = {};
 
 function ensureStyle () {
 	if (document.getElementById(STYLE_ID)) {
@@ -231,11 +336,23 @@ export function close () {
 		unsubscribe();
 		unsubscribe = null;
 	}
+	// Nothing is on screen, so nothing is being read: the next message from anyone counts
+	// as unread and raises its note.
+	peers.readingChat(null);
+	chatView = null;
 	element.remove();
 	element = null;
+	body = null;
 	if (deps.onToggle) {
 		deps.onToggle(false);
 	}
+}
+
+// Open the panel *and* a conversation. This is what a message notification presses, so it
+// has to work from nothing on screen at all.
+export function openChat (id) {
+	open();
+	showChat(id);
 }
 
 function card (title) {
@@ -265,28 +382,34 @@ function note (box, text) {
 	return line;
 }
 
+// Only the left column is thrown away and rebuilt. The conversation is a living element
+// with a caret in it, and this runs every three seconds.
 function render () {
 	if (!element || !latest) {
 		return;
 	}
-	element.innerHTML = '';
+	if (!body) {
+		var head = document.createElement('div');
+		head.className = 'PixPeers__head';
+		var title = document.createElement('div');
+		title.className = 'PixPeers__title';
+		title.textContent = 'Peers';
+		var hint = document.createElement('div');
+		hint.className = 'PixPeers__hint';
+		hint.textContent = 'Esc closes';
+		head.append(title, hint, button('Close', close));
 
-	var head = document.createElement('div');
-	head.className = 'PixPeers__head';
-	var title = document.createElement('div');
-	title.className = 'PixPeers__title';
-	title.textContent = 'Peers';
-	var hint = document.createElement('div');
-	hint.className = 'PixPeers__hint';
-	hint.textContent = 'Esc closes';
-	head.append(title, hint, button('Close', close));
-	element.append(head);
+		var panes = document.createElement('div');
+		panes.className = 'PixPeers__panes';
+		body = document.createElement('div');
+		body.className = 'PixPeers__body';
+		panes.append(body);
+		element.append(head, panes);
+	}
 
-	var body = document.createElement('div');
-	body.className = 'PixPeers__body';
-	element.append(body);
-
+	body.innerHTML = '';
 	body.append(machineCard(), shareCard(), connectCard(), linksCard(), knownCard());
+	refreshChat();
 }
 
 function machineCard () {
@@ -452,6 +575,7 @@ function linksCard () {
 		spacer.className = 'PixPeers__spacer';
 
 		row.append(name, meta, spacer);
+		row.append(chatButton(link.id, link.unread));
 		if (link.state === 'open') {
 			row.append(button('Open their folder', function () {
 				Promise.resolve(deps.onMount ? deps.onMount(link.id) : null).catch(function (err) {
@@ -528,7 +652,14 @@ function knownCard () {
 		meta.textContent = entry.id;
 		var spacer = document.createElement('div');
 		spacer.className = 'PixPeers__spacer';
-		row.append(name, meta, spacer, button('Connect', function () {
+		var conversation = (latest.chats || []).filter(function (chat) {
+			return chat.id === entry.id;
+		})[0];
+		row.append(name, meta, spacer);
+		// A conversation outlives the connection it happened on, so it is reachable from
+		// the address book too — read it, and delete it, without connecting to anybody.
+		row.append(chatButton(entry.id, conversation ? conversation.unread : 0));
+		row.append(button('Connect', function () {
 			peers.connect(entry.id).catch(function (err) {
 				say(err.message);
 			});
@@ -537,7 +668,204 @@ function knownCard () {
 		}, true));
 		box.append(row);
 	});
+	note(box, 'Forgetting somebody takes them off this list. It does not delete what you '
+		+ 'said to each other — that is a file, and it is deleted from the conversation.');
 	return box;
+}
+
+// --- the conversation ---------------------------------------------------------------------
+
+function showChat (id) {
+	if (!element || !id) {
+		return;
+	}
+	if (chatView && chatView.id === id) {
+		chatView.input.focus();
+		return;
+	}
+	hideChat();
+
+	var root = document.createElement('div');
+	root.className = 'PixPeers__chat';
+
+	var head = document.createElement('div');
+	head.className = 'PixPeers__chatHead';
+	var who = document.createElement('div');
+	who.className = 'PixPeers__chatWho';
+	var state = document.createElement('div');
+	state.className = 'PixPeers__chatState';
+	var spacer = document.createElement('div');
+	spacer.className = 'PixPeers__spacer';
+	head.append(who, state, spacer, button('Delete…', function () {
+		if (window.confirm('Delete this conversation?\n\nThe file it is kept in goes with '
+			+ 'it, and there is no copy anywhere else.')) {
+			peers.deleteChat(id).then(refreshChat, function (err) {
+				say(err.message);
+			});
+		}
+	}, true), button('Close', hideChat));
+
+	var log = document.createElement('div');
+	log.className = 'PixPeers__log';
+
+	var composer = document.createElement('div');
+	composer.className = 'PixPeers__composer';
+	var input = document.createElement('textarea');
+	input.rows = 2;
+	input.spellcheck = true;
+	var sendButton = button('Send', function () {
+		submit();
+	});
+	composer.append(input, sendButton);
+
+	function submit () {
+		var text = input.value;
+		if (!text.trim()) {
+			return;
+		}
+		input.value = '';
+		drafts[id] = '';
+		peers.sendChat(id, text).then(refreshChat, function (err) {
+			// Put it back rather than losing it: the message was not sent, and retyping
+			// it is not a reasonable thing to ask.
+			input.value = text;
+			drafts[id] = text;
+			say(err.message);
+		});
+	}
+
+	input.oninput = function () {
+		drafts[id] = input.value;
+		if (input.value.trim()) {
+			peers.sendTyping(id);
+		}
+	};
+	input.onkeydown = function (e) {
+		// Enter sends and Shift+Enter is a new line, which is what every other chat in the
+		// world does. Escape closes the conversation and leaves the panel: the panel's own
+		// Escape would close everything, and the draft with it.
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			submit();
+		}
+		else if (e.key === 'Escape') {
+			e.preventDefault();
+			e.stopPropagation();
+			hideChat();
+		}
+	};
+
+	root.append(head, log, composer);
+	element.querySelector('.PixPeers__panes').append(root);
+	element.classList.add('PixPeers--chatting');
+
+	chatView = {id: id, root: root, log: log, input: input, send: sendButton, who: who, state: state, drawn: 0};
+	input.value = drafts[id] || '';
+	// This is what makes an arriving message read rather than unread, and it is the whole
+	// reason the module has to be told: "on screen" is not something it can work out.
+	peers.readingChat(id);
+	peers.loadChat(id).then(refreshChat, function () {});
+	refreshChat();
+	input.focus();
+}
+
+function hideChat () {
+	if (!chatView) {
+		return;
+	}
+	drafts[chatView.id] = chatView.input.value;
+	chatView.root.remove();
+	chatView = null;
+	if (element) {
+		element.classList.remove('PixPeers--chatting');
+	}
+	peers.readingChat(null);
+}
+
+function refreshChat () {
+	if (!chatView || !element || !latest) {
+		return;
+	}
+	var id = chatView.id;
+	var link = (latest.links || []).filter(function (candidate) {
+		return candidate.id === id;
+	})[0];
+	var connected = !!link && link.state === 'open';
+
+	chatView.who.textContent = link ? link.name : peers.chatSummary(id).name;
+	chatView.state.textContent = !link
+		? 'not connected'
+		: (link.state !== 'open'
+			? link.state
+			: (link.typing ? 'typing…' : peers.describePing(link.ping)));
+
+	var messages = peers.chatOf(id);
+	// Deleted, or a shorter log than what is drawn: start again. Otherwise only what is
+	// new is added, because redrawing the column would lose the scroll position every
+	// three seconds.
+	if (messages.length < chatView.drawn) {
+		chatView.log.innerHTML = '';
+		chatView.drawn = 0;
+	}
+	if (messages.length > chatView.drawn) {
+		// Follow the conversation only if you were already at the bottom of it: appending
+		// while somebody is reading back through it would yank them away.
+		var pinned = chatView.log.scrollHeight - chatView.log.scrollTop - chatView.log.clientHeight < 40;
+		messages.slice(chatView.drawn).forEach(function (message) {
+			chatView.log.append(messageRow(message));
+		});
+		chatView.drawn = messages.length;
+		if (pinned) {
+			chatView.log.scrollTop = chatView.log.scrollHeight;
+		}
+	}
+	if (!messages.length && !chatView.log.firstChild) {
+		var empty = document.createElement('div');
+		empty.className = 'PixPeers__empty';
+		empty.textContent = 'Nothing said yet.';
+		chatView.log.append(empty);
+	}
+
+	// Only when it changes: assigning `disabled` to an already-disabled field is free, but
+	// assigning it to the focused one is not.
+	if (chatView.input.disabled !== !connected) {
+		chatView.input.disabled = !connected;
+		chatView.send.disabled = !connected;
+	}
+	chatView.input.placeholder = connected
+		? 'Message ' + (link ? link.name : '')
+		: 'Not connected. Nothing here holds a message for later.';
+}
+
+function messageRow (message) {
+	var row = document.createElement('div');
+	row.className = 'PixPeers__msg' + (message.way === 'out' ? ' PixPeers__msg--out' : '');
+	var text = document.createElement('div');
+	// Somebody else's words, drawn as text. This is the one line that matters most in
+	// this file.
+	text.textContent = message.text;
+	var when = document.createElement('div');
+	when.className = 'PixPeers__when';
+	var at = new Date(message.at || 0);
+	when.textContent = message.at ? at.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}) : '';
+	when.title = message.at ? at.toLocaleString() : '';
+	row.append(text, when);
+	return row;
+}
+
+function chatButton (id, unread) {
+	var wrap = document.createElement('span');
+	wrap.className = 'PixPeers__state';
+	wrap.append(button('Chat', function () {
+		showChat(id);
+	}));
+	if (unread) {
+		var badge = document.createElement('span');
+		badge.className = 'PixPeers__badge';
+		badge.textContent = unread > 99 ? '99+' : String(unread);
+		wrap.append(badge);
+	}
+	return wrap;
 }
 
 // The clipboard can refuse -- a frame without permission, an insecure context -- so this
