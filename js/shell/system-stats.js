@@ -4,6 +4,8 @@
 // densities, so they share a source rather than each running their own timers. Nothing
 // polls while the tab is hidden.
 
+import {formatBytes} from './failure.js';
+
 var listeners = [];
 var clockTimer = null;
 var storageTimer = null;
@@ -304,19 +306,9 @@ document.addEventListener('visibilitychange', function () {
 	}
 });
 
-export function formatBytes (bytes) {
-	if (!bytes && bytes !== 0) {
-		return '—';
-	}
-	var units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	var value = bytes;
-	var unit = 0;
-	while (value >= 1024 && unit < units.length - 1) {
-		value /= 1024;
-		unit++;
-	}
-	return (value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)) + ' ' + units[unit];
-}
+// Re-exported, not written again: the one implementation is in failure.js, which is pure
+// and can therefore be shared with the modules that cannot import this one.
+export {formatBytes};
 
 export function formatClock (date) {
 	return String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');

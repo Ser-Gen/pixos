@@ -92,6 +92,74 @@ export function describeFetchFailure (options) {
 // The same job for anything that is not a fetch: an action that threw. Keeps the shape
 // consistent so one reporter can take either. `options.online` is optional and, like the
 // arguments above, is passed in rather than read from `navigator`.
+// Chromium keeps each IndexedDB value whole and refuses to store one over 128 MiB —
+// `134217728` is the number in its own error message. Firefox and Safari have ceilings of
+// their own and publish neither. This is the lowest any of them is known to enforce, and
+// PixOS keeps a file as exactly one value, so it is the largest file this filesystem can
+// hold whatever else is going on.
+export var MAX_FILE_BYTES = 128 * 1024 * 1024;
+
+// The one of these in PixOS. It lives here rather than in `system-stats.js`, where it was,
+// because that module reads `navigator` and attaches listeners the moment it is imported —
+// so nothing pure could ever borrow it, and `peers.js` had written its own that rounded
+// differently. Two spellings of the same number in two panels is how they come to
+// disagree, and the pair of them already did: 256 MB in one place, 256.0 MB in the other.
+export function formatBytes (bytes) {
+	if (!bytes && bytes !== 0) {
+		return '—';
+	}
+	var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+	var value = bytes;
+	var unit = 0;
+	while (value >= 1024 && unit < units.length - 1) {
+		value /= 1024;
+		unit++;
+	}
+	return (value >= 10 || unit === 0 ? Math.round(value) : value.toFixed(1)) + ' ' + units[unit];
+}
+
+// Asked *before* a write, and that is the whole point of it: BrowserFS reports a refused
+// write as `EIO` with no detail at all, so afterwards there is nothing left to explain
+// with. Answering here also means a 150 MB file is turned away before it is read into
+// memory rather than after.
+//
+// `estimate` is `navigator.storage.estimate()`'s answer passed in, not read here, so this
+// stays pure and testable. It is allowed to be missing: not every browser answers, and a
+// check that refuses to run without one would be worse than one that only catches the
+// certain case.
+//
+// Returns null when the write should go ahead. A sentence means it must not.
+export function describeWriteLimit (bytes, estimate) {
+	var size = Number(bytes);
+	if (!isFinite(size) || size <= 0) {
+		return null;
+	}
+	if (size > MAX_FILE_BYTES) {
+		return {
+			title: 'That file is too large to store',
+			message: formatBytes(size) + ' — a browser keeps each file as a single entry '
+				+ 'and will not accept one over ' + formatBytes(MAX_FILE_BYTES) + '. '
+				+ 'Nothing was written.',
+			reason: 'too-large'
+		};
+	}
+	var quota = estimate && Number(estimate.quota);
+	var usage = estimate && Number(estimate.usage);
+	if (!isFinite(quota) || !isFinite(usage) || quota <= 0) {
+		return null;
+	}
+	var free = quota - usage;
+	if (size > free) {
+		return {
+			title: 'There is not enough room for that file',
+			message: formatBytes(size) + ' needed, ' + formatBytes(Math.max(0, free))
+				+ ' free of ' + formatBytes(quota) + '. Nothing was written.',
+			reason: 'no-room'
+		};
+	}
+	return null;
+}
+
 export function describeError (context, error, options) {
 	var cfg = options || {};
 	var message = error && error.message ? String(error.message) : String(error || 'Unknown error');
@@ -127,7 +195,15 @@ export function describeError (context, error, options) {
 		ENOTEMPTY: 'That folder is not empty.',
 		EACCES: 'Permission denied.',
 		EPERM: 'The filesystem refused that operation.',
-		ENOSPC: 'There is no storage space left.'
+		ENOSPC: 'There is no storage space left.',
+		// The one errno that is not a reason. BrowserFS's IndexedDB backend translates a
+		// *synchronous* failure properly -- QuotaExceededError becomes ENOSPC -- but an
+		// asynchronous one goes through a handler that ignores `request.error` entirely
+		// and reports EIO whatever happened. So this is the browser refusing to store
+		// something, with the reason already thrown away, and the wording says which two
+		// things it nearly always is rather than picking one.
+		EIO: 'The browser refused to store that. Almost always it is either too large to '
+			+ 'keep as a single file, or there is no room left for it.'
 	};
 	// BrowserFS does not always set .code -- some of its errors only carry the errno in
 	// the message ("ENOENT: No such file or directory., '/image.png'"), which is how a raw

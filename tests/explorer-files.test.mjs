@@ -24,11 +24,11 @@ function region (from, to) {
 }
 
 const code = region('async function resolveIncomingDestination', 'function getInitialCwd')
-	+ region('async function onFileHandler', '\n\tasync function getOpenWithApps');
+	+ region('async function refuseOversizedFile', '\n\tasync function getOpenWithApps');
 
 // --- a filesystem that remembers what happened -----------------------------------------
 
-let tree, writes, unlinked, prompts, answer;
+let tree, writes, unlinked, renamed, prompts, answer, reported, fails, limit;
 
 const pathStub = {
 	join: (...parts) => parts.join('/').replace(/\/+/g, '/'),
@@ -44,19 +44,49 @@ const pathStub = {
 const state = {cwd: '/home', dialog: null};
 
 const api = new Function(
-	'path', 'state', 'stat', 'unlink', 'writeFile', 'fileToAB', 'Buffer',
-	'openDialog', 'renderOverlays',
-	code + '\n; return {resolveIncomingDestination, resolvePasteDestination, writeNewFile, onFileHandler};'
+	'path', 'state', 'stat', 'unlink', 'unlinkFile', 'fsRename', 'writeFile', 'fileToAB', 'Buffer',
+	'openDialog', 'renderOverlays', 'parent', 'window', 'report', 'reportFailure',
+	code + '\n; return {resolveIncomingDestination, resolvePasteDestination, writeNewFile, writeIncomingFile, onFileHandler, addIncomingFile};'
 )(
 	pathStub, state,
+	// stat
 	async p => tree[p] || null,
+	// unlink
 	async p => { unlinked.push(p); delete tree[p]; },
-	async (p, contents) => { writes.push({path: p, contents: contents}); tree[p] = {isDirectory: () => false}; },
+	// unlinkFile — the raw one, which rejects when there is nothing there
+	async p => {
+		if (!tree[p]) { throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'}); }
+		unlinked.push(p);
+		delete tree[p];
+	},
+	// fsRename
+	async (from, to) => { renamed.push([from, to]); tree[to] = tree[from]; delete tree[from]; },
+	// writeFile — `fails` is the path a write is told to refuse, which is how a 150 MB
+	// drop is reproduced without a 150 MB file.
+	async (p, contents) => {
+		writes.push({path: p, contents: contents});
+		// The inode first, the data second — which is the order BrowserFS commits them in,
+		// and the whole reason a refused write leaves a 0-byte file sitting there.
+		tree[p] = {isDirectory: () => false};
+		if (fails && p === fails) {
+			throw Object.assign(new Error('EIO: Input/output error.'), {code: 'EIO'});
+		}
+	},
 	async file => file.body,
 	{from: x => x},
 	// askPasteConflict wraps openDialog in a promise; this stands in for the person.
 	dialog => { prompts.push(dialog.message); dialog.onSubmit(answer); },
-	() => {}
+	() => {},
+	// parent and window: the shell, and this frame. Different objects, so the size check
+	// takes the branch it takes in an iframe.
+	{describeWriteLimit: async bytes => (bytes > limit ? {
+		title: 'That file is too large to store',
+		message: 'Nothing was written.'
+	} : null)},
+	{},
+	// report / reportFailure
+	(title, message) => { reported.push([title, message]); },
+	(label, err) => { reported.push([label, String(err && err.message)]); }
 );
 
 function reset (existing) {
@@ -64,12 +94,16 @@ function reset (existing) {
 	(existing || []).forEach(p => { tree[p] = {isDirectory: () => p.endsWith('/dir')}; });
 	writes = [];
 	unlinked = [];
+	renamed = [];
 	prompts = [];
+	reported = [];
 	answer = 'cancel';
+	fails = null;
+	limit = Infinity;
 	state.dialog = null;
 }
 
-const file = (name, body) => ({name: name, body: body || 'BODY'});
+const file = (name, body, size) => ({name: name, body: body || 'BODY', size: size || 4});
 
 // --- the bug: a pasted file replacing one that was there ---------------------------------
 
@@ -91,9 +125,13 @@ check('and removes nothing', unlinked, []);
 reset(['/home/image.png']);
 answer = 'replace';
 await api.onFileHandler(file('image.png', 'NEW'));
-check('replace removes the old file first', unlinked, ['/home/image.png']);
-check('then writes over the name', writes.map(w => w.path), ['/home/image.png']);
+// Not over the name: the new bytes go beside it and only take its place once they
+// are actually stored. The old order — unlink, then write — destroyed the file being
+// replaced whenever the write failed, which is what a 150 MB drop did.
+check('replace writes somewhere else first', writes.map(w => w.path), ['/home/image.png.pixos-part']);
 check('with the new contents', writes[0].contents, 'NEW');
+check('then removes the old file', unlinked, ['/home/image.png']);
+check('and moves the new one into place', renamed, [['/home/image.png.pixos-part', '/home/image.png']]);
 
 reset(['/home/image.png']);
 answer = 'rename';
@@ -191,8 +229,9 @@ check('keep-both returns where it actually went',
 reset(['/home/out.mp4']);
 answer = 'replace';
 await api.writeNewFile('/home', 'out.mp4', 'DATA');
-check('replace unlinks before writing', [unlinked, writes.map(w => w.path)],
-	[['/home/out.mp4'], ['/home/out.mp4']]);
+check('replace stages, unlinks and renames, in that order',
+	[writes.map(w => w.path), unlinked, renamed],
+	[['/home/out.mp4.pixos-part'], ['/home/out.mp4'], [['/home/out.mp4.pixos-part', '/home/out.mp4']]]);
 
 // --- every route that produces a file goes through it ---------------------------------------
 //
@@ -271,5 +310,67 @@ check('the submit latch releases when a handler declines',
 });
 check('and the screen recorder awaits its write',
 	/await onFileHandler\(blobToFile\(blob, name\)\)/.test(source), true);
+
+// --- a file the browser will not store ------------------------------------------------------
+//
+// Dropping a 150 MB file wrote a 0-byte one and reported `EIO: Input/output error.`
+// BrowserFS commits the inode before it stores the data, so a refused write leaves a file
+// of the right name and no contents, looking for all the world like it worked.
+
+reset([]);
+limit = 1000;
+await api.onFileHandler(file('huge.mov', 'BODY', 150 * 1024 * 1024));
+check('an oversized file is refused', reported.map(entry => entry[0]),
+	['That file is too large to store']);
+check('and nothing is written at all', writes, []);
+// The check is asked before `fileToAB`, so the bytes never reach memory either. That is
+// only observable here as the absence of the write.
+check('nor is anything removed', unlinked, []);
+
+reset([]);
+limit = 1000;
+await api.onFileHandler(file('fine.txt', 'BODY', 12));
+check('a file under the limit is written as before', writes.map(w => w.path), ['/home/fine.txt']);
+
+// A file that passes the check and is refused anyway — no room left, or a limit this
+// browser has and did not announce.
+reset([]);
+fails = '/home/big.bin';
+let thrown = null;
+try {
+	await api.onFileHandler(file('big.bin'));
+}
+catch (err) {
+	thrown = err.code;
+}
+check('a write that fails is still a failure', thrown, 'EIO');
+check('and the empty file it left behind is removed', unlinked, ['/home/big.bin']);
+
+// The worse half of the same bug: replacing used to delete the existing file first.
+reset(['/home/video.mp4']);
+answer = 'replace';
+fails = '/home/video.mp4.pixos-part';
+thrown = null;
+try {
+	await api.onFileHandler(file('video.mp4', 'NEW'));
+}
+catch (err) {
+	thrown = err.code;
+}
+check('a failed replace reports', thrown, 'EIO');
+check('removes only its own staging file', unlinked, ['/home/video.mp4.pixos-part']);
+check('and leaves the file it was replacing exactly where it was',
+	!!tree['/home/video.mp4'], true);
+
+// Every route a file arrives by is an event listener, and nothing awaits one of those: a
+// rejection escaping it is an unhandled rejection reported without naming the file.
+reset([]);
+fails = '/home/one.bin';
+await api.addIncomingFile(file('one.bin'));
+check('a failure on one file is caught and named', reported.map(entry => entry[0]),
+	['Could not add one.bin']);
+reset([]);
+await api.addIncomingFile(file('two.bin'));
+check('and the next file still goes in', writes.map(w => w.path), ['/home/two.bin']);
 
 process.exit(report('explorer-files') ? 1 : 0);

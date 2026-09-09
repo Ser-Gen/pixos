@@ -3,8 +3,8 @@
 // The shell owns this rather than Explorer, which is where it used to live, because
 // Explorer is only ever going to be one caller: a shared folder is a *mount*
 // (`js/mount-manager.js`, shell-side), a call is not a file manager's business, and a
-// phone driving this machine is not either. Explorer's own share still works as it did and
-// is replaced wholesale by the mount in a later phase.
+// phone driving this machine is not either. Explorer's own share was replaced wholesale by
+// the mount and then removed, connection, guest page and all.
 //
 // Three things about the shape of it.
 //
@@ -25,6 +25,8 @@
 // configurable so a `peerjs-server` on a LAN makes two machines in one room work with no
 // internet at all, and whichever is in use is named on screen. "Who introduced us" is not
 // something a system should keep to itself.
+
+import {formatBytes} from './failure.js';
 
 var ID_ALPHABET = 'abcdefghijkmnopqrstuvwxyz23456789';
 var ID_LENGTH = 20;
@@ -66,6 +68,19 @@ var MAX_CHAT_LOG = 300;
 // How long a "typing" stays true without another one. Deliberately longer than the 3 s
 // ping that redraws the panel, so the line does not flicker between keystrokes.
 export var TYPING_FOR = 5000;
+
+// The two things one machine can open to another. Deliberately a list rather than a
+// boolean: a camera is a third kind, and the day it exists it belongs here rather than in
+// an `if` somewhere downstream.
+export var CALL_KINDS = ['voice', 'screen'];
+// How long an offer rings before it gives up on its own. Long enough to walk to the
+// machine, short enough that a question nobody saw does not sit on the far side's screen
+// all afternoon claiming to be live.
+export var RING_FOR = 45000;
+// From "they accepted" to "a media connection actually opened". WebRTC can fail to
+// negotiate long after both people have said yes, and a bar that says *connecting…* for
+// ever is the same lie as a progress bar that has stopped.
+export var MEDIA_TIMEOUT = 25000;
 
 export var SETTINGS_PATH = '/settings/peers.json';
 export var INBOX = '/home/received';
@@ -247,6 +262,32 @@ export function parseMessage (raw) {
 	// knowing and nothing about it is worth a field.
 	case 'chat-typing':
 		return {type: 'chat-typing'};
+
+	// A call is arranged here, on the data channel, and only then does any media move.
+	// That order is the point: the far side gets *this system's* question first, answers
+	// it, and only a yes reaches the microphone — so a refusal never touches the media
+	// layer at all, and the browser's own permission prompt is never the first thing a
+	// stranger can make appear on your screen.
+	case 'call-offer':
+		return token(raw.id) && callKind(raw.kind)
+			? {type: 'call-offer', id: token(raw.id), kind: callKind(raw.kind)}
+			: null;
+	// `call-live` means "your media reached me". It exists because a screen share is
+	// one-way: the watcher answers with nothing, so no stream ever arrives back at the
+	// person sharing, and without this their bar would sit at *connecting…* through the
+	// whole call and then time out under it.
+	case 'call-accept':
+	case 'call-live':
+	case 'call-end':
+		return token(raw.id) ? {type: raw.type, id: token(raw.id)} : null;
+	case 'call-refuse':
+		return token(raw.id)
+			? {type: 'call-refuse', id: token(raw.id), reason: cleanName(raw.reason, 'They said no.')}
+			: null;
+	// Not decoration: without it the two most common minutes of any call are one person
+	// talking to a muted microphone and the other wondering whether the line has died.
+	case 'call-mute':
+		return token(raw.id) ? {type: 'call-mute', id: token(raw.id), muted: !!raw.muted} : null;
 
 	// A shared folder. The guest asks for whatever the host is sharing -- it never names a
 	// path, because naming one would make "which folder" a question the *guest* answers.
@@ -458,16 +499,10 @@ export function progressOf (transfer) {
 	};
 }
 
-export function formatBytes (bytes) {
-	var value = Number(bytes) || 0;
-	var units = ['B', 'KB', 'MB', 'GB'];
-	var unit = 0;
-	while (value >= 1024 && unit < units.length - 1) {
-		value /= 1024;
-		unit++;
-	}
-	return (unit === 0 ? Math.round(value) : value.toFixed(1)) + ' ' + units[unit];
-}
+// One spelling of a size across the whole system -- see failure.js. This module had its
+// own, which rounded differently, so the same file read as two sizes depending on which
+// panel was showing it.
+export {formatBytes};
 
 export function chunkPlan (size, chunkSize) {
 	var step = chunkSize || CHUNK_SIZE;
@@ -553,6 +588,84 @@ export function isTyping (at, now) {
 	return typeof at === 'number' && (now || Date.now()) - at < TYPING_FOR;
 }
 
+// --- a call ------------------------------------------------------------------------------
+
+export function callKind (value) {
+	return CALL_KINDS.indexOf(value) === -1 ? null : value;
+}
+
+// One place that knows what to call these, because the panel button, the question on the
+// far side, the bar and the note when it ends all have to agree. `way` is this machine's
+// side of it: the same call reads differently from each end, and "sharing your screen" and
+// "watching their screen" are not the same sentence.
+export function describeCall (kind, way, name) {
+	var who = name || 'them';
+	if (kind === 'screen') {
+		return way === 'out' ? 'Sharing your screen with ' + who : 'Watching ' + who + '’s screen';
+	}
+	return 'Talking to ' + who;
+}
+
+export function describeCallOffer (kind, name) {
+	var who = name || 'Someone';
+	return kind === 'screen'
+		? who + ' wants to show you their screen'
+		: who + ' wants to talk to you';
+}
+
+// `getUserMedia` and `getDisplayMedia` fail by `name`, and every one of these is something
+// the person can act on — which is the same argument `failure.js` makes about fetch. A
+// refused microphone and a microphone another program is holding are the same
+// `Error` to anyone who does not read the name.
+export function describeMediaError (err, kind) {
+	var what = kind === 'screen' ? 'screen' : 'microphone';
+	var name = (err && err.name) || '';
+	var messages = {
+		NotAllowedError: kind === 'screen'
+			? 'Nothing was picked to share — or this page is not allowed to capture the screen.'
+			: 'The microphone was refused. The browser keeps that answer per site, so it '
+				+ 'has to be changed there rather than here.',
+		NotFoundError: 'This machine has no ' + what + ' the browser can see.',
+		NotReadableError: 'Something else on this machine is holding the ' + what + '.',
+		OverconstrainedError: 'No ' + what + ' here matches what was asked for.',
+		SecurityError: 'The browser refused on security grounds — a page has to be on '
+			+ 'https (or localhost) to use a ' + what + '.',
+		AbortError: 'The browser gave up getting the ' + what + '.',
+		TypeError: 'This browser will not capture a ' + what + ' from a page like this one.'
+	};
+	if (messages[name]) {
+		return messages[name];
+	}
+	// Not a DOMException at all, most likely no `mediaDevices` on an insecure origin.
+	return (err && err.message) || 'The ' + what + ' could not be opened.';
+}
+
+// A live media connection is the one thing here that was *not* asked for over the data
+// channel: `peer.on('call')` fires for anybody who knows this machine's id. So the closed
+// list is only closed if an arriving media connection is checked against the offer that
+// was actually agreed — the peer, the state and the id all have to match, and the id
+// arrives inside somebody else's metadata, so it is bounded like everything else.
+export function mediaAllowed (call, peerId, metadata) {
+	// `way` is checked too: the side that *placed* the offer is the side that places the
+	// media call, so an incoming one while offering is somebody else's, whatever id it
+	// carries.
+	if (!call || call.state !== 'connecting' || call.way !== 'in' || call.peerId !== peerId) {
+		return false;
+	}
+	return !!call.id && token(metadata && metadata.call) === call.id;
+}
+
+export function formatDuration (ms) {
+	var total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+	var seconds = total % 60;
+	var minutes = Math.floor(total / 60) % 60;
+	var hours = Math.floor(total / 3600);
+	var pad = function (value) {
+		return (value < 10 ? '0' : '') + value;
+	};
+	return (hours ? hours + ':' + pad(minutes) : String(minutes)) + ':' + pad(seconds);
+}
+
 // --- the session ---------------------------------------------------------------------------
 //
 // Everything above is pure and tested. Everything below touches the library, the clock and
@@ -619,6 +732,9 @@ export function snapshot () {
 		// Every conversation this session knows about, connected or not: unread that
 		// vanished when somebody disconnected would be unread you never read.
 		chats: Object.keys(chats).map(chatSummary),
+		// One at a time, and the bar that draws it is not the panel: a call has to survive
+		// the panel closing, and the panel closes on Esc.
+		call: callView(),
 		links: Object.keys(links).map(function (id) {
 			var link = links[id];
 			return {
@@ -787,6 +903,7 @@ function openPeer () {
 		instance.on('connection', function (conn) {
 			adopt(conn, 'in');
 		});
+		instance.on('call', onIncomingMedia);
 		instance.on('disconnected', function () {
 			// The broker connection dropped, not the peers. PeerJS can rejoin, and the
 			// existing links keep working while it does.
@@ -839,6 +956,7 @@ export function describeError (err) {
 }
 
 export function stop () {
+	clearCall('Went offline.');
 	Object.keys(links).forEach(function (id) {
 		disconnect(id);
 	});
@@ -933,6 +1051,11 @@ function drop (id, state) {
 	// The grant was for this connection and goes with it: reconnecting asks again.
 	link.granted = false;
 	delete links[id];
+	// A call is a connection too. Leaving it up would leave the microphone open and the
+	// bar on screen for somebody who is no longer there.
+	if (media && media.peerId === id) {
+		clearCall('The connection to them went.');
+	}
 	if (deps.onUnshare) {
 		deps.onUnshare(id);
 	}
@@ -1296,6 +1419,380 @@ function chatArrived (link, message) {
 	announce();
 }
 
+// --- a call ---------------------------------------------------------------------------------
+//
+// Voice, and a screen. Both are arranged on the data channel first and only then does any
+// media move, and that order carries most of the safety in this section: the question is
+// this system's, asked and answered before a microphone is touched, so a refusal never
+// reaches the media layer and a stranger cannot make the browser's own permission prompt
+// appear on somebody's screen by knowing their id.
+//
+// Four rules hold the rest of it up. **One call at a time**, module-wide rather than per
+// peer — a second offer is answered *busy*, because silence is indistinguishable from a
+// machine that is off. **A media connection that was not agreed is closed unread**
+// (`mediaAllowed`): `peer.on('call')` fires for anybody at all, so the closed list would
+// mean nothing without it. **The offerer always places the media call**, which is what
+// makes a screen share one-way without a second code path. And **every track is stopped**
+// when a call ends, on every route out of one: a track left running keeps the browser's
+// recording indicator lit after the call has gone from the screen, and a system that says
+// it is listening while nothing on screen agrees is the worst bug this feature could have.
+
+var media = null;
+var mediaTimer = null;
+
+function callView () {
+	if (!media) {
+		return null;
+	}
+	var link = links[media.peerId];
+	return {
+		id: media.id,
+		peerId: media.peerId,
+		name: nameOf(media.peerId),
+		kind: media.kind,
+		way: media.way,
+		state: media.state,
+		at: media.at || 0,
+		muted: !!media.muted,
+		farMuted: !!media.farMuted,
+		ping: link ? medianPing(link.samples) : null,
+		connected: !!link && link.state === 'open'
+	};
+}
+
+export function getCall () {
+	return callView();
+}
+
+// A MediaStream is a live handle on a microphone, not state, so it is fetched rather than
+// announced. Putting one in the snapshot would put it in every subscriber's copy of the
+// snapshot, and one of those copies outliving the call is an open microphone nothing is
+// drawing a bar for.
+export function getCallMedia () {
+	return media ? {id: media.id, kind: media.kind, local: media.local || null, remote: media.remote || null} : null;
+}
+
+function stopStream (stream) {
+	if (!stream || typeof stream.getTracks !== 'function') {
+		return;
+	}
+	stream.getTracks().forEach(function (track) {
+		try {
+			track.stop();
+		}
+		catch (err) {
+			// Already stopped. The point is that none is left running.
+		}
+	});
+}
+
+// The browser draws its own "Stop sharing" bar during a capture, and it is the one most
+// people press. It is not this system's and it fires nothing this system would hear, so
+// the track itself is watched. A microphone unplugged mid-call ends here too.
+function watchEnded (stream, id) {
+	if (!stream || typeof stream.getTracks !== 'function') {
+		return;
+	}
+	stream.getTracks().forEach(function (track) {
+		track.addEventListener('ended', function () {
+			if (media && media.id === id) {
+				endCall();
+			}
+		});
+	});
+}
+
+// A call that never becomes a call has to end by itself, and both ends have to agree that
+// it did — so the far side is told before the state goes.
+function ring (id, ms, why) {
+	clearTimeout(mediaTimer);
+	mediaTimer = setTimeout(function () {
+		if (media && media.id === id) {
+			send(media.peerId, {type: 'call-end', id: id});
+			clearCall(why);
+		}
+	}, ms);
+}
+
+function clearCall (detail) {
+	clearTimeout(mediaTimer);
+	mediaTimer = null;
+	if (!media) {
+		return;
+	}
+	var ended = callView();
+	stopStream(media.local);
+	if (media.conn) {
+		try {
+			media.conn.close();
+		}
+		catch (err) {
+			// Already closed.
+		}
+	}
+	// The question may still be on screen. Taking it back is the difference between a
+	// note that stopped meaning anything and one that lies.
+	if (media.withdraw) {
+		media.withdraw();
+	}
+	media = null;
+	announce();
+	if (deps.onCallEnded) {
+		deps.onCallEnded(ended, detail || null);
+	}
+}
+
+export async function startCall (peerId, kind) {
+	var want = callKind(kind);
+	if (!want) {
+		throw new Error('There is no such kind of call.');
+	}
+	if (media) {
+		throw new Error('There is already a call. One at a time.');
+	}
+	var link = links[peerId];
+	if (!link || link.state !== 'open') {
+		throw new Error('Not connected to that peer.');
+	}
+	var id = newToken();
+	// The slot is claimed before the browser is asked for anything, or two presses of the
+	// button are two calls and the second one wins silently.
+	media = {
+		id: id,
+		peerId: peerId,
+		kind: want,
+		way: 'out',
+		state: 'offering',
+		at: 0,
+		muted: false,
+		farMuted: false
+	};
+	announce();
+
+	var stream;
+	try {
+		// Asked for *before* the offer goes out, and deliberately: pressing the button is
+		// the user gesture the browser wants, and asking later — on their answer, with no
+		// gesture behind it — is refused outright in some browsers. It also means you find
+		// out your microphone is missing before somebody's screen starts ringing, and you
+		// choose which window you are sharing before anyone is watching.
+		stream = await deps.getMedia(want);
+	}
+	catch (err) {
+		clearCall();
+		throw new Error(describeMediaError(err, want));
+	}
+	if (!media || media.id !== id) {
+		// Hung up, or the peer went, while the browser was still asking.
+		stopStream(stream);
+		return null;
+	}
+	media.local = stream;
+	watchEnded(stream, id);
+	if (!send(peerId, {type: 'call-offer', id: id, kind: want})) {
+		// No detail, so no note: the caller is about to be told, and the same sentence
+		// twice in two places reads as two failures.
+		clearCall();
+		throw new Error('Not connected to that peer.');
+	}
+	ring(id, RING_FOR, 'They did not answer.');
+	announce();
+	return id;
+}
+
+export async function acceptCall () {
+	if (!media || media.state !== 'ringing') {
+		return null;
+	}
+	var id = media.id;
+	var kind = media.kind;
+	var peerId = media.peerId;
+	if (kind === 'voice') {
+		var stream;
+		try {
+			stream = await deps.getMedia('voice');
+		}
+		catch (err) {
+			// They are told *that* it could not be answered and never *why*: which devices
+			// this machine has, and what its owner has refused, is nobody else's.
+			refuseCall('They could not answer.');
+			throw new Error(describeMediaError(err, 'voice'));
+		}
+		if (!media || media.id !== id) {
+			stopStream(stream);
+			return null;
+		}
+		media.local = stream;
+		watchEnded(stream, id);
+	}
+	// A screen is watched, not swapped: nothing of yours is opened to look at one.
+	media.state = 'connecting';
+	// Answered here rather than on the note — the bar offers the same two buttons, and a
+	// question still sitting on screen after it has been answered is a question that lies.
+	if (media.withdraw) {
+		media.withdraw();
+		media.withdraw = null;
+	}
+	send(peerId, {type: 'call-accept', id: id});
+	ring(id, MEDIA_TIMEOUT, 'The connection never opened.');
+	announce();
+	return id;
+}
+
+export function refuseCall (reason) {
+	if (!media || media.state !== 'ringing') {
+		return false;
+	}
+	send(media.peerId, {type: 'call-refuse', id: media.id, reason: reason || 'No.'});
+	clearCall();
+	return true;
+}
+
+// Cancelling an offer and hanging up a live call are the same act from here: stop, and say
+// so. A call the far side thinks is still running is the failure being designed out.
+export function endCall () {
+	if (!media) {
+		return false;
+	}
+	send(media.peerId, {type: 'call-end', id: media.id});
+	clearCall();
+	return true;
+}
+
+export function setMuted (muted) {
+	if (!media) {
+		return false;
+	}
+	media.muted = !!muted;
+	if (media.local && typeof media.local.getAudioTracks === 'function') {
+		media.local.getAudioTracks().forEach(function (track) {
+			track.enabled = !media.muted;
+		});
+	}
+	send(media.peerId, {type: 'call-mute', id: media.id, muted: media.muted});
+	announce();
+	return media.muted;
+}
+
+function goLive () {
+	if (!media || media.state === 'live') {
+		return;
+	}
+	clearTimeout(mediaTimer);
+	mediaTimer = null;
+	media.state = 'live';
+	media.at = Date.now();
+	announce();
+}
+
+function callOffered (link, message) {
+	if (media) {
+		// Busy is an answer. Dropping it would look, from the other end, exactly like a
+		// machine that is switched off.
+		send(link.id, {type: 'call-refuse', id: message.id, reason: 'They are already on a call.'});
+		return;
+	}
+	media = {
+		id: message.id,
+		peerId: link.id,
+		kind: message.kind,
+		way: 'in',
+		state: 'ringing',
+		at: 0,
+		muted: false,
+		farMuted: false
+	};
+	// Rings for as long as the far side is prepared to wait, then stops on its own.
+	ring(message.id, RING_FOR, 'It stopped ringing.');
+	announce();
+
+	var asked = deps.askCall
+		? deps.askCall({id: link.id, from: link.name, kind: message.kind})
+		: {answer: Promise.resolve(false), withdraw: null};
+	media.withdraw = asked.withdraw || null;
+	Promise.resolve(asked.answer).then(function (yes) {
+		// Cancelled, timed out, or replaced while the question was on screen.
+		if (!media || media.id !== message.id || media.state !== 'ringing') {
+			return;
+		}
+		media.withdraw = null;
+		if (!yes) {
+			refuseCall('No.');
+			return;
+		}
+		return acceptCall();
+	}).catch(function (err) {
+		if (deps.onCallFailed) {
+			deps.onCallFailed(err);
+		}
+	});
+}
+
+function mine (link, message) {
+	return !!media && media.id === message.id && media.peerId === link.id;
+}
+
+// The offer was taken. This side placed it, so this side places the media call too.
+function callAccepted (link, message) {
+	if (!mine(link, message) || media.state !== 'offering' || media.way !== 'out') {
+		return;
+	}
+	media.state = 'connecting';
+	ring(media.id, MEDIA_TIMEOUT, 'The connection never opened.');
+	announce();
+	if (!peer) {
+		clearCall('The connection to the broker went.');
+		return;
+	}
+	try {
+		adoptMedia(peer.call(media.peerId, media.local, {metadata: {call: media.id}}));
+	}
+	catch (err) {
+		clearCall(describeError(err));
+	}
+}
+
+function adoptMedia (conn) {
+	media.conn = conn;
+	conn.on('stream', function (stream) {
+		if (!media || media.conn !== conn) {
+			return;
+		}
+		media.remote = stream;
+		goLive();
+		// Their media arrived here; theirs may never arrive there, because a screen share
+		// sends nothing back. Saying so is what keeps the two bars agreeing.
+		send(media.peerId, {type: 'call-live', id: media.id});
+	});
+	conn.on('close', function () {
+		if (media && media.conn === conn) {
+			clearCall('The call ended.');
+		}
+	});
+	conn.on('error', function (err) {
+		if (media && media.conn === conn) {
+			clearCall(describeError(err));
+		}
+	});
+}
+
+function onIncomingMedia (conn) {
+	// `peer.on('call')` fires for anybody who knows this machine's id, agreed or not. Only
+	// the offer accepted a moment ago on the data channel is answered; everything else is
+	// closed without a word, the same as a message that is not on the list.
+	if (!mediaAllowed(media, conn.peer, conn.metadata)) {
+		try {
+			conn.close();
+		}
+		catch (err) {
+			// Nothing to clean up: it was never adopted.
+		}
+		return;
+	}
+	conn.answer(media.kind === 'voice' ? media.local : undefined);
+	adoptMedia(conn);
+}
+
 function receive (link, message) {
 	// Not a message this system speaks. Dropped without an answer: a peer probing for what
 	// is here should learn nothing from the reply it does not get.
@@ -1325,6 +1822,33 @@ function receive (link, message) {
 	case 'chat-typing':
 		link.typingAt = Date.now();
 		announce();
+		return;
+	case 'call-offer':
+		callOffered(link, message);
+		return;
+	case 'call-accept':
+		callAccepted(link, message);
+		return;
+	case 'call-refuse':
+		if (mine(link, message) && media.way === 'out') {
+			clearCall(message.reason);
+		}
+		return;
+	case 'call-live':
+		if (mine(link, message)) {
+			goLive();
+		}
+		return;
+	case 'call-end':
+		if (mine(link, message)) {
+			clearCall('The call ended.');
+		}
+		return;
+	case 'call-mute':
+		if (mine(link, message)) {
+			media.farMuted = message.muted;
+			announce();
+		}
 		return;
 	case 'file-offer':
 		offered(link, message);

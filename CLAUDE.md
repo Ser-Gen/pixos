@@ -16,8 +16,9 @@ run in iframes. Pure static site — no build step, no backend.
   overlay, `file-search.js` the tree walk behind it, `open-with.js` the chooser for a
   file with no default app, `bookmarks.js` the shell's half of `/settings/links.json`,
   `session.js` desktops/windows persistence, `tabs.js` (which tab may write the settings),
-  `peers.js` the connection to another PixOS + `peers-panel.js` its one surface +
-  `peer-fs.js` a shared folder as a BrowserFS backend,
+  `peers.js` the connection to another PixOS + `peers-panel.js` where one is made +
+  `call-bar.js` the one surface a call is drawn on + `peer-fs.js` a shared folder as a
+  BrowserFS backend,
   `fullscreen.js`, `app-icons.js`, `context-menu.js`. `js/goldenlayout/` and `js/peerjs/`
   hold only vendor bundles.
 - `js/app-registry.js` — install / update / scan apps. `js/mount-manager.js` — zip, iso,
@@ -45,7 +46,7 @@ run in iframes. Pure static site — no build step, no backend.
   scheduled goes there, including things deliberately rejected and why. Read it before
   proposing work; move an item into a plan rather than copying it.
 - `docs/ux-improvements-plan.md` (phases 1–5, built) and `docs/reliability-plan.md`
-  (phases 6–18, all built) are the scheduled work, each phase with a browser
+  (phases 6–19, all built) are the scheduled work, each phase with a browser
   checklist beside it (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
 
@@ -390,6 +391,33 @@ once per boot and the storage widget reports what was actually granted — *pers
 Firefox prompts, Safari has no equivalent, and a durability promise nobody verified is worse
 than none because it is the one people rely on.
 
+**A file is one IndexedDB value, and a refused write says nothing about why.** BrowserFS's
+IndexedDB backend translates a *synchronous* failure properly — a `QuotaExceededError`
+becomes `ENOSPC` — but an asynchronous one goes through a handler that ignores
+`request.error` entirely and reports a bare `EIO` however it failed. It also commits the
+inode before it stores the data, so a refused write leaves a file of the right name and
+**zero bytes** looking like it worked. That combination is what a 150 MB drop produced:
+an empty file and *Input/output error*. Three things follow. `failure.js` owns
+`MAX_FILE_BYTES` (128 MiB — the number in Chromium's own message; nothing keeps a value
+larger, and PixOS keeps a file as exactly one) and `describeWriteLimit`, which is asked
+**before** the write, because afterwards there is nothing left to explain with — and
+because a file that cannot be stored should not be read into memory to find that out. It
+is pure, so the `navigator.storage.estimate()` answer is passed in, not read, and a
+browser that will not estimate does not block the write. Explorer's `writeIncomingFile`
+removes what a failed write left behind, and **stages a replacement under
+`<name>.pixos-part` before touching the file it replaces** — the old order deleted first,
+so a write that failed took the original with it. Every route a file arrives by (drop,
+paste, Upload) goes through `addIncomingFile`, which reports per file: all three are event
+listeners, and nothing awaits one of those, so a rejection escaping one is an unhandled
+rejection reported without ever naming the file.
+
+**One spelling of a size.** `formatBytes` lives in `failure.js` and is re-exported by
+`peers.js` and `system-stats.js`. It was in `system-stats.js`, which reads `navigator` and
+attaches listeners on import — so nothing pure could borrow it and `peers.js` wrote its
+own, which rounded differently. `apps/system-info` has a fourth copy and always will: an
+app is installed *into* BrowserFS and cannot import a shell module, the same reason the
+frontmatter parser is written twice.
+
 **Manifests are generated, never hand-written — except the system apps'.** `pixos.app.json`
 carries every file with a SHA-256 hash; only identity fields (`id`, `name`, `version`,
 `entryPath`) are yours to edit. Bump `version` or App Manager will not offer the update to
@@ -444,8 +472,8 @@ copies are covered by `npm test`; if you change the accepted syntax, change both
 the connection — not Explorer, because a shared folder is a *mount*, a call is not a file
 manager's business and a phone driving this machine is not either; apps get only
 `window.peers.list()` / `.sendFile()` / `.open()`, never connect or identity. Five things
-are load-bearing. `parseMessage` accepts exactly nine message types and returns null for
-everything else, bounding every field it does accept: what arrives was written by someone
+are load-bearing. `parseMessage` accepts exactly the message types on its list and returns
+null for everything else, bounding every field it does accept: what arrives was written by someone
 else's machine, and the share this replaces took an HTML document over the wire and
 `new Function`'d it. An incoming file is a **question** (a note with Accept/Refuse) that
 lands in `/home/received` and never on top of an existing name — `fileName()` keeps only
@@ -480,6 +508,34 @@ name in the *title*, because a peer picks its own label and one labelled "PixOS"
 borrow the system's voice. Nothing here holds a message for a disconnected peer — sending
 fails and the text goes back in the composer. Chat is deliberately **not** in `window.peers`:
 an app being able to say something as you is not the same as an app offering a file.
+
+**A call is agreed in words before any media moves, and it is not drawn in the panel.** Six
+more types on the closed list (`call-offer` with one of exactly two `CALL_KINDS`,
+`call-accept`, `call-refuse`, `call-live`, `call-end`, `call-mute`), and nothing reaches
+`getUserMedia`/`getDisplayMedia` until both sides have said yes — so a refusal never
+touches the media layer and knowing an id cannot make the browser's own permission prompt
+appear on somebody's screen. Six things are load-bearing. **`peer.on('call')` fires for
+anybody**, so an arriving MediaConnection is the one thing here that does not come through
+`parseMessage`: `mediaAllowed` (pure, therefore tested) demands the same peer, the
+`connecting` state, the side that *accepted* rather than offered, and a `token()`-bounded
+call id out of the caller's own `metadata` — anything else is closed unread. **The offerer
+always places the media call**, which is what makes a screen share one-way with no second
+code path; its consequence is `call-live`, because the watcher answers with nothing and
+without a word back the sharer's bar would sit at *connecting…* for the whole call.
+**The stream is grabbed before the offer goes out** — pressing the button is the user
+gesture the browser wants, and asking on their answer with no press behind it is refused
+outright in some browsers. **Every track is stopped on every route out** (`clearCall` is
+where a hang-up, a refusal, a timeout, a dropped link, *Go offline* and a disconnect all
+end), or the browser's recording indicator stays lit after the bar has gone; the browser's
+own *Stop sharing* bar fires nothing of ours, so the tracks are watched for `ended`.
+**The bar is `js/shell/call-bar.js`, not the panel**, because the panel closes on Esc and
+that must not be how you hang up on somebody — built once and updated in place for the same
+three-second-ping reason as the composer, never re-assigning a `srcObject` it already has,
+at the *top* of the screen because the note stack owns the bottom right and would cover
+*Hang up*. Its screen viewer needs `[hidden] { display: none !important; }` — the same
+cascade-origin trap as filmoskop. And **a device failure is a sentence**:
+`describeMediaError` separates refused, missing and in-use, which are one `Error` to
+anyone not reading `name`, while the far side is only ever told "they could not answer".
 
 **A shared folder is a mount, and one function is the boundary.** `mount-manager.js` gains
 `mountPeer`; the filesystem object comes from `js/shell/peer-fs.js` because it needs the

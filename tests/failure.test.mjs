@@ -5,7 +5,8 @@
 // part and cannot be worked around, so the job here is to narrow it honestly with what is
 // observable — and to say what is still ambiguous rather than pick one and sound certain.
 
-import {describeFetchFailure, describeError, isCrossOrigin} from '../js/shell/failure.js';
+import {describeFetchFailure, describeError, isCrossOrigin, describeWriteLimit, formatBytes, MAX_FILE_BYTES} from '../js/shell/failure.js';
+import fs from 'node:fs';
 import {check, report} from './assert.mjs';
 
 const ORIGIN = 'http://localhost:8000';
@@ -132,5 +133,76 @@ check('and is passed through verbatim',
 check('a thrown string does not throw again', describeError('X', 'just a string').message, 'just a string');
 check('undefined does not throw', describeError('X', undefined).message, 'Unknown error');
 check('and there is always a title', describeError(null, new Error('b')).title, 'Something went wrong');
+
+// --- a write the browser will refuse -------------------------------------------------------
+//
+// BrowserFS's IndexedDB backend translates a *synchronous* failure properly — a
+// QuotaExceededError becomes ENOSPC — but an asynchronous one goes through a handler that
+// ignores `request.error` entirely and reports a bare EIO. So by the time a failed write
+// comes back there is nothing left to explain with, and the only honest place to answer is
+// before it.
+
+check('a dropped file the browser will not keep whole is refused before it is read',
+	describeWriteLimit(MAX_FILE_BYTES + 1, null).reason, 'too-large');
+check('and the sentence says the size and the ceiling, not an errno',
+	/143 MB[\s\S]*128 MB/.test(describeWriteLimit(150 * 1000 * 1000, null).message), true);
+check('and says nothing was written, because nothing was',
+	/Nothing was written/.test(describeWriteLimit(MAX_FILE_BYTES + 1, null).message), true);
+check('one exactly at the ceiling is allowed through',
+	describeWriteLimit(MAX_FILE_BYTES, null), null);
+check('an ordinary file is not stopped', describeWriteLimit(4096, null), null);
+check('nor is one of no size at all', describeWriteLimit(0, null), null);
+check('and a size that is not a number does not become a refusal',
+	describeWriteLimit('big', null), null);
+
+// The estimate is the browser's own answer passed in, never read here.
+const room = (quota, usage) => ({quota: quota, usage: usage});
+check('a file with no room left for it is refused, and separately',
+	describeWriteLimit(50 * 1024 * 1024, room(100 * 1024 * 1024, 80 * 1024 * 1024)).reason,
+	'no-room');
+check('the refusal counts what is free rather than what is used',
+	/20 MB free of 100 MB/.test(
+		describeWriteLimit(50 * 1024 * 1024, room(100 * 1024 * 1024, 80 * 1024 * 1024)).message),
+	true);
+check('one that fits is written', describeWriteLimit(10 * 1024 * 1024, room(100 * 1024 * 1024, 80 * 1024 * 1024)), null);
+// Not every browser answers estimate(), and a check that refused to run without one would
+// stop every write on Safari rather than the one that was going to fail anyway.
+check('a browser that will not estimate does not block the write',
+	describeWriteLimit(10 * 1024 * 1024, {}), null);
+check('nor does one that answers with nonsense',
+	describeWriteLimit(10 * 1024 * 1024, room('lots', 0)), null);
+check('and the certain case is still caught without an estimate',
+	describeWriteLimit(MAX_FILE_BYTES + 1, {}).reason, 'too-large');
+
+check('bytes read as bytes', formatBytes(512), '512 B');
+check('and megabytes as megabytes', formatBytes(150 * 1024 * 1024), '150 MB');
+check('with one decimal where it matters', formatBytes(1536), '1.5 KB');
+
+// EIO is what every refused IndexedDB write arrives as, and it was reaching the screen as
+// "Input/output error" — which tells nobody anything at all.
+check('an EIO is not left reading as an errno',
+	describeError('Could not add that file', {code: 'EIO', message: 'EIO: Input/output error.'}).reason,
+	'EIO');
+check('and says which two things it nearly always is',
+	/too large[\s\S]*no room left/.test(
+		describeError('X', {code: 'EIO', message: 'EIO: Input/output error.'}).message),
+	true);
+
+// The path a 150 MB drop actually takes, which no unit test can drive: it is the order of
+// these three that matters, so it is checked in the source.
+const explorer = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
+check('a file is measured before it is read into memory',
+	/refuseOversizedFile\(file\)[\s\S]{0,120}return;[\s\S]{0,600}fileToAB\(file\)/.test(explorer), true);
+check('a failed write leaves nothing behind',
+	/catch \(err\) \{\s*await unlinkQuietly\(destPath\);\s*throw err;/.test(explorer), true);
+// This one was the worse half: the old order deleted the file being replaced and then
+// wrote over the name, so a write that failed took the original with it.
+check('replacing a file writes somewhere else first',
+	/writeFile\(staging, contents\)[\s\S]{0,200}await unlink\(destPath\);\s*await fsRename\(staging, destPath\)/.test(explorer),
+	true);
+check('and a FileReader that fails rejects rather than hanging for ever',
+	/reader\.onerror = function \(\) \{\s*reject\(/.test(explorer), true);
+check('every route a file arrives by reports per file rather than abandoning the rest',
+	explorer.split('await addIncomingFile(').length - 1, 5);
 
 process.exit(report('failure') ? 1 : 0);

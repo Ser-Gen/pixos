@@ -89,6 +89,8 @@ var CSS = `
 
 .PixPeers button { cursor: pointer; }
 .PixPeers button:hover { background: rgba(255, 255, 255, .14); }
+.PixPeers button:disabled { opacity: .45; cursor: default; background: rgba(255, 255, 255, .04); }
+.PixPeers button:disabled:hover { background: rgba(255, 255, 255, .04); }
 .PixPeers button.danger:hover { background: #7a3430; border-color: #a8564f; }
 .PixPeers input { min-width: 260px; font-family: ui-monospace, Menlo, Consolas, monospace; }
 
@@ -577,6 +579,10 @@ function linksCard () {
 		row.append(name, meta, spacer);
 		row.append(chatButton(link.id, link.unread));
 		if (link.state === 'open') {
+			// Started here, and then it leaves: everything about a live call is in the
+			// bar, because this panel closes on Esc and hanging up must not be something
+			// that happens by closing a window.
+			row.append(callButton('Call', link.id, 'voice'), callButton('Share screen', link.id, 'screen'));
 			row.append(button('Open their folder', function () {
 				Promise.resolve(deps.onMount ? deps.onMount(link.id) : null).catch(function (err) {
 					say(err.message);
@@ -851,6 +857,27 @@ function messageRow (message) {
 	when.title = message.at ? at.toLocaleString() : '';
 	row.append(text, when);
 	return row;
+}
+
+// One call at a time is a rule of the session, so the button says so rather than failing
+// when it is pressed. A follower tab cannot call at all: the connection is not its.
+function callButton (label, id, kind) {
+	var element = button(label, function () {
+		peers.startCall(id, kind).catch(function (err) {
+			say(err.message);
+		});
+	});
+	if (latest.call) {
+		element.disabled = true;
+		element.title = latest.call.peerId === id
+			? 'Already on a call with them.'
+			: 'Already on a call with ' + latest.call.name + '.';
+	}
+	else if (!latest.owner) {
+		element.disabled = true;
+		element.title = 'Another tab holds this machine’s connection.';
+	}
+	return element;
 }
 
 function chatButton (id, unread) {

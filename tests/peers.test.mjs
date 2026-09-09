@@ -471,4 +471,148 @@ check('and empties it here without waiting to be told again', peers.chatOf(OLD),
 check('a summary names the peer even when nothing is connected',
 	peers.chatSummary(NEW).id, NEW);
 
+// --- a call ------------------------------------------------------------------------------
+//
+// Media is arranged on the data channel first and only then does any of it move, so the
+// arranging is on the closed list like everything else. The one thing that is *not* asked
+// for over that channel is the media connection itself -- `peer.on('call')` fires for
+// anybody who knows this machine's id -- which is why `mediaAllowed` is a pure function
+// with a section of its own below.
+
+check('an offer names one of the two kinds there are',
+	peers.parseMessage({type: 'call-offer', id: 'c1', kind: 'voice'}),
+	{type: 'call-offer', id: 'c1', kind: 'voice'});
+check('a screen is the other one',
+	peers.parseMessage({type: 'call-offer', id: 'c1', kind: 'screen'}).kind, 'screen');
+check('and a kind this system does not have is not a call',
+	peers.parseMessage({type: 'call-offer', id: 'c1', kind: 'camera'}), null);
+check('nor is an offer with no id to answer',
+	peers.parseMessage({type: 'call-offer', kind: 'voice'}), null);
+check('an accept carries the id and nothing else',
+	peers.parseMessage({type: 'call-accept', id: 'c1', stream: 'x'}), {type: 'call-accept', id: 'c1'});
+check('so does the message that says the media arrived',
+	peers.parseMessage({type: 'call-live', id: 'c1'}), {type: 'call-live', id: 'c1'});
+check('a refusal may carry a reason, and it is bounded like every other drawn string',
+	peers.parseMessage({type: 'call-refuse', id: 'c1', reason: 'no' + BELL}).reason, 'no');
+check('a refusal with no reason still says something',
+	peers.parseMessage({type: 'call-refuse', id: 'c1'}).reason, 'They said no.');
+check('mute is a boolean whatever was sent',
+	peers.parseMessage({type: 'call-mute', id: 'c1', muted: 'yes'}).muted, true);
+
+check('a kind is one of exactly two things', peers.callKind('voice'), 'voice');
+check('and anything else is nothing', peers.callKind('phone'), null);
+
+// The same call reads differently from each end, and one place knows how.
+check('sharing a screen says who is watching',
+	peers.describeCall('screen', 'out', 'Laptop'), 'Sharing your screen with Laptop');
+check('watching one says whose it is',
+	peers.describeCall('screen', 'in', 'Laptop'), 'Watching Laptop’s screen');
+check('a voice call is the same sentence from either end',
+	peers.describeCall('voice', 'in', 'Laptop'), peers.describeCall('voice', 'out', 'Laptop'));
+check('and the question names what is being asked for',
+	peers.describeCallOffer('screen', 'Laptop'), 'Laptop wants to show you their screen');
+
+// A refused microphone and a microphone another program is holding are the same `Error` to
+// anyone who does not read the name -- the same argument failure.js makes about fetch.
+check('a refused microphone says where the answer is kept',
+	/browser keeps that answer per site/.test(peers.describeMediaError({name: 'NotAllowedError'}, 'voice')),
+	true);
+check('and a refused capture says nothing about microphones',
+	/microphone/.test(peers.describeMediaError({name: 'NotAllowedError'}, 'screen')), false);
+check('a missing device is named as the device it is',
+	peers.describeMediaError({name: 'NotFoundError'}, 'screen'),
+	'This machine has no screen the browser can see.');
+check('one already in use is not reported as one that is missing',
+	/holding the microphone/.test(peers.describeMediaError({name: 'NotReadableError'}, 'voice')), true);
+check('and something that is not a media error at all still says something',
+	peers.describeMediaError(new Error('odd'), 'voice'), 'odd');
+
+check('a duration reads as one', peers.formatDuration(7000), '0:07');
+check('past a minute too', peers.formatDuration(4 * 60000 + 12000), '4:12');
+check('and past an hour', peers.formatDuration(3600000 + 2 * 60000 + 33000), '1:02:33');
+check('nothing is not a negative number', peers.formatDuration(-5), '0:00');
+
+// --- an arriving media connection ----------------------------------------------------------
+//
+// This is the boundary. Everything else about a call was agreed over a channel that only
+// carries the nine-and-then-some types above; a MediaConnection arrives from anybody.
+
+const AGREED = {id: 'c1', state: 'connecting', way: 'in', peerId: 'pixos-aaaaaaaaaa'};
+check('the media connection that was agreed is answered',
+	peers.mediaAllowed(AGREED, 'pixos-aaaaaaaaaa', {call: 'c1'}), true);
+check('one from somebody else with the right id is not',
+	peers.mediaAllowed(AGREED, 'pixos-bbbbbbbbbb', {call: 'c1'}), false);
+check('nor one from the right peer with the wrong id',
+	peers.mediaAllowed(AGREED, 'pixos-aaaaaaaaaa', {call: 'c2'}), false);
+check('nor one with no metadata at all',
+	peers.mediaAllowed(AGREED, 'pixos-aaaaaaaaaa', null), false);
+check('nor one whose id is not even a token',
+	peers.mediaAllowed(AGREED, 'pixos-aaaaaaaaaa', {call: {}}), false);
+check('nothing is answered when nothing was agreed',
+	peers.mediaAllowed(null, 'pixos-aaaaaaaaaa', {call: 'c1'}), false);
+check('nor while the offer is still only ringing',
+	peers.mediaAllowed({...AGREED, state: 'ringing'}, 'pixos-aaaaaaaaaa', {call: 'c1'}), false);
+// The side that placed the offer places the media call, so an incoming one while offering
+// is somebody else's however well it is addressed.
+check('nor by the side that placed the offer',
+	peers.mediaAllowed({...AGREED, way: 'out'}, 'pixos-aaaaaaaaaa', {call: 'c1'}), false);
+
+// --- the session, with nobody connected ------------------------------------------------------
+
+check('there is no call until there is one', peers.getCall(), null);
+check('and the snapshot says so rather than leaving it out', 'call' in peers.snapshot(), true);
+check('hanging up when nothing is up is not an error', peers.endCall(), false);
+check('nor is refusing nothing', peers.refuseCall('No.'), false);
+check('and there is no media to hand out', peers.getCallMedia(), null);
+
+let refused = null;
+try {
+	await peers.startCall('pixos-cccccccccc', 'camera');
+}
+catch (err) {
+	refused = err.message;
+}
+check('a kind this system does not have is refused before anything is opened',
+	refused, 'There is no such kind of call.');
+
+refused = null;
+try {
+	await peers.startCall('pixos-cccccccccc', 'voice');
+}
+catch (err) {
+	refused = err.message;
+}
+// If this ever reached `deps.getMedia` the message would be the one describeMediaError
+// gives a TypeError, so this also checks that a microphone is never opened speculatively.
+check('and calling somebody who is not connected never reaches the microphone',
+	refused, 'Not connected to that peer.');
+
+check('a call ends when the connection carrying it does',
+	/if \(media && media\.peerId === id\) \{\s*clearCall/.test(peersModule), true);
+check('and going offline ends it too', /export function stop \(\) \{\s*clearCall/.test(peersModule), true);
+check('every route out of a call stops the tracks',
+	/function clearCall[\s\S]{0,300}stopStream\(media\.local\)/.test(peersModule), true);
+check('a media connection that was not agreed is closed unread',
+	/if \(!mediaAllowed\(media, conn\.peer, conn\.metadata\)\)/.test(peersModule), true);
+check('and a second offer is answered busy rather than dropped',
+	/if \(media\) \{[\s\S]{0,200}type: 'call-refuse'[\s\S]{0,80}already on a call/.test(peersModule), true);
+
+const bar = fs.readFileSync(new URL('../js/shell/call-bar.js', import.meta.url), 'utf8');
+// The same trap that ate two of filmoskop's overlays: an author rule that sets a display
+// beats the browser's own [hidden] rule, so the viewer could not be hidden without this.
+check('the viewer can actually be hidden', /\[hidden\][\s\S]{0,80}display: none !important/.test(bar), true);
+// Assigning srcObject again restarts playback, which on a screen share is a black flash
+// every three seconds -- and the bar is redrawn every three seconds.
+check('a stream is never attached to the same element twice',
+	/if \(wanted !== attached\.video\)/.test(bar), true);
+check('the bar is built once rather than rebuilt on every announcement',
+	/if \(!element\) \{\s*build\(\);/.test(bar), true);
+check('and Esc over a shared screen hides it rather than ending the call',
+	/Escape[\s\S]{0,200}setShowing\(false\)/.test(bar), true);
+
+check('the panel starts a call and then lets go of it',
+	/peers\.startCall\(id, kind\)/.test(panel), true);
+check('and offers no second call while one is up',
+	/if \(latest\.call\) \{\s*element\.disabled = true;/.test(panel), true);
+
 process.exit(report('peers') ? 1 : 0);

@@ -828,7 +828,7 @@ async function openExplorer () {
 			// other and leave every prompt but the last waiting forever.
 			var chosen = Array.from(ui.fileInput.files);
 			for (var i = 0; i < chosen.length; i++) {
-				await onFileHandler(chosen[i]);
+				await addIncomingFile(chosen[i]);
 			}
 			ui.fileInput.value = '';
 			await refreshCurrentDir(false);
@@ -1033,14 +1033,14 @@ async function openExplorer () {
 			var pastedText = e.clipboardData.getData('Text');
 			if (pastedText.trim()) {
 				var pastedTextBlob = new Blob([pastedText], {type: 'text/plain'});
-				await onFileHandler(blobToFile(pastedTextBlob, 'pastedText.txt'));
+				await addIncomingFile(blobToFile(pastedTextBlob, 'pastedText.txt'));
 			}
 
 			if (e.clipboardData.files.length) {
 				// Sequential for the same reason as the upload button above: one dialog.
 				var pasted = Array.from(e.clipboardData.files);
 				for (var i = 0; i < pasted.length; i++) {
-					await onFileHandler(pasted[i]);
+					await addIncomingFile(pasted[i]);
 				}
 			}
 
@@ -4411,7 +4411,7 @@ async function openExplorer () {
 			var entries = await getAllFileEntries(e.dataTransfer.items);
 			for (var i = 0; i < entries.length; i++) {
 				var entryFile = await getFileFromFileEntry(entries[i]);
-				await onFileHandler(entryFile, entries[i].fullPath);
+				await addIncomingFile(entryFile, entries[i].fullPath);
 			}
 			await refreshCurrentDir(false);
 			return;
@@ -4420,7 +4420,7 @@ async function openExplorer () {
 		// Sequential for the same reason as the upload button: one dialog at a time.
 		var dropped = Array.from(files);
 		for (var d = 0; d < dropped.length; d++) {
-			await onFileHandler(dropped[d]);
+			await addIncomingFile(dropped[d]);
 		}
 		await refreshCurrentDir(false);
 	}
@@ -4551,11 +4551,55 @@ async function openExplorer () {
 		if (!resolved) {
 			return null;
 		}
-		if (resolved.replaceExisting) {
-			await unlink(resolved.destPath);
-		}
-		await writeFile(resolved.destPath, contents);
+		await writeIncomingFile(resolved.destPath, contents, resolved.replaceExisting);
 		return resolved.destPath;
+	}
+
+	// A file arriving from outside -- dropped, pasted, uploaded, recorded -- and the two
+	// things that must not happen when the write fails halfway.
+	//
+	// **Nothing is left behind.** BrowserFS commits the inode before it stores the data,
+	// so a refused write leaves a file of the right name and zero bytes sitting there
+	// looking like it worked. That is what a 150 MB drop produced.
+	//
+	// **Replacing writes somewhere else first.** This used to delete the existing file and
+	// then write over the name, so a write that failed took the old file with it and left
+	// the empty one in its place. The new bytes go to a temporary name in the same folder
+	// and only replace anything once they are actually stored.
+	async function writeIncomingFile (destPath, contents, replaceExisting) {
+		if (!replaceExisting) {
+			try {
+				await writeFile(destPath, contents);
+			}
+			catch (err) {
+				await unlinkQuietly(destPath);
+				throw err;
+			}
+			return destPath;
+		}
+		var staging = destPath + '.pixos-part';
+		try {
+			await writeFile(staging, contents);
+		}
+		catch (err) {
+			await unlinkQuietly(staging);
+			throw err;
+		}
+		await unlink(destPath);
+		await fsRename(staging, destPath);
+		return destPath;
+	}
+
+	// Used only to clean up after a failure, where a second failure is not news: the error
+	// worth reporting is the one that got us here.
+	async function unlinkQuietly (p) {
+		try {
+			await unlinkFile(p);
+		}
+		catch (err) {
+			// It was never created, or it cannot be removed either. Either way the write
+			// is what failed.
+		}
 	}
 
 	async function resolvePasteDestination (srcPath, targetFolderPath, operation) {
@@ -4620,9 +4664,55 @@ async function openExplorer () {
 		return window.cwd || '/';
 	}
 
+	// Asked before the file is read, not after the write fails. BrowserFS reports every
+	// refusal from IndexedDB as a bare `EIO` with the real reason already discarded, so
+	// afterwards there is nothing left to explain with -- and a 150 MB file that cannot be
+	// stored should not be pulled into memory first to find that out.
+	async function refuseOversizedFile (file) {
+		var size = file && typeof file.size === 'number' ? file.size : 0;
+		if (!size) {
+			return false;
+		}
+		var limit = null;
+		try {
+			if (parent !== window && typeof parent.describeWriteLimit === 'function') {
+				limit = await parent.describeWriteLimit(size);
+			}
+		}
+		catch (crossOrigin) {
+			// Running standalone. The write will be attempted and will report whatever it
+			// reports, which is the behaviour there was before this check existed.
+		}
+		if (!limit) {
+			return false;
+		}
+		report(limit.title, (file.name ? file.name + '\n\n' : '') + limit.message);
+		return true;
+	}
+
+	// Per file, so one that cannot be stored does not abandon the rest of a drop, a paste
+	// or a selection -- and so the folder is still refreshed and the file input still
+	// cleared afterwards, which is what makes picking the same file twice work.
+	//
+	// All three callers are event listeners, and nothing awaits an event listener: a
+	// rejection escaping one is an unhandled rejection, caught by the window's own net two
+	// layers out and reported as *something* going wrong without ever naming the file.
+	async function addIncomingFile (file, filePath) {
+		try {
+			await onFileHandler(file, filePath);
+		}
+		catch (err) {
+			reportFailure('Could not add ' + ((file && file.name) || 'that file'), err);
+		}
+	}
+
 	async function onFileHandler (file, filePath) {
 		var target = filePath || file.name;
 		var destPath = path.join(state.cwd, target);
+
+		if (await refuseOversizedFile(file)) {
+			return;
+		}
 
 		// A dropped, pasted or uploaded file used to overwrite whatever already had that
 		// name -- silently, with no undo. It now asks the same question a paste does.
@@ -4635,7 +4725,7 @@ async function openExplorer () {
 			await writeNewFile(state.cwd, target, Buffer.from(ab));
 			return;
 		}
-		await writeFile(destPath, Buffer.from(ab));
+		await writeIncomingFile(destPath, Buffer.from(ab), false);
 	}
 
 	async function getOpenWithApps (item) {
@@ -5091,10 +5181,20 @@ async function openExplorer () {
 	}
 
 	function fileToAB (file) {
-		return new Promise(function (resolve) {
+		return new Promise(function (resolve, reject) {
 			var reader = new FileReader();
 			reader.onload = function () {
 				resolve(this.result);
+			};
+			// Without these two a file the browser cannot read -- one removed from the
+			// disk since it was dropped, or one too large to hold in memory -- leaves this
+			// promise pending for ever, and the drop that is waiting on it never finishes
+			// and never reports.
+			reader.onerror = function () {
+				reject(reader.error || new Error('That file could not be read.'));
+			};
+			reader.onabort = function () {
+				reject(new Error('Reading that file was cancelled.'));
 			};
 			reader.readAsArrayBuffer(file);
 		});

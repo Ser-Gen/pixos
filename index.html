@@ -232,6 +232,7 @@ import * as overview from "./js/shell/overview.js";
 import * as peers from "./js/shell/peers.js";
 import * as peersPanel from "./js/shell/peers-panel.js";
 import * as peerFs from "./js/shell/peer-fs.js";
+import * as callBar from "./js/shell/call-bar.js";
 import * as fileSearch from "./js/shell/file-search.js";
 import * as openWith from "./js/shell/open-with.js";
 import * as bookmarks from "./js/shell/bookmarks.js";
@@ -273,6 +274,21 @@ window.describeError = function (context, error, options) {
 	return failure.describeError(context, error, Object.assign({
 		online: navigator.onLine
 	}, options || {}));
+};
+// Asked before a big write rather than after a failed one, because BrowserFS reports every
+// refusal from IndexedDB as a bare EIO and there is nothing left to explain with by then.
+// The estimate is read here, once, so an app only has to hand over a size.
+window.describeWriteLimit = async function (bytes) {
+	var estimate = null;
+	try {
+		if (navigator.storage && navigator.storage.estimate) {
+			estimate = await navigator.storage.estimate();
+		}
+	}
+	catch (err) {
+		// No estimate is an answer too: the size check below still catches the certain case.
+	}
+	return failure.describeWriteLimit(bytes, estimate);
 };
 
 // The net. Every silent failure in the system lands here whether or not anyone thought to
@@ -1372,6 +1388,83 @@ function fsOnInit () {
 					}]
 				});
 			},
+			// The two things a browser will only hand over on a gesture. `peers.js` asks
+			// for one of these the moment a button is pressed and never later, because a
+			// prompt with no press behind it is refused outright in some browsers.
+			getMedia: function (kind) {
+				if (!navigator.mediaDevices) {
+					// No `mediaDevices` at all is what an insecure origin looks like from
+					// here, and it is worth saying so rather than reporting a missing
+					// microphone.
+					return Promise.reject(new Error('This page cannot use a microphone or '
+						+ 'capture the screen — that needs https, or localhost.'));
+				}
+				if (kind === 'screen') {
+					// Audio is asked for and whatever the picker gives is taken: Chromium
+					// can share a tab's sound, and the rest cannot.
+					return navigator.mediaDevices.getDisplayMedia({video: true, audio: true});
+				}
+				return navigator.mediaDevices.getUserMedia({audio: true});
+			},
+			// Same shape as a file offer and for the same reason. It returns a `withdraw`
+			// as well, which a file does not need: a call stops ringing, and a question
+			// still sitting there after it has stopped is a question that lies.
+			askCall: function (request) {
+				var decided = false;
+				var answer = null;
+				var promise = new Promise(function (resolve) {
+					answer = function (accepted) {
+						if (!decided) {
+							decided = true;
+							resolve(accepted);
+						}
+					};
+				});
+				var noteId = notifications.notify({
+					level: 'warn',
+					title: peers.describeCallOffer(request.kind, request.from),
+					message: request.kind === 'screen'
+						? 'You would see whatever they choose to share, and hear it if they '
+							+ 'share sound. Nothing of yours is sent back.'
+						: 'Your microphone would be opened and they would hear it until '
+							+ 'the call ends.',
+					source: 'PixOS',
+					actions: [
+						{label: 'Accept', run: function () { answer(true); }},
+						{label: 'Refuse', run: function () { answer(false); }}
+					]
+				});
+				return {
+					answer: promise,
+					withdraw: function () {
+						answer(false);
+						notifications.dismiss(noteId);
+					}
+				};
+			},
+			// A call that ended by itself has to say so: the bar simply vanishing is
+			// indistinguishable from a bar that was never there.
+			onCallEnded: function (call, detail) {
+				if (!detail) {
+					return;
+				}
+				notifications.notify({
+					level: 'info',
+					title: 'The call with ' + call.name + ' ended',
+					message: detail + (call.state === 'live'
+						? ' It lasted ' + peers.formatDuration(Date.now() - call.at) + '.'
+						: ''),
+					source: 'PixOS'
+				});
+			},
+			onCallFailed: function (err) {
+				notifications.notify({
+					level: 'warn',
+					title: 'The call did not start',
+					message: (err && err.message) || 'The connection failed.',
+					source: 'PixOS'
+				});
+			},
 			onChatFailed: function (err) {
 				notifications.notify({
 					level: 'warn',
@@ -1389,6 +1482,13 @@ function fsOnInit () {
 			onMount: function (peerId) {
 				return mountPeerFolder(peerId);
 			}
+		});
+
+		// A second surface for the same session, and the only one that is not a panel you
+		// close. A call has to outlive the Peers panel: that panel closes on Esc, and
+		// closing a window must never be the gesture that hangs up on somebody.
+		callBar.init({
+			host: document.getElementById('overlays')
 		});
 
 

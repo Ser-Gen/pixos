@@ -170,7 +170,7 @@ function fetchAudioProxy(request) {
 // The version in the cache name is the whole risk: skipWaiting() + clients.claim() means a
 // new worker takes over immediately, and without a versioned name that would be a new
 // worker serving a previous worker's assets. `activate` deletes every cache but this one.
-var SHELL_CACHE = 'pixos-shell-v3';
+var SHELL_CACHE = 'pixos-shell-v4';
 
 // The shell itself. Catalog manifests are not listed -- there are twenty-five of them and
 // the list would rot the first time an app was added -- they are read out of
@@ -210,6 +210,7 @@ var PRECACHE = [
 	'./js/shell/peers.js',
 	'./js/shell/peers-panel.js',
 	'./js/shell/peer-fs.js',
+	'./js/shell/call-bar.js',
 	'./js/shell/widgets.js',
 	'./js/shell/wm.js',
 	'./apps/app-catalog.js',
