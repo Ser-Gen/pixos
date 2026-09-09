@@ -129,6 +129,110 @@ export function monthName (month, locale, style) {
 		.format(new Date(2024, month, 1));
 }
 
+// "Take me to March 2031."
+//
+// Arrows and *Today* were the whole of the navigation, so anywhere else was twelve presses
+// a year. What this parses is deliberately a **month**, never a day: `state` is a year and
+// a month, the grid draws a month, and there is no selected day for a day to become — so
+// accepting one and quietly dropping it would be a promise the app cannot keep. A full ISO
+// date is still allowed through, because somebody typing `2031-03-15` unambiguously wants
+// to be looking at March 2031, and refusing it would be pedantry.
+//
+// `month` comes back **0-based**, matching `monthGrid` and the app's own state, and is null
+// when only a year was given. `options.year` is the year on screen, used when a month is
+// named without one — the year you are looking at is a better guess than the year it
+// happens to be.
+export function parseJump (text, options) {
+	var cfg = options || {};
+	var raw = String(text == null ? '' : text).trim();
+	if (!raw) {
+		return null;
+	}
+	// One separator rule for every shape people actually type: 2031-03, 03/2031, 03.2031,
+	// "March 2031", "2031, March".
+	var tokens = raw.replace(/[.,/\\-]+/g, ' ').split(/\s+/).filter(Boolean);
+	if (!tokens.length || tokens.length > 3) {
+		return null;
+	}
+
+	var year = null;
+	var month = null;
+	var leftovers = [];
+
+	tokens.forEach(function (token) {
+		// Four digits is a year wherever it appears; nothing else in a date is four digits.
+		if (/^\d{4}$/.test(token) && year === null) {
+			year = Number(token);
+			return;
+		}
+		if (/^\d{1,2}$/.test(token)) {
+			leftovers.push(Number(token));
+			return;
+		}
+		var named = matchMonthName(token, cfg.locale);
+		if (named !== null && month === null) {
+			month = named;
+			return;
+		}
+		// A word this does not recognise makes the whole thing a guess, and a jump to the
+		// wrong month is worse than being told it was not understood.
+		leftovers.push(token);
+	});
+
+	for (var i = 0; i < leftovers.length; i++) {
+		var value = leftovers[i];
+		if (typeof value !== 'number') {
+			return null;
+		}
+		if (month === null && value >= 1 && value <= 12) {
+			month = value - 1;
+			continue;
+		}
+		// The day out of a full date. Nothing is done with it, and that is stated above.
+		if (month !== null && year !== null && value >= 1 && value <= 31) {
+			continue;
+		}
+		return null;
+	}
+
+	if (year === null && month === null) {
+		return null;
+	}
+	if (year === null) {
+		year = Number(cfg.year);
+		if (!isFinite(year)) {
+			return null;
+		}
+	}
+	if (year < 1 || year > 9999) {
+		return null;
+	}
+	return {year: year, month: month};
+}
+
+// Long and short, in the reader's own locale — and in English as well, because the app's
+// own labels are English and somebody reading them will type them.
+function matchMonthName (token, locale) {
+	var wanted = String(token).toLowerCase();
+	for (var month = 0; month < 12; month++) {
+		var names = [
+			monthName(month, locale, 'long'),
+			monthName(month, locale, 'short'),
+			monthName(month, 'en', 'long'),
+			monthName(month, 'en', 'short')
+		];
+		for (var i = 0; i < names.length; i++) {
+			var name = String(names[i]).toLowerCase().replace(/\.$/, '');
+			// A prefix, so "sept" and "septemb" both land -- but never a single letter,
+			// which would make "m" mean March and take the view shortcut with it.
+			if (name === wanted || (wanted.length >= 3 && name.indexOf(wanted) === 0)) {
+				return month;
+			}
+		}
+	}
+	return null;
+}
+
 export function dayOfYear (date) {
 	var start = new Date(date.getFullYear(), 0, 1);
 	var here = new Date(date.getFullYear(), date.getMonth(), date.getDate());

@@ -141,4 +141,16 @@ check('and uses the same click handler, which is what ends the peek there too',
 check('and the tray names no destination of its own',
 	/openCatalogApp|openFile\(/.test(taskbarSource), false);
 
+// Whether the desktop is buried under a window is something only this layer knows, and the
+// poller behind the readings cannot work it out — `document.hidden` is about the tab. This
+// is the whole fix for "the storage widget looks frozen", so it is the line that must not
+// be quietly dropped when setVisible is next edited.
+check('showing the desktop tells the poller, which cannot see it',
+	/setVisible[\s\S]{0,600}stats\.setDesktopVisible\(visible\)/.test(source), true);
+check('and the desktop is what says so', /widgets\.setVisible\(/.test(desktop), true);
+// The other half of that report is not ours: estimate() reports the quota manager's
+// bookkeeping for the whole origin on its own schedule. Saying so beats being asked again.
+check('the storage card admits the number is an estimate that can lag',
+	/estimate[\s\S]{0,120}lag a write/.test(source), true);
+
 process.exit(report('widgets') ? 1 : 0);

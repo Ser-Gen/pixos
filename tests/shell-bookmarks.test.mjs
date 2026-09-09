@@ -9,6 +9,7 @@
 // The rule that matters most here is not about bookmarks at all: `addBookmark` is callable
 // from inside any app iframe, so what it will store is a security question.
 
+import fs from 'node:fs';
 import {check, report} from './assert.mjs';
 import * as bookmarks from '../js/shell/bookmarks.js';
 import * as links from '../apps/bookmarks/js/links.js';
@@ -123,5 +124,41 @@ check('what is written is what the app reads back',
 	links.normalize(JSON.parse(bookmarks.serialize(intoExisting.doc)))
 		.groups.map(g => g.links.map(l => l.url)),
 	[['/home/about.md'], ['/home/report.md']]);
+
+// --- the file exists before anyone adds to it ------------------------------------------------
+//
+// The Bookmarks app shows a built-in starter document when there is no file and writes it
+// out on the first edit. `addBookmark` writing the file *first* meant the starter was never
+// written at all: you added one bookmark from the desktop and that one bookmark was your
+// entire collection, with the six the app had been showing you gone. Preinstall now seeds
+// the same document, so both halves start from the same place.
+//
+// Two copies again, for the same reason the URL rule is two copies — an app is installed
+// *into* BrowserFS and preinstall reads over HTTP — so they are checked against each other
+// rather than trusted.
+
+const template = JSON.parse(fs.readFileSync(new URL('../templates/links.json', import.meta.url), 'utf8'));
+check('the seeded document is the one the app would have shown', template, links.DEFAULT_DOC);
+check('and it is a document the app will actually parse',
+	links.normalize(template).groups.map(g => g.name), ['PixOS', 'Daily']);
+check('with every link surviving normalisation',
+	links.normalize(template).groups.map(g => g.links.length), [3, 3]);
+
+const preinstall = JSON.parse(fs.readFileSync(new URL('../settings/preinstall.json', import.meta.url), 'utf8'));
+check('preinstall seeds it where the app looks for it',
+	preinstall.seed.filter(entry => entry.path === '/settings/links.json')
+		.map(entry => entry.from),
+	['/templates/links.json']);
+// Seeds are copied once and never reasserted, which is what stops this overwriting a
+// collection somebody has actually built.
+check('and it is a seed rather than a file re-copied on every boot',
+	preinstall.files.some(entry => entry.path === '/settings/links.json'), false);
+
+// A bookmark added to the seeded document must land beside the starter links, not replace
+// them — which is the whole point of seeding it.
+const seeded = bookmarks.addTo(links.normalize(template),
+	{title: 'Added later', url: 'https://example.com/'});
+check('adding one keeps everything already there',
+	seeded.doc.groups.map(g => g.links.length), [3, 3, 1]);
 
 process.exit(report('shell-bookmarks') ? 1 : 0);

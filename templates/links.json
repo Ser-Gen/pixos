@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "favicons": false,
+  "groups": [
+    {
+      "name": "PixOS",
+      "links": [
+        {
+          "title": "About me",
+          "url": "/home/about.md",
+          "note": "Your own file — edit it in ace"
+        },
+        {
+          "title": "BrowserFS",
+          "url": "https://github.com/jvilk/BrowserFS",
+          "note": "The filesystem underneath"
+        },
+        {
+          "title": "GoldenLayout",
+          "url": "https://golden-layout.com/",
+          "note": "The window layout engine"
+        }
+      ]
+    },
+    {
+      "name": "Daily",
+      "links": [
+        {
+          "title": "Hacker News",
+          "url": "https://news.ycombinator.com/"
+        },
+        {
+          "title": "MDN",
+          "url": "https://developer.mozilla.org/"
+        },
+        {
+          "title": "Can I use",
+          "url": "https://caniuse.com/"
+        }
+      ]
+    }
+  ]
+}

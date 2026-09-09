@@ -11,7 +11,11 @@ var clockTimer = null;
 var storageTimer = null;
 var batteryRef = null;
 
-var STORAGE_INTERVAL = 60000;
+// While the desktop is buried under a window: nobody is looking, so a minute is generous.
+export var STORAGE_INTERVAL = 60000;
+// While it is actually on screen. `estimate()` is not free, but it is far cheaper than a
+// number somebody is watching and has decided is broken.
+export var STORAGE_INTERVAL_VISIBLE = 10000;
 
 var state = {
 	now: new Date(),
@@ -161,6 +165,39 @@ function emit () {
 	});
 }
 
+// Whether the desktop is actually on screen. `document.hidden` answers a different
+// question — it is about the *tab* — and a desktop buried under a maximised window is
+// exactly as invisible as a hidden tab while costing the same to poll for.
+var desktopVisible = false;
+
+// Told by `widgets.js`, which is told by `desktop.js`, which is the only thing that knows.
+// Reported as "the storage widget only updates after a reload": the poller was running
+// perfectly well on its minute, and a minute is a long time to watch a number you have
+// just changed by copying a file.
+//
+// Only half of that is ours to fix, and the widget says so. `navigator.storage.estimate()`
+// reports the quota manager's own bookkeeping rather than a live measurement, and Chromium
+// updates that on its own schedule after a write — so a re-read here can honestly return
+// the number it returned before.
+export function setDesktopVisible (visible) {
+	var want = !!visible;
+	if (want === desktopVisible) {
+		return;
+	}
+	desktopVisible = want;
+	// Nothing is polling: either the tab is hidden, or this browser will not estimate.
+	// `start()` picks the rate up from here when it next runs.
+	if (!storageTimer) {
+		return;
+	}
+	if (want) {
+		// The moment it comes into view, rather than up to a minute later.
+		refreshStorage();
+		return;
+	}
+	rearmStorage();
+}
+
 function start () {
 	if (clockTimer || document.hidden) {
 		return;
@@ -202,7 +239,14 @@ async function refreshStorage () {
 		return;
 	}
 	await readStorage();
-	storageTimer = setInterval(readStorage, STORAGE_INTERVAL);
+	rearmStorage();
+}
+
+function rearmStorage () {
+	clearInterval(storageTimer);
+	storageTimer = setInterval(readStorage, desktopVisible
+		? STORAGE_INTERVAL_VISIBLE
+		: STORAGE_INTERVAL);
 }
 
 async function readStorage () {

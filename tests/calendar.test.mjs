@@ -110,4 +110,52 @@ check('the month label carries the year, since the grid shows two of them',
 	cal.monthLabel(2026, 7, 'en-GB'), 'August 2026');
 check('and a mini month only needs the month', cal.monthName(7, 'en-GB'), 'August');
 
+// --- going somewhere ---------------------------------------------------------------------
+//
+// Arrows and *Today* were the whole of the navigation, so March 2031 was twelve presses a
+// year. What comes back is a **month**: the app's state is a year and a month, and there is
+// no selected day for a day to become, so accepting one and dropping it would be a promise
+// it cannot keep. `month` is 0-based, like everything else here, and null means "a year was
+// named and a month was not".
+
+const jump = (text, year) => cal.parseJump(text, {year: year || 2026, locale: 'en-GB'});
+
+check('a month and a year, written the way a file is named', jump('2031-03'), {year: 2031, month: 2});
+check('the way a form asks for it', jump('03/2031'), {year: 2031, month: 2});
+check('with dots', jump('03.2031'), {year: 2031, month: 2});
+check('the way it is said aloud', jump('March 2031'), {year: 2031, month: 2});
+check('shortened', jump('Mar 2031'), {year: 2031, month: 2});
+check('or the other way round', jump('2031 March'), {year: 2031, month: 2});
+check('case is not a rule', jump('mARCH 2031'), {year: 2031, month: 2});
+
+check('a year on its own is a year, with no month invented for it',
+	jump('2031'), {year: 2031, month: null});
+check('a month on its own belongs to the year on screen, not to this one',
+	jump('December', 2031), {year: 2031, month: 11});
+check('and so does a bare month number', jump('3', 2031), {year: 2031, month: 2});
+
+// Somebody typing a full date wants to be looking at that month; the day has nowhere to
+// go, and refusing it over that would be pedantry.
+check('a full ISO date lands on its month', jump('2031-03-15'), {year: 2031, month: 2});
+check('padded or not', jump('2031-3-5'), {year: 2031, month: 2});
+
+// Everything a wrong guess would be worse than a refusal.
+check('nothing is not a date', jump(''), null);
+check('nor is a word', jump('tomorrow'), null);
+check('nor a month that does not exist', jump('2031 13'), null);
+check('nor a year that does not', jump('0000'), null);
+check('nor a day-first date, which cannot be told from a month-first one',
+	jump('15/03/2031'), null);
+check('nor a single letter, which would make "m" mean March and eat the view shortcut',
+	jump('m'), null);
+check('nor more numbers than a date has', jump('2031 03 15 09'), null);
+check('and null does not throw', jump(null), null);
+
+// The names come from the reader's own locale, and from English as well, because the app's
+// own labels are English and somebody reading them will type them.
+check('a month named in the reader\'s language is understood',
+	cal.parseJump('сентябрь 2031', {year: 2026, locale: 'ru'}), {year: 2031, month: 8});
+check('and an English name still is, whatever the locale',
+	cal.parseJump('March 2031', {year: 2026, locale: 'ru'}), {year: 2031, month: 2});
+
 process.exit(report('calendar') ? 1 : 0);

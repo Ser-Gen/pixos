@@ -5,6 +5,7 @@
 // is an argument rather than a read of `navigator`: a browser that has everything is the
 // one case you can check by opening the app, and every other case is here.
 
+import fs from 'node:fs';
 import {check, report} from './assert.mjs';
 import * as probe from '../apps/system-info/js/probe.js';
 
@@ -138,5 +139,33 @@ check('an infinite discharge time is no answer at all — Chromium reports it wh
 // The one thing this app must never do is be wrong about where the data goes.
 check('the notice says nothing is sent anywhere', probe.NOTICE.includes('Nothing here is sent'), true);
 check('and names the reason it is worth seeing', probe.NOTICE.includes('fingerprinting'), true);
+
+// --- getting the report out of the page ------------------------------------------------------
+//
+// *Copy as text* was the only way out, and a clipboard from inside an iframe can be refused
+// — which is exactly the machine whose report you wanted. The page is checked as source
+// because none of this can be driven without a shell and a filesystem around it.
+
+const app = fs.readFileSync(new URL('../apps/system-info/index.html', import.meta.url), 'utf8');
+
+check('the report can be written to a file, not only copied',
+	app.includes('<button id="save"'), true);
+check('as markdown, which is what asText already produced and what /home opens',
+	/REPORT_DIR \+ REPORT_BASE[\s\S]{0,60}'\.md'/.test(app), true);
+check('with a heading, so the saved file is a document rather than a dump',
+	/lines = \['# System Info'/.test(app), true);
+// Never on top of one already there: nothing here is a save dialog, so the only honest
+// alternative to asking is not overwriting.
+check('and never on top of a report already saved',
+	/async function freeReportPath[\s\S]{0,300}if \(!await taken\(path\)\)/.test(app), true);
+check('a filesystem that cannot answer counts as taken, which costs a suffix rather than a file',
+	/Cannot tell[\s\S]{0,200}return true;/.test(app), true);
+// The host's Buffer, not this frame's: saveFileLocal checks it on the other side of the call.
+check('it writes through the shell with the shell\'s own Buffer',
+	/host\.saveFileLocal\(path, host\.Buffer\.from\(asText\(\)/.test(app), true);
+// Opened straight from the served repo there is no shell to write through, and a button
+// that looks live and does nothing is the thing this says instead.
+check('and outside PixOS the button says so rather than failing when pressed',
+	/if \(!shellHost\(\)\) \{\s*ui\.save\.disabled = true;/.test(app), true);
 
 process.exit(report('system-info') ? 1 : 0);

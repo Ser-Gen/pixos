@@ -299,6 +299,12 @@ export function setVisible (visible) {
 	if (!container) {
 		return;
 	}
+	// The poller is tied to `document.hidden`, which is about the tab. Whether the desktop
+	// is buried under a window is something only this layer knows, and the storage reading
+	// is the one people watch — so it polls faster while it can be seen, and re-reads the
+	// moment it comes back into view. Repeats are ignored on the other side; this runs on
+	// every desktop refresh.
+	stats.setDesktopVisible(visible);
 	container.style.opacity = visible ? '1' : '0';
 	// Faded out is not the same as gone: without this the About card keeps taking clicks
 	// in the top-right corner of the desktop while it is invisible.
@@ -379,8 +385,16 @@ register('storage', {
 	label: 'Storage',
 	// This card reports how much is gone; treemap is the only thing in the system that
 	// answers the question that immediately follows.
+	//
+	// The tooltip carries the caveat because there is nowhere else honest to put it, and
+	// the half of "the number looks frozen" that this system cannot fix is exactly the
+	// half people conclude is a bug: `estimate()` reports the quota manager's bookkeeping
+	// for the whole origin, refreshed when the browser feels like it, not a measurement
+	// of the filesystem. Treemap is the answer to the question actually being asked.
 	open: {
-		title: 'Show what is using the space',
+		title: 'Show what is using the space. This reading is the browser’s own estimate '
+			+ 'for everything this origin stores and it can lag a write by a while — '
+			+ 'Disk Treemap measures the filesystem itself.',
 		run: function () {
 			return window.openCatalogApp('treemap', ['/']);
 		}

@@ -1780,6 +1780,27 @@ function fsOnInit () {
 					}
 				};
 			})(),
+			(function () {
+				var focused = winManager.getActiveWindow();
+				return {
+					title: 'Open with…',
+					// Named, for the same reason *Close window* names what it closes.
+					subtitle: (focused && focused.path)
+						? 'Open ' + focused.path + ' with a different app'
+						: 'No window with a file in it is focused',
+					run: function () {
+						openFocusedWith().catch(function (err) {
+							var described = window.describeError('Could not open that file with another app', err);
+							notifications.notify({
+								level: 'error',
+								title: described.title,
+								message: described.message,
+								source: 'PixOS'
+							});
+						});
+					}
+				};
+			})(),
 			{
 				title: 'New desktop',
 				subtitle: 'Add a desktop and switch to it',
@@ -2843,6 +2864,42 @@ async function chooseHowToOpen (filePath) {
 		return launch({appId: null, paths: [filePath]});
 	}
 	return launch({appId: picked.appId, paths: [filePath]});
+}
+
+// "Open this one differently" for the file already on screen.
+//
+// The chooser had two ways in and both of them were *before* the file opened: a file the
+// shell has no default for, and Explorer's own *Open with...*. Neither reaches the moment
+// the thought actually occurs — you are looking at the thing, in the wrong app. A file
+// opened from the palette, a recent-files entry or a bookmark had no route at all, because
+// Explorer was never involved in opening it.
+//
+// Deliberately ignores the default: that is the whole request. It does not offer to open a
+// folder differently, because a folder is Explorer's and the chooser would be offering
+// text editors for a directory.
+async function openFocusedWith () {
+	var focused = winManager.getActiveWindow();
+	var filePath = focused && focused.path;
+	if (!filePath) {
+		notifications.notify({
+			level: 'info',
+			title: 'Open with…',
+			message: 'This opens the focused window’s file with a different app, and no '
+				+ 'window with a file in it is focused.',
+			source: 'PixOS'
+		});
+		return null;
+	}
+	if (await isDirectoryPath(filePath)) {
+		notifications.notify({
+			level: 'info',
+			title: 'Open with…',
+			message: filePath + ' is a folder, and this offers apps for a file.',
+			source: 'PixOS'
+		});
+		return null;
+	}
+	return chooseHowToOpen(filePath);
 }
 
 // The one chooser in the system, for both routes into it: a file the shell has no default

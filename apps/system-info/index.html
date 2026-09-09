@@ -135,6 +135,7 @@
 	<h1>System Info</h1>
 	<button id="refresh" title="Read everything again">Refresh</button>
 	<button id="copy" title="Copy the whole page as text">Copy as text</button>
+	<button id="save" title="Write the whole page into /home as a markdown file">Save to a file</button>
 </div>
 
 <div id="body">
@@ -156,7 +157,8 @@ var ui = {
 	status: document.getElementById('status'),
 	sections: document.getElementById('sections'),
 	refresh: document.getElementById('refresh'),
-	copy: document.getElementById('copy')
+	copy: document.getElementById('copy'),
+	save: document.getElementById('save')
 };
 
 ui.notice.textContent = probe.NOTICE;
@@ -377,8 +379,11 @@ function renderRow (item) {
 	return row;
 }
 
+// Markdown, and not by accident: this is what *Copy as text* has always produced, and it
+// is now also what gets written to disk — where `.md` opens in the markdown viewer. One
+// format, so the file and the clipboard cannot come to disagree about what a report is.
 function asText () {
-	var lines = ['System Info — read ' + new Date().toISOString(), ''];
+	var lines = ['# System Info', '', 'Read ' + new Date().toISOString(), ''];
 	lastSections.forEach(function (part) {
 		lines.push('## ' + part.title);
 		part.rows.forEach(function (item) {
@@ -420,7 +425,98 @@ async function copyText (text) {
 	return copied;
 }
 
+// --- writing it down -----------------------------------------------------------------------
+//
+// *Copy as text* was the only way out of this page, and a clipboard from inside an iframe
+// can be refused — which is precisely the machine whose report you wanted. A report is
+// worth having as a file: something to attach to a bug rather than something to paste
+// somewhere else first.
+
+var REPORT_DIR = '/home/';
+var REPORT_BASE = 'system-info';
+
+// The shell, or null when this page was opened straight from the served repo. Feature-
+// detected rather than assumed, and the button says so rather than looking live and doing
+// nothing.
+function shellHost () {
+	try {
+		return (window.parent !== window && typeof window.parent.saveFileLocal === 'function')
+			? window.parent
+			: null;
+	}
+	catch (crossOrigin) {
+		return null;
+	}
+}
+
+async function taken (path) {
+	try {
+		var response = await fetch('/__browserfs__' + path + '?' + Date.now(), {cache: 'no-store'});
+		return response.status !== 404;
+	}
+	catch (err) {
+		// Cannot tell. "Taken" is the safe guess: the cost of being wrong is a -1 on a
+		// filename, where the other way round the cost is somebody's file.
+		return true;
+	}
+}
+
+// Never on top of one that is already there. The same rule the shell applies to a file
+// arriving from a peer, for the same reason — nothing here asked to be a save dialog, so
+// the only honest alternative to asking is not overwriting.
+async function freeReportPath () {
+	for (var i = 0; i < 50; i++) {
+		var path = REPORT_DIR + REPORT_BASE + (i ? '-' + i : '') + '.md';
+		if (!await taken(path)) {
+			return path;
+		}
+	}
+	return null;
+}
+
+function saved (host, path) {
+	ui.status.textContent = 'Saved as ' + path + '. ';
+	var open = document.createElement('button');
+	open.textContent = 'Open it';
+	open.onclick = function () {
+		try {
+			host.openFile(path);
+		}
+		catch (err) {
+			ui.status.textContent = 'Saved as ' + path + ', but it could not be opened from here.';
+		}
+	};
+	ui.status.append(open);
+}
+
 ui.refresh.onclick = draw;
+ui.save.onclick = async function () {
+	var host = shellHost();
+	if (!host) {
+		ui.status.textContent = 'This page is part of PixOS; opened on its own it has '
+			+ 'nowhere to write. Use Copy as text.';
+		return;
+	}
+	ui.save.disabled = true;
+	ui.status.textContent = 'Saving…';
+	try {
+		var path = await freeReportPath();
+		if (!path) {
+			throw new Error('There are already fifty of these in ' + REPORT_DIR + '.');
+		}
+		// A Buffer, and the *host's* Buffer: the one in this frame is not the one
+		// BrowserFS checks against on the other side of the call.
+		await host.saveFileLocal(path, host.Buffer.from(asText(), 'utf8'));
+		saved(host, path);
+	}
+	catch (err) {
+		ui.status.textContent = 'Could not save the report: '
+			+ ((err && err.message) ? err.message : String(err));
+	}
+	finally {
+		ui.save.disabled = false;
+	}
+};
 ui.copy.onclick = async function () {
 	var copied = await copyText(asText());
 	ui.status.textContent = copied
@@ -430,6 +526,13 @@ ui.copy.onclick = async function () {
 
 // Nothing to open, but the shell hands every app a file eventually.
 window.openFile = function () {};
+
+// Said once, at the start, rather than discovered by pressing it: opened straight from the
+// served repo there is no shell to write through.
+if (!shellHost()) {
+	ui.save.disabled = true;
+	ui.save.title = 'Saving needs PixOS around this page. Use Copy as text instead.';
+}
 
 draw();
 </script>

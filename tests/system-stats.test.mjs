@@ -188,4 +188,16 @@ check('the clock is zero-padded', stats.formatClock(noon), '09:05');
 
 check('nothing is measured before the first poll', stats.get().storage, null);
 
+// "The storage widget only updates after a reload." The poller was running fine on its
+// minute; a minute is just a long time to watch a number you have changed by copying a
+// file. `document.hidden` cannot answer this — it is about the tab — so `desktop.js` says
+// whether the desktop is buried, and the rate follows.
+check('the reading is polled faster while it can actually be seen',
+	stats.STORAGE_INTERVAL_VISIBLE < stats.STORAGE_INTERVAL, true);
+check('and telling it the same thing twice does nothing',
+	stats.setDesktopVisible(true), undefined);
+// This browser has no storage.estimate, so nothing is polling and there is nothing to
+// re-arm. It must not throw on the way to finding that out.
+check('nor does it need a poller to be running', stats.setDesktopVisible(false), undefined);
+
 process.exit(report('system-stats') ? 1 : 0);

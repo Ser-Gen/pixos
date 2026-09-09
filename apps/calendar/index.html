@@ -51,7 +51,31 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		cursor: text;
+		padding: 2px 5px;
+		margin-left: -5px;
+		border: 1px solid transparent;
+		border-radius: 3px;
 	}
+
+	#title:hover { border-color: var(--line); }
+
+	/* The same box, so pressing the title does not make the bar jump. */
+	#jump {
+		font: inherit;
+		font-size: 15px;
+		font-weight: 600;
+		margin-right: auto;
+		width: 11em;
+		padding: 2px 5px;
+		margin-left: -5px;
+		color: var(--text);
+		background: rgba(255, 255, 255, .06);
+		border: 1px solid #3476c4;
+		border-radius: 3px;
+	}
+
+	#jump.bad { border-color: #c0554d; }
 
 	button {
 		font: inherit;
@@ -205,7 +229,8 @@
 <body>
 
 <div id="bar">
-	<div id="title">Calendar</div>
+	<div id="title" tabindex="0" role="button" title="Go to a month (G)">Calendar</div>
+	<input id="jump" hidden autocomplete="off" spellcheck="false">
 	<button class="step" id="prev" title="Previous (Left arrow)">&#8249;</button>
 	<button id="today" title="Today (T)">Today</button>
 	<button class="step" id="next" title="Next (Right arrow)">&#8250;</button>
@@ -235,6 +260,7 @@ import * as cal from './js/calendar.js';
 
 var ui = {
 	title: document.getElementById('title'),
+	jump: document.getElementById('jump'),
 	prev: document.getElementById('prev'),
 	next: document.getElementById('next'),
 	today: document.getElementById('today'),
@@ -405,10 +431,11 @@ function drawProgress () {
 		'Read-only — no events. Weeks start on ' + cal.weekdayNames(locale, weekStart)[0]
 		+ (progress.leap ? ', ' + progress.year + ' is a leap year' : '')
 		+ (zone ? ', ' + zone : '') + '. '));
-	['←', '→', 'T', 'M', 'Y'].forEach(function (label, index) {
+	var keys = ['←', '→', 'T', 'M', 'Y', 'G'];
+	keys.forEach(function (label, index) {
 		var key = document.createElement('kbd');
 		key.textContent = label;
-		ui.note.append(key, document.createTextNode(index === 4 ? '' : ' '));
+		ui.note.append(key, document.createTextNode(index === keys.length - 1 ? '' : ' '));
 	});
 }
 
@@ -431,6 +458,83 @@ function goToday () {
 	draw();
 }
 
+// --- going somewhere -------------------------------------------------------------------
+//
+// Arrows and *Today* were the whole of it, so March 2031 was twelve presses a year. The
+// title is the field: it is already the thing that says where you are, it is the thing you
+// look at when you want to be somewhere else, and swapping it in place costs no room in a
+// bar that has none.
+//
+// It is a *month* that is jumped to, because a month is all this app has — see `parseJump`.
+
+function openJump () {
+	if (!ui.jump.hidden) {
+		return;
+	}
+	ui.jump.value = '';
+	ui.jump.classList.remove('bad');
+	ui.jump.placeholder = state.view === 'year' ? '2031' : 'March 2031';
+	ui.title.hidden = true;
+	ui.jump.hidden = false;
+	ui.jump.focus();
+}
+
+function closeJump () {
+	ui.jump.hidden = true;
+	ui.title.hidden = false;
+}
+
+function applyJump () {
+	var target = cal.parseJump(ui.jump.value, {year: state.year, locale: locale});
+	if (!target) {
+		// Kept open with what was typed still in it: retyping a date because the app threw
+		// it away is worse than not offering this at all.
+		ui.jump.classList.add('bad');
+		ui.jump.title = 'Not a month. Try 2031, 2031-03, 03/2031 or March 2031.';
+		return;
+	}
+	state.year = target.year;
+	// A year with no month named in it leaves the month alone, exactly as the up and down
+	// arrows already do — this is another way to say the same thing, so it must not also
+	// change the view out from under you.
+	if (target.month !== null) {
+		state.month = target.month;
+	}
+	closeJump();
+	draw();
+}
+
+ui.title.onclick = openJump;
+// The title is reachable by keyboard, so it answers to a keyboard the way a button does.
+ui.title.onkeydown = function (e) {
+	if (e.key === 'Enter' || e.key === ' ') {
+		e.preventDefault();
+		openJump();
+	}
+};
+ui.jump.oninput = function () {
+	ui.jump.classList.remove('bad');
+	ui.jump.title = '';
+};
+ui.jump.onkeydown = function (e) {
+	// Stopped here as well as skipped below: this field is inside an app iframe, and the
+	// shell republishes keystrokes out of one. Enter and Escape are this field's while it
+	// is open.
+	e.stopPropagation();
+	if (e.key === 'Enter') {
+		e.preventDefault();
+		applyJump();
+	}
+	else if (e.key === 'Escape') {
+		e.preventDefault();
+		closeJump();
+		ui.title.focus();
+	}
+};
+// Clicking away is a cancel, not a submit: a half-typed month applied on blur would move
+// the view under a pointer that was on its way somewhere else.
+ui.jump.onblur = closeJump;
+
 ui.prev.onclick = function () { step(-1); };
 ui.next.onclick = function () { step(1); };
 ui.today.onclick = goToday;
@@ -438,10 +542,17 @@ ui.monthView.onclick = function () { state.view = 'month'; draw(); };
 ui.yearView.onclick = function () { state.view = 'year'; draw(); };
 
 // Plain letters, not chords: every chord worth having is the shell's, and an app that
-// takes one takes it away from the whole system. Nothing here has a text field to type
-// into, so a bare key cannot be swallowed by one.
+// takes one takes it away from the whole system.
+//
+// There is now exactly one text field here, and it is why this checks. A bare-letter
+// shortcut and a field to type into cannot both own the keyboard: without this, typing
+// "May" into the jump field would take the M as *month view* and the y as *year view* and
+// leave two letters behind.
 window.addEventListener('keydown', function (e) {
 	if (e.ctrlKey || e.metaKey || e.altKey) {
+		return;
+	}
+	if (!ui.jump.hidden) {
 		return;
 	}
 	var handled = true;
@@ -452,6 +563,7 @@ window.addEventListener('keydown', function (e) {
 	else if (e.key === 't' || e.key === 'T') { goToday(); }
 	else if (e.key === 'm' || e.key === 'M') { state.view = 'month'; draw(); }
 	else if (e.key === 'y' || e.key === 'Y') { state.view = 'year'; draw(); }
+	else if (e.key === 'g' || e.key === 'G') { openJump(); }
 	else { handled = false; }
 	if (handled) {
 		e.preventDefault();
