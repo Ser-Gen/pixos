@@ -4191,6 +4191,14 @@ async function openExplorer () {
 		};
 	}
 
+	// The shell now puts a reporter in front of every app document, so that an app whose
+	// script never ran is not a blank window and a console line. Explorer's own three
+	// layers are better than that generic one -- they name the operation and translate the
+	// errno -- so it opts out, and two notes for one failure do not happen. Declared here,
+	// beside the handlers it is talking about, rather than at the top where it would read
+	// as a setting.
+	window.__pixosOwnErrors = true;
+
 	// The last resort, for what neither wrapper covers: a listener, a timer, a promise
 	// nobody awaited. The shell's own handlers cannot see any of it -- a rejection inside
 	// an app fires on that app's window, not on the shell's -- so Explorer has to catch

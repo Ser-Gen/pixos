@@ -29,7 +29,8 @@ run in iframes. Pure static site — no build step, no backend.
   build.
 - `apps/<id>/` — one folder per app, each with `index.html` + `pixos.app.json`; two also
   have a `vendor/` holding a whole library plus a `README.md` recording its provenance.
-  `apps/explorer`, `apps/app-manager` are system apps; `apps/registry.json` is generated.
+  `apps/explorer`, `apps/app-manager` are system apps; `apps/registry.json` and
+  `apps/app-catalog.js` are both generated.
   `apps/calendar` (read-only month/year view) and `apps/system-info` (what this browser
   will say about the machine) are the destinations the desktop widgets lead to, and each
   keeps its logic in a pure module beside it — `js/calendar.js`, `js/probe.js` — because
@@ -40,7 +41,8 @@ run in iframes. Pure static site — no build step, no backend.
 - `settings/preinstall.json` + `templates/` — what a fresh system is made of, served over
   HTTP rather than read from BrowserFS. See *Boot is data-driven* in
   `docs/not-so-simple.md`.
-- `scripts/generate-apps-catalog.js` — the manifest/registry generator.
+- `scripts/generate-apps-catalog.js` — writes every app manifest, `apps/registry.json`
+  and `apps/app-catalog.js` (the fallback catalog) from one pass over `apps/`.
 - `tests/` — plain node, no framework, no dependencies. `npm test`.
 - `docs/*.ru.md` — architecture and how-to docs (Russian); the newer plans are `.md` English.
 - **`docs/not-so-simple.md` — how this system actually behaves**, in fifteen sections: the
@@ -76,8 +78,10 @@ sections, and the kind of thing each one will catch:
 
 - *Serving, offline, and saying when something failed* — the service worker and its query
   strings, the notification surface and its three layers in Explorer, `failure.js`,
-  `needsNetwork` and the four record builders that keep dropping it, and why the precache is
-  network-first.
+  `needsNetwork` and the four record builders that keep dropping it, why the precache is
+  network-first and what it follows rather than lists, and the error reporter the worker
+  injects into every app document so a window that dies before its own script runs still
+  says so.
 - *Apps that carry their own engine* — 7-Zip's exit codes and staging rules, filmoskop's
   parser boundary and its two editors, and the two apps whose folder is not their id.
 - *The desktop and its widgets* — peeks, widgets as doors, and who knows the desktop is
@@ -97,8 +101,9 @@ sections, and the kind of thing each one will catch:
 - *Frontmatter, parsed twice* — and why that is deliberate.
 - *Peers: another machine* — the closed wire protocol, chat as a file, a call and its bar,
   and a shared folder as a mount.
-- *The app system* — catalog versus local apps, and why uninstalling is not install
-  reversed.
+- *The app system* — catalog versus local apps, the generated fallback catalog, why
+  uninstalling is not install reversed, and how a renamed app keeps answering to its old
+  name.
 - *Opening a file* — the chooser, defaults, and the self-opening extensions.
 - *The bookmarks document* — two writers, one owner, and a seeded starter.
 - *Two smaller traps* — a clipboard that can refuse, and candidate-based extension matching.
@@ -110,6 +115,8 @@ MUST: hand-update `apps/explorer/pixos.app.json` (hash + `version`) after changi
 `apps/explorer/**` — the generator skips reserved ids and says nothing. `apps/app-manager`
 has no manifest at all: it is copied in by `preinstall.json` with `refresh: true` on every
 boot, so editing it needs nothing
+MUST NOT: hand-edit `apps/registry.json` or `apps/app-catalog.js` — both are generated,
+and the second rotted for a year because it was not
 MUST: keep `npm test` green
 MUST: read the matching section of `docs/not-so-simple.md` before changing an area it
 covers — it is not loaded with this file, and every paragraph in it exists because the

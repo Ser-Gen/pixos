@@ -57,16 +57,41 @@ check('and every module in js/shell/', shellModules.filter(m => !listed.includes
 // offline boot after an update from silently running yesterday's system apps.
 
 const preinstall = JSON.parse(fs.readFileSync(new URL('settings/preinstall.json', root), 'utf8'));
-const refreshed = preinstall.files
-	.filter(entry => entry && entry.refresh)
-	.map(entry => '.' + entry.path);
-check('every file preinstall re-copies on each boot is precached',
-	refreshed.filter(path => !listed.includes(path)), []);
+// Every one of them, not only the `refresh: true` ones. A file copied in *when missing*
+// is the worse case offline, not the better one: the copy fails, the retry next boot fails
+// the same way, and the system stays without it until the network comes back — which is
+// what left a first offline boot unable to extract an archive.
+const preinstalled = preinstall.files.map(entry => '.' + entry.path);
+check('every file preinstall copies into an empty filesystem is precached',
+	preinstalled.filter(path => !listed.includes(path)), []);
+check('the archive engine included, which used to be left out on bad arithmetic',
+	listed.includes('./apps/7z/vendor/js7z.wasm'), true);
 
 const seeds = preinstall.seed.map(entry => '.' + entry.from);
 check('and every template it seeds from', seeds.filter(path => !listed.includes(path)), []);
 
 check('preinstall.json itself is there', listed.includes('./settings/preinstall.json'), true);
+
+// --- the preinstalled apps are followed too --------------------------------------------------
+//
+// A first boot with no network used to give you a shell and no apps: preinstall names five
+// catalog apps, and installing one fetches every file in its manifest over HTTP. The
+// manifests were cached and the files they name were not, which is the least useful half.
+//
+// Not a hand list, for the same reason the manifests are not: it would rot the first time
+// somebody preinstalled a different app.
+check('the worker follows preinstall.json to the apps it installs',
+	/function precachePreinstalledApps/.test(sw), true);
+check('and reads each manifest for the files to keep',
+	/function precacheAppFiles[\s\S]{0,400}manifest\.files/.test(sw), true);
+check('it runs as part of the install, not on a later boot',
+	/precacheCatalogManifests\(cache\);[\s\S]{0,120}precachePreinstalledApps\(cache\)/.test(sw), true);
+check('none of those app files is listed by hand either', preinstall.apps
+	.filter(id => listed.some(entry => entry.indexOf('./apps/' + id + '/') === 0)), []);
+// A failure there must not take the whole install down with it: a shell that cached forty
+// of its forty-five files is worth immeasurably more than one that cached none.
+check('and a manifest it cannot read is a warning, not the end of the install',
+	/precache: ' \+ id \+ ' skipped'/.test(sw), true);
 
 // --- catalog manifests are followed, not listed -------------------------------------------
 //

@@ -170,7 +170,60 @@ function fetchAudioProxy(request) {
 // The version in the cache name is the whole risk: skipWaiting() + clients.claim() means a
 // new worker takes over immediately, and without a versioned name that would be a new
 // worker serving a previous worker's assets. `activate` deletes every cache but this one.
-var SHELL_CACHE = 'pixos-shell-v5';
+var SHELL_CACHE = 'pixos-shell-v6';
+
+// --- an app that dies before its own code runs ---------------------------------------------
+//
+// An error inside an iframe fires on *that* window. The shell's global handlers cannot see
+// it, so an app whose script never ran opened a blank window and said nothing anywhere but
+// the console — `ace` with no network was the standing example: its editor comes off a CDN,
+// the CDN fails, and the app's own code then dies on `ace is not defined` before it could
+// have installed a handler of its own.
+//
+// So the handler arrives before the app does, injected here. This is the one place that
+// can: the shell cannot reach into a document before its scripts run, and an app cannot
+// catch what breaks before it loads.
+//
+// Two things keep the cost of rewriting a document down to nothing that matters. It is
+// injected **only into navigations** — `request.mode === 'navigate'` — so anything reading
+// an app's own source still gets the file byte for byte, which is what installs, hashes and
+// `pixos_supported` all do. And it goes in after `<head>`, never before the doctype, which
+// would drop the document into quirks mode.
+//
+// `__pixosOwnErrors` is the opt-out, for an app that reports its own failures properly:
+// Explorer does, in three layers, and two reports of one error is worse than one.
+var ERROR_REPORTER = '<script>(function(){'
+	+ 'var send=function(kind,message,detail){'
+	+ 'if(window.__pixosOwnErrors){return;}'
+	+ 'try{parent!==window&&parent.__pixosAppError&&parent.__pixosAppError('
+	+ '{src:location.pathname,kind:kind,message:String(message||""),detail:detail?String(detail):null});}'
+	+ 'catch(e){}};'
+	// Capture phase, because a <script src> or <img> that fails to load fires an error
+	// event that does not bubble -- and for an app that loads half of itself from
+	// somewhere else, that failure is the actual news.
+	+ 'addEventListener("error",function(e){'
+	+ 'if(e.target&&e.target!==window&&(e.target.src||e.target.href)){'
+	+ 'send("resource","Could not load "+(e.target.src||e.target.href),e.target.tagName);return;}'
+	+ 'send("error",e.message,e.error&&e.error.stack);},true);'
+	+ 'addEventListener("unhandledrejection",function(e){'
+	+ 'var r=e.reason;send("rejection",(r&&r.message)||r,r&&r.stack);});'
+	+ '}());</script>';
+
+// After <head> if there is one, after the doctype otherwise, and only then at the very
+// front. Anything before the doctype would make the browser render the app in quirks mode.
+function withErrorReporter (html) {
+	var head = /<head[^>]*>/i.exec(html);
+	if (head) {
+		return html.slice(0, head.index + head[0].length) + ERROR_REPORTER
+			+ html.slice(head.index + head[0].length);
+	}
+	var doctype = /<!doctype[^>]*>/i.exec(html);
+	if (doctype) {
+		return html.slice(0, doctype.index + doctype[0].length) + ERROR_REPORTER
+			+ html.slice(doctype.index + doctype[0].length);
+	}
+	return ERROR_REPORTER + html;
+}
 
 // The shell itself. Catalog manifests are not listed -- there are twenty-five of them and
 // the list would rot the first time an app was added -- they are read out of
@@ -226,12 +279,26 @@ var PRECACHE = [
 	'./apps/explorer/favicon.svg',
 	'./apps/app-manager/index.html',
 	'./apps/app-manager/favicon.svg',
-	// The archive rules, which preinstall re-copies on every boot so a fix reaches an
-	// existing system. The engine beside them (vendor/js7z.wasm, 1.4 MB) is deliberately
-	// not here: it is copied in once, when missing, and precaching it would put a
-	// megabyte and a half into every boot for something most sessions never open.
+	// The archive rules, and the engine under them.
+	//
+	// The engine used to be left out on the grounds that it would cost "a megabyte and a
+	// half on every boot", which was simply wrong: a precache is filled once per worker
+	// version, not once per load. What it actually cost was a first boot with no network
+	// having no way to extract anything, for ever -- preinstall copies js7z.wasm in only
+	// when it is missing, so the failed copy is retried on later boots and fails the same
+	// way until the network comes back.
 	'./apps/7z/js/parse.js',
-	'./apps/7z/js/archive.js'
+	'./apps/7z/js/archive.js',
+	'./apps/7z/vendor/js7z.js',
+	'./apps/7z/vendor/js7z.wasm',
+	// The rest of what preinstall copies into an empty filesystem. Nothing here is loaded
+	// by the shell itself, so none of it would be cached by being used.
+	'./apps/jquery-1.11.1.min.js',
+	'./apps/jszip.3.10.1.min.js',
+	'./apps/qrcode.js',
+	'./apps/fix-webm-duration.js',
+	'./apps/ace/index.html',
+	'./apps/ace/pixos_supported'
 ];
 
 // Both the boot sequence and the app registry append `?<random>` to defeat the HTTP cache,
@@ -250,6 +317,51 @@ function isSameOrigin (url) {
 	} catch (e) {
 		return false;
 	}
+}
+
+// The apps a fresh system is made of, followed out of `settings/preinstall.json` and their
+// manifests rather than listed above — the same argument as the catalog manifests, and it
+// bites harder here: a hand-written list would rot the first time somebody preinstalled a
+// different app, and filmoskop alone is nine files.
+//
+// Without this, a first boot with no network gave you a shell and no apps. `preinstall.json`
+// says to install bookmarks, markdown-viewer, calendar, system-info and filmoskop, and
+// `installAppById` fetches every one of their files over HTTP — so on a machine with no
+// network they all failed and the system came up empty, with the *manifests* cached and
+// nothing to install from them. Twenty-six files, about half a megabyte, against a shell
+// that already costs more than that.
+function precachePreinstalledApps (cache) {
+	return fetch(new Request('./settings/preinstall.json', {cache: 'reload'})).then(function (response) {
+		if (!response.ok) {
+			throw new Error('preinstall.json: HTTP ' + response.status);
+		}
+		return response.json();
+	}).then(function (preinstall) {
+		var ids = Array.isArray(preinstall.apps) ? preinstall.apps : [];
+		return Promise.all(ids.map(function (id) {
+			return precacheAppFiles(cache, id);
+		}));
+	}).catch(function (err) {
+		console.warn('precache: preinstalled apps skipped', err);
+	});
+}
+
+function precacheAppFiles (cache, id) {
+	var manifestPath = './apps/' + id + '/pixos.app.json';
+	return fetch(new Request(manifestPath, {cache: 'reload'})).then(function (response) {
+		if (!response.ok) {
+			throw new Error(manifestPath + ': HTTP ' + response.status);
+		}
+		return response.json();
+	}).then(function (manifest) {
+		var files = Array.isArray(manifest.files) ? manifest.files : [];
+		return Promise.all(files.map(function (item) {
+			var itemPath = typeof item === 'string' ? item : (item && item.path);
+			return itemPath ? cacheOne(cache, '.' + itemPath) : null;
+		}));
+	}).catch(function (err) {
+		console.warn('precache: ' + id + ' skipped', err);
+	});
 }
 
 function precacheCatalogManifests (cache) {
@@ -346,6 +458,8 @@ self.addEventListener('install', function (event) {
 			return cacheOne(cache, url);
 		})).then(function () {
 			return precacheCatalogManifests(cache);
+		}).then(function () {
+			return precachePreinstalledApps(cache);
 		});
 	}));
 	self.skipWaiting();
@@ -640,6 +754,22 @@ self.addEventListener('fetch', function (event) {
                                 'Content-Length': String(range.end - range.start + 1),
                                 'Content-Type': contentType,
                                 'Content-Range': 'bytes ' + range.start + '-' + range.end + '/' + size
+                            })
+                        });
+                    }
+
+                    // A document on its way into a frame, and the only moment a handler can
+                    // be put in front of the app's own code. Never for a fetch of the same
+                    // file as data -- an install, a hash, a `pixos_supported` read -- which
+                    // all still get the bytes that are on disk.
+                    if (contentType === 'text/html' && request.mode === 'navigate') {
+                        var injected = new TextEncoder().encode(
+                            withErrorReporter(new TextDecoder().decode(buffer))
+                        );
+                        return new Response(injected, {
+                            headers: isolationHeaders({
+                                'Content-Length': String(injected.byteLength),
+                                'Content-Type': contentType
                             })
                         });
                     }

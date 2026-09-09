@@ -291,6 +291,55 @@ window.describeWriteLimit = async function (bytes) {
 	return failure.describeWriteLimit(bytes, estimate);
 };
 
+// The same net, for the windows this one cannot see into.
+//
+// An error inside an iframe fires on *that* window, so an app whose script never ran opened
+// a blank window and said nothing anywhere but the console. `sw.js` now puts a handler in
+// front of every app document it serves, and this is where it reports to. The app cannot be
+// asked to do it itself: the case that matters most is the one where the app's own code
+// never got to run.
+//
+// The peer rule applies here too — an app names itself, so what it says goes in the *title*
+// as content and `source` stays 'PixOS'.
+window.__pixosAppError = function (info) {
+	var report = info || {};
+	var app = appForEntryPath(report.src);
+	var name = (app && (app.label || app.name || app.id)) || 'An app';
+	console.error('Error inside ' + (report.src || 'an app'), report.message, report.detail || '');
+
+	// A missing script from somewhere else is the common shape of this, and when the
+	// machine is offline that is the whole explanation — worth saying instead of leaving
+	// the address to be read.
+	var offline = navigator.onLine === false;
+	var message = report.message || 'Something failed inside it.';
+	if (report.kind === 'resource' && offline) {
+		message += ' This machine is offline, and that file is not part of PixOS.';
+	}
+	else if (report.kind === 'resource' && app && app.needsNetwork) {
+		message += ' This app loads part of itself from another site.';
+	}
+
+	notifications.notify({
+		level: 'error',
+		title: name + ' hit an error',
+		message: message,
+		source: 'PixOS'
+	});
+};
+
+// Which app a document belongs to, from the path the report came with. Matched on the
+// folder rather than the entry file, because an app may open more than one page of its own.
+function appForEntryPath (src) {
+	var match = /\/apps\/([^/]+)\//.exec(String(src || ''));
+	if (!match) {
+		return null;
+	}
+	var folder = '/apps/' + match[1] + '/';
+	return (window.apps || []).find(function (entry) {
+		return entry.entryPath && entry.entryPath.indexOf(folder) === 0;
+	}) || null;
+}
+
 // The net. Every silent failure in the system lands here whether or not anyone thought to
 // catch it -- which is the point, because the ones worth finding are the ones nobody
 // expected. Both are capture-phase on window so nothing can swallow them first.
@@ -760,6 +809,13 @@ function fsOnInit () {
 
 	window.buildAppRegistry = function () {
 		return PixosAppRegistry.buildAppRegistry();
+	};
+
+	// What an app used to be called. A saved session, a recent-apps entry or anything else
+	// holding an id from before a rename resolves through this rather than each of them
+	// being rewritten when the rename happens.
+	window.resolveAppId = function (appId) {
+		return PixosAppRegistry.resolveAppId(appId);
 	};
 
 	window.installAppById = async function (appId) {
@@ -2564,7 +2620,14 @@ async function launch (descriptor, restore) {
 	descriptor.url = descriptor.url ? toWebViewUrl(descriptor.url) : null;
 	var external = !!descriptor.url;
 
+	// An id from before a rename becomes the current one here, at the funnel every route
+	// already goes through, and is written back into the descriptor — so the session that
+	// gets saved next holds the new name and the old one stops being asked about.
 	var appId = external ? null : (descriptor.appId || null);
+	if (appId && typeof window.resolveAppId === 'function') {
+		appId = window.resolveAppId(appId) || appId;
+		descriptor.appId = appId;
+	}
 	var launcher = external ? WEB_VIEW : ((appId && APP_LAUNCHERS[appId]) || {});
 	// Without an app the path is the window: that is how Explorer opens a bare html file.
 	var entryPath = external ? descriptor.url : (appId ? getAppEntryPath(appId) : descriptor.paths[0]);

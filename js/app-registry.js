@@ -208,30 +208,27 @@
 		}
 	}
 
+	// `apps/app-catalog.js` is generated from the manifests, so an entry in it *is* a
+	// manifest and goes straight through `normalizeManifest` — which is the point. This
+	// used to build a record field by field and, being the fifth place in this file that
+	// does that, it dropped three of them: `needsNetwork`, `autosave` and `icon`. An app
+	// installed from the fallback therefore lost its offline warning and its
+	// saves-automatically badge, which is precisely the situation those exist for.
+	//
+	// The only thing still inferred is the entry point, and only for a hand-written entry
+	// old enough not to name one.
 	function legacyCatalogToManifest (id, raw) {
 		if (!raw) {
 			return null;
 		}
-		var files = Array.isArray(raw.files) ? raw.files.map(function (item) {
-			return { path: item, hash: null };
-		}) : [];
-		var entryPath = raw.entryPath || null;
-		if (!entryPath && id !== 'base') {
-			var indexFile = files.find(function (item) {
+		var manifest = normalizeManifest(Object.assign({}, raw, {id: id}));
+		if (manifest && !manifest.entryPath && id !== 'base') {
+			var indexFile = manifest.files.find(function (item) {
 				return /\/index\.html$/.test(item.path);
 			});
-			entryPath = indexFile ? indexFile.path : null;
+			manifest.entryPath = indexFile ? indexFile.path : null;
 		}
-		return normalizeManifest({
-			id: id,
-			name: raw.label || raw.name || id,
-			version: raw.version || '1.0.0',
-			entryPath: entryPath,
-			files: files,
-			supportedExtensions: raw.supportedExtensions,
-			supportedMimeTypes: raw.supportedMimeTypes,
-			supportsText: raw.supportsText
-		});
+		return manifest;
 	}
 
 	async function loadCatalogFromRegistry () {
@@ -447,6 +444,8 @@
 			return buildRegistryPromise;
 		}
 		buildRegistryPromise = (async function () {
+			// Before anything is resolved through them.
+			await loadAppAliases();
 			var catalogManifests = await loadCatalogFromRegistry();
 			if (!catalogManifests.length) {
 				catalogManifests = loadCatalogFromLegacy();
@@ -502,10 +501,60 @@
 		});
 	}
 
+	// --- an app that has been renamed -------------------------------------------------------
+	//
+	// Renaming a local app used to leave every reference to the old id pointing at nothing.
+	// Default-app associations were already carried across; a saved *session* was not, so a
+	// window that had been open on the renamed app came back as `App <old id> has no launch
+	// path` — and the recent-apps list kept offering an app that no longer existed.
+	//
+	// The alias lives in a file of this system's own rather than in the app's manifest,
+	// because that is what it is: a fact about what happened *here*, not a property of the
+	// app. A published manifest has no opinion about what somebody's machine used to call
+	// it.
+	//
+	// Chains are collapsed on write (a→b then b→c leaves a→c, never a→b→c), so resolution
+	// is one lookup and cannot loop.
+	var ALIASES_PATH = '/settings/app-aliases.json';
+	var appAliases = {};
+
+	async function loadAppAliases () {
+		var stored = await deps.readJsonFile(ALIASES_PATH, null);
+		appAliases = (stored && typeof stored === 'object' && !Array.isArray(stored)) ? stored : {};
+		return appAliases;
+	}
+
+	function resolveAppId (id) {
+		if (!id || appRegistry[id]) {
+			return id;
+		}
+		return appAliases[id] || id;
+	}
+
+	async function rememberAppRename (oldId, newId) {
+		if (!oldId || !newId || oldId === newId) {
+			return;
+		}
+		var next = {};
+		Object.keys(appAliases).forEach(function (from) {
+			// Anything that already pointed at the old name now points past it.
+			next[from] = appAliases[from] === oldId ? newId : appAliases[from];
+		});
+		next[oldId] = newId;
+		// A name that has come back into use is not an alias for anything.
+		delete next[newId];
+		appAliases = next;
+		await deps.writeFile(ALIASES_PATH, global.Buffer.from(JSON.stringify(appAliases, null, 2)));
+	}
+
 	function getApp (id, options) {
 		options = options || {};
 		if (appRegistry[id]) {
 			return appRegistry[id];
+		}
+		var aliased = appAliases[id];
+		if (aliased && appRegistry[aliased]) {
+			return appRegistry[aliased];
 		}
 		if (options.includeLocalConflict) {
 			var conflictKey = id + '::local';
@@ -516,7 +565,8 @@
 		return null;
 	}
 
-	function getCatalogApp (id) {
+	function getCatalogApp (rawId) {
+		var id = resolveAppId(rawId);
 		var app = appRegistry[id];
 		if (app && app.source === 'catalog') {
 			return app;
@@ -717,6 +767,11 @@
 		if (typeof deps.updateDefaultAppAssociations === 'function') {
 			await deps.updateDefaultAppAssociations(oldId, newId);
 		}
+		// Everything else that names an app by id — a saved session, the recent list, a
+		// window waiting to be restored — goes through the alias rather than being hunted
+		// down and rewritten file by file. One place to get right instead of four, and it
+		// keeps working for whatever names an app id next.
+		await rememberAppRename(oldId, newId);
 		await buildAppRegistry();
 		return { id: newId, name: localApp.label };
 	}
@@ -986,6 +1041,10 @@
 		checkAllAppUpdates: checkAllAppUpdates,
 		validateLocalAppId: validateLocalAppId,
 		renameLocalApp: renameLocalApp,
+		resolveAppId: resolveAppId,
+		getAppAliases: function () {
+			return Object.assign({}, appAliases);
+		},
 		loadInstalledState: loadInstalledState,
 		getReservedIds: function () {
 			return RESERVED_IDS.slice();

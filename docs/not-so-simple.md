@@ -65,7 +65,9 @@ network has none of this — phase 7's precache is what fixes that.
 `index.html`, every module in `js/shell/`, the vendor bundles, `settings/preinstall.json`,
 `templates/`, the two system apps and every catalog manifest — the manifests followed out
 of `registry.json` at install time rather than listed, because a hand-written list of
-twenty-five rots the day someone adds an app. The strategy is **network first, cache
+twenty-five rots the day someone adds an app. The **apps preinstall installs** are followed
+the same way, out of `settings/preinstall.json` and then each manifest: caching the manifests
+and not the files they name left a first offline boot with a shell and no apps. The strategy is **network first, cache
 second**, which is backwards from the usual advice and deliberate: this repo is served
 straight off disk with no build step and no content hashing, so cache-first would hand back
 yesterday's `index.html` after every edit and no reload would fix it. The cache is only
@@ -558,9 +560,40 @@ deleting one in Explorer is what people did while there was no button, and press
 *Uninstall* afterwards is what repairs the record. Nothing watches the filesystem, so App
 Manager still lists such an app until *Rescan apps*.
 
-**`apps/app-catalog.js` is a legacy fallback** used when `registry.json` is unreachable. The
-generator reads it but never writes it, so its file lists rot silently and will install a
-broken app. Update the relevant entry by hand when an app gains or loses files.
+**`apps/app-catalog.js` is generated, and is what a broken registry falls back to.** Written
+by `scripts/generate-apps-catalog.js` from the same manifests as `registry.json`, in the
+manifest's own shape — so an entry in it *is* a manifest and `legacyCatalogToManifest` is one
+call to `normalizeManifest`. Do not edit it by hand; `tests/app-registry.test.mjs` checks it
+against every manifest. It was hand-written for years and rotted exactly as a list of file
+paths rots: `monaco` and `tinymce` gained vendored editors of 98 and 137 files while it went
+on naming two each, so installing either from the fallback produced an app that opened and
+stayed blank, and four later apps were missing entirely. Being a *fifth* hand-written record
+builder it also dropped `needsNetwork`, `autosave` and `icon` — losing the offline warning on
+precisely the boot that needs one. `base` in it is the bootstrap file list, taken from
+`settings/preinstall.json` rather than kept as a second opinion about it.
+
+**An app that dies before its own code runs is still reported.** An error inside an iframe
+fires on *that* window, so the shell's handlers never see it — `ace` with no network opened a
+blank window and left a console line, because the CDN editor was missing and its own script
+then died on `ace is not defined`. The handler therefore arrives before the app: `sw.js`
+injects one into every app document, reporting to `window.__pixosAppError`, which names the
+app. Four things about it. It listens in the **capture** phase, so a `<script src>` that never
+loaded is reported as the address that failed rather than as the exception that follows. It is
+injected **only into navigations**, so every route that reads an app's own source — an
+install, a hash, a `pixos_supported` read — still gets the file byte for byte. It goes in
+after `<head>` and never before the doctype, which would drop the app into quirks mode. And
+`window.__pixosOwnErrors = true` is the opt-out for an app that reports properly: Explorer
+sets it, because two notes for one failure is worse than one.
+
+**An app that has been renamed keeps answering to its old name.** `/settings/app-aliases.json`
+maps old id to current, written by `renameLocalApp` and read by `buildAppRegistry`;
+`resolveAppId` is consulted by `getApp`, `getCatalogApp` and `launch()`, which writes the
+resolved id back into the descriptor so the next saved session holds the new name. Chains
+collapse on write, so a lookup is one step and cannot loop. Renaming already carried the
+default-app associations; what it did not carry was the saved session, so a window open on
+the renamed app came back as *App &lt;old id&gt; has no launch path*. The alias is a file of
+this system's own rather than a `previousIds` in the manifest, because it is a fact about
+what happened here, not a property of the app.
 
 ## Opening a file
 

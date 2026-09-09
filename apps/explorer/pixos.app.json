@@ -1,7 +1,7 @@
 {
 	"id": "explorer",
 	"name": "Explorer",
-	"version": "1.10.0",
+	"version": "1.11.0",
 	"entryPath": "/apps/explorer/index.html",
 	"files": [
 		{
@@ -10,7 +10,7 @@
 		},
 		{
 			"path": "/apps/explorer/index.html",
-			"hash": "sha256:c5b42c0c505824b2a79cd7b3f60d001d7e9fa0838e452818b339f7aec0cb5239"
+			"hash": "sha256:098a52988e5bfbfd50fc258235600d285c0a027aa6546509cd7e227c7396e50e"
 		}
 	],
 	"icon": "/apps/explorer/favicon.svg"
