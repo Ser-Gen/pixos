@@ -41,6 +41,10 @@ run in iframes. Pure static site — no build step, no backend.
 - `settings/preinstall.json` + `templates/` — what a fresh system is made of, served over
   HTTP rather than read from BrowserFS. See *Boot is data-driven* in
   `docs/not-so-simple.md`.
+- `.nojekyll` — empty, one byte, and load-bearing. GitHub Pages runs every file beginning
+  with a `---` front-matter block through Jekyll and publishes it as `.html`, which is how
+  two of the four files in `templates/` came to 404 on a server that had them. Do not
+  delete it; `tests/precache.test.mjs` checks it is there.
 - `scripts/generate-apps-catalog.js` — writes every app manifest, `apps/registry.json`
   and `apps/app-catalog.js` (the fallback catalog) from one pass over `apps/`.
 - `tests/` — plain node, no framework, no dependencies. `npm test`.
@@ -95,7 +99,8 @@ sections, and the kind of thing each one will catch:
 - *Storage, and what the browser will not keep* — eviction, the 128 MiB ceiling on a file,
   what a refused write does and does not tell you, and one spelling of a size.
 - *Manifests, boot, and what a fresh system is made of* — generated manifests, the two the
-  generator skips in silence, and `preinstall.json`.
+  generator skips in silence, `preinstall.json`, and what a boot says on screen when it
+  cannot fetch what it is made of.
 - *Frames that are not apps* — `launch({url})` and why every cross-origin iframe needs
   `credentialless`.
 - *Frontmatter, parsed twice* — and why that is deliberate.

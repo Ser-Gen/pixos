@@ -70,6 +70,31 @@ check('the archive engine included, which used to be left out on bad arithmetic'
 const seeds = preinstall.seed.map(entry => '.' + entry.from);
 check('and every template it seeds from', seeds.filter(path => !listed.includes(path)), []);
 
+// The other direction, which nothing checked: a `from` that names a file the repo does not
+// have. A missing seed does not cost you a file, it costs you a folder -- /home exists only
+// because a seed is written into it -- and until the note added on 2026-09-10 it cost you
+// nothing visible at all.
+check('and every template it names actually exists',
+	preinstall.seed.filter(entry => !fs.existsSync(new URL('.' + entry.from, root))).map(entry => entry.from),
+	[]);
+
+// GitHub Pages runs Jekyll, and Jekyll's rule is about the *content*, not the extension:
+// a file beginning with a `---` front-matter block is a page to be rendered, and a rendered
+// markdown page is published as .html. That is why templates/about.md and
+// templates/talk.deck.md 404'd on a server that had them, while thanks.block.md (no front
+// matter) and links.json were served untouched -- and why /home did not exist on that
+// machine at all. `.nojekyll` in the published root turns the whole processing step off.
+//
+// Renaming the extension is NOT a fix and is checked here so nobody tries it: Jekyll
+// processes any extension once front matter is present, and *strips the front-matter block*
+// from what it publishes. The URL would answer 200 with the half of about.md the About
+// widget actually reads deleted -- a silent failure in place of a loud one.
+const fenced = preinstall.seed
+	.map(entry => entry.from)
+	.filter(from => /^---(\r?\n)/.test(fs.readFileSync(new URL('.' + from, root), 'utf8')));
+check('a template a Jekyll host would swallow is protected by .nojekyll',
+	fenced.length === 0 || fs.existsSync(new URL('.nojekyll', root)), true);
+
 check('preinstall.json itself is there', listed.includes('./settings/preinstall.json'), true);
 
 // --- the preinstalled apps are followed too --------------------------------------------------

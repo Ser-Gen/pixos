@@ -530,6 +530,16 @@ function fsOnInit () {
 		catch (err) {
 			console.error('settings/preinstall.json could not be read; '
 				+ 'booting with the built-in minimum', err);
+			// On screen as well, because the result is a PixOS that looks like a working
+			// one somebody emptied: the shell is there, the apps are not, and without this
+			// the only account of why is a line in a console nobody has open.
+			var told = failure.describeBootFallback(err);
+			notifications.notify({
+				level: 'error',
+				title: told.title,
+				message: told.message,
+				source: 'PixOS'
+			});
 			return FALLBACK_PREINSTALL;
 		}
 	}
@@ -587,6 +597,7 @@ function fsOnInit () {
 	// decision the next boot respects rather than undoes.
 	async function seedUserFiles (entries, state) {
 		var changed = false;
+		var failures = [];
 
 		for (var i = 0; i < entries.length; i++) {
 			var entry = entries[i];
@@ -615,7 +626,23 @@ function fsOnInit () {
 				// Not recorded, so the next boot tries again: a template that failed to
 				// download is not the user deciding they do not want the file.
 				console.error('Seeding ' + entry.path + ' failed', err);
+				failures.push({path: entry.path, from: entry.from, error: err});
 			}
+		}
+
+		// One note for the lot, after the loop rather than inside it: four missing
+		// templates are one deployment problem, and four notes describing it separately
+		// would be four times the noise and no more information. Silence here is what let
+		// a server with no templates/about.md come up with no /home folder at all --
+		// nothing else creates that directory -- and say nothing about it.
+		var told = failure.describeSeedFailure(failures);
+		if (told) {
+			notifications.notify({
+				level: 'warn',
+				title: told.title,
+				message: told.message,
+				source: 'PixOS'
+			});
 		}
 
 		return changed;

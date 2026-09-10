@@ -220,3 +220,64 @@ export function describeError (context, error, options) {
 	}
 	return {title: context || 'Something went wrong', message: message, reason: 'unknown'};
 }
+
+// A first boot builds the system out of files fetched over HTTP, and every one of those
+// fetches used to fail into `console.error` and nothing else. That is how a server missing
+// two files in `templates/` produced a PixOS with no `/home` folder at all — nothing else
+// creates that directory, it exists only because a seed is written into it — and an About
+// widget reading a file that had never been written. Everything looked like it had worked.
+//
+// Both of these describe a boot that did not get what it asked for. They are separate
+// because the two failures are not the same size: a seed that 404s costs you one file,
+// while a `preinstall.json` that 404s costs you every app and every seed at once.
+
+// `failures` is [{path, from, error}] — where the file was going, which template it came
+// from, and what went wrong. Returns null when nothing failed, so the caller can raise a
+// note unconditionally on the result.
+export function describeSeedFailure (failures) {
+	var list = (Array.isArray(failures) ? failures : []).filter(function (item) {
+		return item && item.path;
+	});
+	if (!list.length) {
+		return null;
+	}
+
+	var one = list.length === 1;
+	var reasons = [];
+	var lines = list.map(function (item) {
+		var reason = item.error && item.error.message
+			? String(item.error.message)
+			: String(item.error || '');
+		if (reason && reasons.indexOf(reason) === -1) {
+			reasons.push(reason);
+		}
+		return item.from ? item.path + '  ←  ' + item.from : item.path;
+	});
+
+	return {
+		title: one ? 'A starter file is missing' : list.length + ' starter files are missing',
+		// The destination and the source both, because they answer different questions:
+		// the first says what you will find missing, the second says what to put on the
+		// server. Whoever sees this note is usually the person who deployed it.
+		message: lines.join('\n') + '\n\n'
+			+ 'The server did not return ' + (one ? 'it' : 'them')
+			+ (reasons.length === 1 ? ': ' + reasons[0] + '.' : '.')
+			+ ' Nothing was written, so the next boot will try again.',
+		reason: 'seed'
+	};
+}
+
+// The fallback is not a quiet degradation: `FALLBACK_PREINSTALL` is Explorer, App Manager
+// and the registry, and nothing else — no catalog apps, no seeds, no default apps. A
+// system that came up on it looks like a working PixOS that someone emptied.
+export function describeBootFallback (error) {
+	var message = error && error.message ? String(error.message) : String(error || '');
+	return {
+		title: 'PixOS started with its built-in minimum',
+		message: 'settings/preinstall.json could not be read'
+			+ (message ? ' (' + message + ')' : '') + ', so only Explorer and App Manager '
+			+ 'were set up: no apps were installed and no starter files were created. '
+			+ 'Reload once that file is reachable.',
+		reason: 'preinstall-config'
+	};
+}

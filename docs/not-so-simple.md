@@ -428,6 +428,33 @@ and is still read), so neither an uninstalled app nor a deleted seed comes back.
 the file is unreachable the shell boots on `FALLBACK_PREINSTALL` in `index.html` — the two
 system apps and the registry — rather than not at all.
 
+**A boot that did not get what it asked for now says so on screen.** Both halves used to
+fail into `console.error` alone, and the result was unreadable from the outside: a server
+missing two files in `templates/` produced a PixOS with **no `/home` folder at all** —
+nothing else in the system creates that directory, it exists only because a seed is written
+into it — and an About widget quietly reading a file that had never been written.
+`describeSeedFailure` and `describeBootFallback` in `failure.js` write the sentences;
+`seedUserFiles` raises **one** note after its loop rather than one per file, because four
+missing templates are one deployment problem, and each line names the destination *and* the
+template it came from — whoever is reading the note is usually the person who deployed the
+server the file is not on. The fallback note is an `error` rather than a `warn` because a
+system on `FALLBACK_PREINSTALL` looks exactly like a working PixOS somebody emptied.
+Neither is recorded as done, so uploading the missing file and reloading is the whole fix.
+What is still console-only is `copyPreinstallFiles` — see `docs/backlog.md`.
+
+**A static host is allowed to have an opinion about your files, and Jekyll has one.**
+GitHub Pages processes any file that begins with a `---` YAML front-matter block: it is a
+page, and a markdown page is *published as `.html`*. So `templates/about.md` and
+`templates/talk.deck.md` — the only two files in this repo that open with a fence — were on
+the server and 404 at the URL PixOS asks for, while `thanks.block.md` (no front matter) and
+`links.json` were served untouched. The fix is **`.nojekyll`** in the published root, which
+turns the processing step off for the whole site. **Renaming the extension is not a fix:**
+Jekyll processes any extension once front matter is present and strips the front-matter
+block from what it publishes, so the URL would answer 200 with exactly the half of
+`about.md` the About widget reads removed — a silent failure in place of a loud one.
+`tests/precache.test.mjs` ties the two together: if a seed template opens with a fence,
+`.nojekyll` has to exist.
+
 ## Frames that are not apps
 
 **A window can hold a web page, not just a file.** `launch({url})` — via

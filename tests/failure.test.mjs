@@ -5,7 +5,7 @@
 // part and cannot be worked around, so the job here is to narrow it honestly with what is
 // observable — and to say what is still ambiguous rather than pick one and sound certain.
 
-import {describeFetchFailure, describeError, isCrossOrigin, describeWriteLimit, formatBytes, MAX_FILE_BYTES} from '../js/shell/failure.js';
+import {describeFetchFailure, describeError, isCrossOrigin, describeWriteLimit, formatBytes, MAX_FILE_BYTES, describeSeedFailure, describeBootFallback} from '../js/shell/failure.js';
 import fs from 'node:fs';
 import {check, report} from './assert.mjs';
 
@@ -204,5 +204,59 @@ check('and a FileReader that fails rejects rather than hanging for ever',
 	/reader\.onerror = function \(\) \{\s*reject\(/.test(explorer), true);
 check('every route a file arrives by reports per file rather than abandoning the rest',
 	explorer.split('await addIncomingFile(').length - 1, 5);
+
+
+// --- a boot that did not get what it asked for -------------------------------------------
+//
+// A server missing two files in `templates/` produced a PixOS with no `/home` folder --
+// nothing else creates that directory -- and said so only in the console.
+
+check('nothing failed, nothing to say', describeSeedFailure([]), null);
+check('and an absent list is not a failure either', describeSeedFailure(undefined), null);
+
+const seeds = describeSeedFailure([
+	{path: '/home/about.md', from: '/templates/about.md', error: new Error('404 Not Found')},
+	{path: '/home/talk.deck.md', from: '/templates/talk.deck.md', error: new Error('404 Not Found')}
+]);
+check('the count is in the title', seeds.title, '2 starter files are missing');
+check('the file you will find missing is named', seeds.message.includes('/home/about.md'), true);
+// The other half of the sentence, and the actionable one: whoever reads this note is
+// usually the person who deployed the server the file is not on.
+check('so is the file to put on the server', seeds.message.includes('/templates/about.md'), true);
+check('one shared reason is stated once', seeds.message.split('404 Not Found').length - 1, 1);
+check('and the retry is promised, because it is real',
+	/next boot will try again/.test(seeds.message), true);
+
+const oneSeed = describeSeedFailure([{path: '/home/about.md', from: '/templates/about.md'}]);
+check('one failure reads as one', oneSeed.title, 'A starter file is missing');
+check('and says nothing about a reason it does not have',
+	/did not return it\. Nothing/.test(oneSeed.message), true);
+
+const mixed = describeSeedFailure([
+	{path: '/a', from: '/t/a', error: new Error('404 Not Found')},
+	{path: '/b', from: '/t/b', error: new Error('Failed to fetch')}
+]);
+check('two different reasons are not passed off as one',
+	/did not return them\. Nothing/.test(mixed.message), true);
+
+// The fallback is Explorer, App Manager and the registry. A system on it looks like a
+// working PixOS somebody emptied, which is exactly the thing that has to be said out loud.
+const fallback = describeBootFallback(new Error('404 Not Found'));
+check('the fallback names the file that was unreachable',
+	fallback.message.includes('settings/preinstall.json'), true);
+check('and the status it answered with', fallback.message.includes('404 Not Found'), true);
+check('and what is consequently not there',
+	/no apps were installed and no starter files were created/.test(fallback.message), true);
+check('a fallback with no error still produces a sentence',
+	describeBootFallback(null).message.includes('()'), false);
+
+// Both are raised from the boot chain in index.html, which no unit test can drive.
+const shell = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+check('a failed seed reaches the screen',
+	/describeSeedFailure\(failures\)[\s\S]{0,120}notifications\.notify\(/.test(shell), true);
+check('one note for the lot, raised after the loop',
+	/failures\.push\(\{path: entry\.path[\s\S]{0,600}describeSeedFailure/.test(shell), true);
+check('and so does a boot that fell back to the built-in minimum',
+	/describeBootFallback\(err\)[\s\S]{0,140}notifications\.notify\(/.test(shell), true);
 
 process.exit(report('failure') ? 1 : 0);
