@@ -83,9 +83,9 @@ sections, and the kind of thing each one will catch:
 - *Serving, offline, and saying when something failed* — the service worker and its query
   strings, the notification surface and its three layers in Explorer, `failure.js`,
   `needsNetwork` and the four record builders that keep dropping it, why the precache is
-  network-first and what it follows rather than lists, and the error reporter the worker
+  network-first and what it follows rather than lists, the error reporter the worker
   injects into every app document so a window that dies before its own script runs still
-  says so.
+  says so, and the progress note a long operation draws in that same stack.
 - *Apps that carry their own engine* — 7-Zip's exit codes and staging rules, filmoskop's
   parser boundary and its two editors, and the two apps whose folder is not their id.
 - *The desktop and its widgets* — peeks, widgets as doors, and who knows the desktop is

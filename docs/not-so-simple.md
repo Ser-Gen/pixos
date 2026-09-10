@@ -38,6 +38,40 @@ Explorer's own window catch the rest. All three route through one `report()` —
 that reaches for `openInfoDialog` directly gets a modal where the system gives a card, and
 skips the errno translation with it, which is how a raw `ENOENT` reached the screen twice.
 
+**A long operation is a note that is not finished yet.** `notifications.progress({title,
+total, unit, source})` returns a *handle* — `update({value, total, message})`, `done()`,
+`fail()`, `dismiss()` — and draws a card in the same stack as everything else the system
+says, reachable from inside an app as `parent.startProgress`. It is not a dialog on
+purpose: a dialog would take the focus and block the thing it describes, whereas installing
+`monaco` (98 files, 11.6 MB, fetched one at a time) has to be able to run while you keep
+working, and two can run at once. Five things about it are load-bearing. It **never
+expires** — `timeout: 0`, not a level with a timer — because it ends when the operation
+ends. It is **never folded** into an identical note: two installs are two operations and a
+`×2` on a progress bar would describe neither. `update()` **patches the card in place**
+rather than calling `render()`, which rebuilds the whole stack — 98 files would otherwise
+throw away and rebuild every note on screen 98 times, and the width transition with it;
+`note.ui` holds the nodes and is re-made by every `render()`, so it is never a reference to
+a detached one. A count is **floored, never rounded**, because a caller may advance by a
+fraction (the boot note moves by a fraction of an app as each of its files lands) and
+"3 of 5" when the third has barely started is worse than no number. And **the × is a
+decision**: after the user dismisses it, `update()` and `done()` do nothing, but `fail()`
+still raises its error — "stop telling me about this" is not "do not tell me it broke".
+With no `total` the bar is indeterminate and animated, because an operation that cannot
+count its own steps still has to look distinguishable from one that has hung.
+
+**Every interactive install goes through `window.installAppById`, and that is where the
+bar lives.** App Manager, the *Open with…* chooser and `openCatalogApp` all call it, so
+the note is raised once rather than in three places that would drift. On failure the
+progress note *becomes* the error card — the same card the user is already watching, naming
+the app and the reason — which is why the chooser and `openCatalogApp` deliberately swallow
+the error instead of reporting it again; App Manager had no failure surface at all before
+this and now inherits one. The registry itself stays UI-free: `installAppById(appId,
+onProgress)` takes a callback, called **before** each file with the count already finished,
+so the bar shows completed work while the line under it names what is in flight. Boot is
+the second shape that callback exists for: `installPreinstallApps` installs its apps with
+`{quiet: true}` and covers all five with one note, advancing fractionally per file — five
+cards appearing and self-dismissing while the desktop is still being built is noise.
+
 **`js/shell/failure.js` turns a failure into a sentence**, and is deliberately pure so it
 can be tested — `online` and `pageOrigin` are arguments, not reads of `navigator` and
 `location`. It exists because `fetch` reports a CORS block, an extension block and a dead

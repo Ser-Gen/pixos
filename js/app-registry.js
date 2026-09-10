@@ -776,7 +776,13 @@
 		return { id: newId, name: localApp.label };
 	}
 
-	async function installAppById (appId) {
+	// `onProgress` is optional and deliberately a callback rather than anything drawn:
+	// this module is dependency-injected and knows nothing about the shell's surfaces, and
+	// the same install runs at boot (where one note covers all five apps) and from App
+	// Manager (where it gets a note of its own). It is called *before* each file with the
+	// count already finished, so the bar shows completed work while the message names what
+	// is in flight -- `monaco` is 98 files, and one of them is five megabytes on its own.
+	async function installAppById (appId, onProgress) {
 		var app = getCatalogApp(appId);
 		if (!app) {
 			throw new Error('Unknown app: ' + appId);
@@ -786,8 +792,10 @@
 		}
 		var fileHashes = {};
 		var paths = fileListPaths(app.files);
+		var step = typeof onProgress === 'function' ? onProgress : function () {};
 		for (var i = 0; i < paths.length; i++) {
 			var itemPath = paths[i];
+			step({app: appId, done: i, total: paths.length, path: itemPath});
 			var ab = await fetch(getPath().join(getScope(), itemPath) + '?' + Math.random()).then(function (r) {
 				return r.arrayBuffer();
 			});
@@ -799,6 +807,8 @@
 			var expectedHash = manifestEntry && typeof manifestEntry !== 'string' ? manifestEntry.hash : null;
 			fileHashes[itemPath] = expectedHash || await sha256Buffer(buf);
 		}
+		step({app: appId, done: paths.length, total: paths.length, path: null});
+
 		var manifestUrl = null;
 		if (app.manifest && app.manifest.update && app.manifest.update.url) {
 			manifestUrl = app.manifest.update.url;

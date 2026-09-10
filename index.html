@@ -261,6 +261,18 @@ window.notify = function (input) {
 };
 window.dismissNotification = notifications.dismiss;
 
+// A long operation, drawn in the same stack. Reachable from inside any app iframe as
+// parent.startProgress(...) -- apps are same-origin, so the handle crosses the boundary
+// intact. The source label is stamped for the same reason it is on a note: a bar that did
+// not say what was running would be indistinguishable from the system working.
+window.startProgress = function (input) {
+	var cfg = Object.assign({}, input || {});
+	if (!cfg.source) {
+		cfg.source = 'PixOS';
+	}
+	return notifications.progress(cfg);
+};
+
 // Exposed for apps, which cannot import shell modules -- they are installed into
 // BrowserFS and have to be self-contained. Explorer uses these to explain a failed
 // download; anything calling them should degrade if they are absent.
@@ -651,23 +663,66 @@ function fsOnInit () {
 	// Catalog apps that should be there on a fresh system, installed once and recorded.
 	async function installPreinstallApps (ids, state) {
 		var changed = false;
+		var failed = [];
+		// Only the ones actually left to do: on every boot after the first this list is
+		// empty, and a note that flashed "0 of 0" each time would train you to ignore it.
+		var pending = ids.filter(function (id) {
+			return state.apps.indexOf(id) === -1;
+		});
+		if (!pending.length) {
+			return false;
+		}
+		// One note for the batch, and the installs themselves kept quiet. A first boot
+		// fetches five apps -- filmoskop alone is nine files -- with the desktop already
+		// on screen and nothing yet saying why the Start menu is half empty.
+		var note = notifications.progress({
+			title: 'Setting up PixOS',
+			message: 'Installing ' + pending.length + ' app' + (pending.length === 1 ? '' : 's') + '…',
+			total: pending.length,
+			unit: 'count',
+			source: 'PixOS'
+		});
 
-		for (var i = 0; i < ids.length; i++) {
-			var id = ids[i];
-			if (state.apps.indexOf(id) !== -1) {
-				continue;
-			}
+		for (var i = 0; i < pending.length; i++) {
+			var id = pending[i];
+			note.update({value: i, message: 'Installing ' + appLabel(id) + '…'});
 			try {
-				await window.installAppById(id);
+				await window.installAppById(id, {
+					quiet: true,
+					onProgress: (function (appId, index) {
+						return function (step) {
+							// The app-level bar, with the file-level detail as the line
+							// under it: two scales in one card rather than two cards.
+							note.update({
+								value: index + (step.total ? step.done / step.total : 0),
+								message: appLabel(appId) + ' — ' + installStepText(step)
+							});
+						};
+					}(id, i))
+				});
 			}
 			catch (err) {
 				console.error('Preinstalling ' + id + ' failed', err);
 				// Not recorded, so the next boot tries again: a failure here is usually a
 				// file that had not been generated yet, not a decision.
+				failed.push(appLabel(id));
 				continue;
 			}
 			state.apps.push(id);
 			changed = true;
+		}
+
+		if (failed.length) {
+			note.fail({
+				title: failed.length + ' app' + (failed.length === 1 ? '' : 's') + ' could not be installed',
+				message: failed.join(', ') + '. The next boot will try again.'
+			});
+		}
+		else {
+			note.done({
+				title: 'PixOS is ready',
+				message: pending.length + ' app' + (pending.length === 1 ? '' : 's') + ' installed.'
+			});
 		}
 
 		return changed;
@@ -845,11 +900,61 @@ function fsOnInit () {
 		return PixosAppRegistry.resolveAppId(appId);
 	};
 
-	window.installAppById = async function (appId) {
-		var result = await PixosAppRegistry.installAppById(appId);
-		await window.refreshInstalledAppsRegistry();
-		scheduleInstalledAppSupportHydration([appId]);
-		return result;
+	// The one choke point every interactive install goes through -- App Manager, the
+	// *Open with...* chooser, and opening a catalog app that is not installed yet -- so the
+	// progress note is raised here rather than in three places that would drift apart.
+	//
+	// `quiet` is for the boot sequence, which installs five apps in a row and covers the
+	// lot with one note of its own: five cards appearing and self-dismissing while the
+	// desktop is still being built is noise, not information.
+	function appLabel (appId) {
+		var app = PixosAppRegistry.getCatalogApp(appId) || PixosAppRegistry.getApp(appId);
+		return (app && app.label) || appId;
+	}
+
+	// A path is shown relative to the app's own folder: '/apps/monaco-cdn/vendor/monaco/vs/
+	// editor/editor.main.js' is mostly prefix, and the card is 340px wide.
+	function installStepText (step) {
+		if (!step || !step.path) {
+			return 'Finishing…';
+		}
+		return String(step.path).replace(/^\/apps\/[^/]+\//, '');
+	}
+
+	window.installAppById = async function (appId, options) {
+		var cfg = options || {};
+		var label = appLabel(appId);
+		var note = cfg.quiet ? null : notifications.progress({
+			title: 'Installing ' + label,
+			source: 'PixOS',
+			unit: 'count'
+		});
+		try {
+			var result = await PixosAppRegistry.installAppById(appId, function (step) {
+				if (note) {
+					note.update({value: step.done, total: step.total, message: installStepText(step)});
+				}
+				if (typeof cfg.onProgress === 'function') {
+					cfg.onProgress(step);
+				}
+			});
+			await window.refreshInstalledAppsRegistry();
+			scheduleInstalledAppSupportHydration([appId]);
+			if (note) {
+				note.done({title: label + ' is installed'});
+			}
+			return result;
+		}
+		catch (err) {
+			// The note becomes the error rather than vanishing next to one: an install that
+			// stopped half way is exactly the case where a bar disappearing without a word
+			// is indistinguishable from one that finished.
+			if (note) {
+				var described = window.describeError('Could not install ' + label, err);
+				note.fail({title: described.title, message: described.message});
+			}
+			throw err;
+		}
 	};
 
 	window.uninstallAppById = async function (appId) {
@@ -2887,7 +2992,15 @@ async function openCatalogApp (appId, paths) {
 		if (typeof window.installAppById !== 'function') {
 			throw new Error('There is no way to install ' + appId + ' from here');
 		}
-		await window.installAppById(appId);
+		try {
+			await window.installAppById(appId);
+		}
+		catch (err) {
+			// Swallowed deliberately, and only this one: the install's own note has already
+			// become an error card naming the app and the reason, and rethrowing would add
+			// a second, vaguer one from whichever widget was clicked.
+			return null;
+		}
 	}
 	if (paths && paths.length) {
 		appsModel.noteLaunch(appId);
@@ -3035,13 +3148,10 @@ async function openWithChooser (request) {
 			await window.installAppById(choice.appId);
 		}
 		catch (err) {
-			var described = window.describeError('Could not install ' + (choice.label || choice.appId), err);
-			notifications.notify({
-				level: 'error',
-				title: described.title,
-				message: described.message + ' Nothing was opened.',
-				source: 'PixOS'
-			});
+			// Already reported: the progress note installAppById raised has become the
+			// error card, and it knows more about the failure than this does. A second
+			// card describing one failure is what Explorer's three layers were collapsed
+			// through one report() to avoid.
 			return null;
 		}
 	}

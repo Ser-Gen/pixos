@@ -21,7 +21,13 @@ globalThis.fetch = async url => {
 		return {ok: false, status: 404, json: async () => ({}), text: async () => ''};
 	}
 	const text = fs.readFileSync(file, 'utf8');
-	return {ok: true, status: 200, json: async () => JSON.parse(text), text: async () => text};
+	return {
+		ok: true,
+		status: 200,
+		json: async () => JSON.parse(text),
+		text: async () => text,
+		arrayBuffer: async () => fs.readFileSync(file).buffer
+	};
 };
 
 // --- an in-memory filesystem, shaped like the callbacks BrowserFS hands out -------------
@@ -288,5 +294,33 @@ const preinstallFiles = JSON.parse(fs.readFileSync(new URL('../settings/preinsta
 check('base is preinstall.json, not a second opinion about it', catalog.base.files, preinstallFiles);
 check('and is not installable, because it is a list of files rather than an app',
 	catalog.base.entryPath, undefined);
+
+// --- installing says how far it has got --------------------------------------------------
+//
+// `monaco` is 98 files fetched one at a time, and until this existed there was no way for
+// anything above to tell an install in progress from an install that had died. The module
+// stays UI-free: it takes a callback, because the same install runs at boot under one note
+// covering five apps and from App Manager under a note of its own.
+
+const steps = [];
+const installed = await registry.installAppById('calendar', step => steps.push(step));
+check('the app is installed', installed.id, 'calendar');
+check('and it reported every file', steps.length, catalog.calendar.files.length + 1);
+// Before each file, with the count already finished: the bar shows completed work while
+// the line under it names what is in flight. The other order would show a file as done
+// while it was still being fetched -- and one monaco file is five megabytes on its own.
+check('starting at nothing done', steps[0].done, 0);
+check('naming the file about to be fetched', steps[0].path, catalog.calendar.files[0].path);
+check('and ending at all of them, with nothing left in flight',
+	[steps[steps.length - 1].done, steps[steps.length - 1].total, steps[steps.length - 1].path],
+	[catalog.calendar.files.length, catalog.calendar.files.length, null]);
+check('every step knows which app it belongs to, because the boot note runs five at once',
+	steps.every(step => step.app === 'calendar'), true);
+check('and the total never changes under the caller',
+	new Set(steps.map(step => step.total)).size, 1);
+
+// It is optional, and has to stay optional: most callers do not want a bar.
+const quiet = await registry.installAppById('bookmarks');
+check('installing without a callback is not an error', quiet.id, 'bookmarks');
 
 process.exit(report('app-registry') ? 1 : 0);

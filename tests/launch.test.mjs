@@ -437,9 +437,22 @@ const beforeRefused = opened.length;
 const notesBeforeRefused = notes.length;
 answer = {choice: {kind: 'app', appId: 'refuses', label: 'Refuses', install: true}, setDefault: false};
 check('an install that fails opens nothing', await api.openFile('/home/rows.csv'), null);
-check('and says so rather than leaving a dead click', notes.length, notesBeforeRefused + 1);
-check('as an error', notes[notes.length - 1].level, 'error');
+// The report moved, and this is now the assertion that it moved cleanly. installAppById
+// raises a progress note and turns *that* into the error -- the same card the user is
+// already watching, naming the app and the reason -- so a second card raised from here
+// would be two descriptions of one failure. Checked below in the source, because the
+// wrapper that does it lives outside this region.
+check('and does not add a second card describing the same failure',
+	notes.length, notesBeforeRefused);
 check('no window was left behind', opened.length, beforeRefused);
+
+// What the region can no longer prove for itself. `notes` above is the shell's other
+// surface; this is the one the user is actually looking at when an install stops.
+const installer = shell.slice(shell.indexOf('window.installAppById = async function'));
+check('a failed install turns its own progress note into the error',
+	/catch \(err\) \{[\s\S]{0,400}note\.fail\(\{/.test(installer), true);
+check('and a finished one says so rather than vanishing',
+	/note\.done\(\{title: label \+ ' is installed'\}\)/.test(installer), true);
 
 // Failing to remember a preference must not cost the open: that is what was asked for.
 const beforeUnwritable = opened.length;

@@ -233,4 +233,101 @@ notifications.dismissAll();
 notifications.notify({title: 'No message'});
 check('a note with no message is fine', notifications.list()[0].message, '');
 
+
+// --- a message that is not finished yet --------------------------------------------------
+//
+// Installing `monaco` is 98 files fetched one at a time; a first boot installs five apps
+// before the Start menu is worth opening. Every one of those was indistinguishable from a
+// hang. The rules worth testing are about what happens around the bar, not the bar itself:
+// it must not expire, it must not fold, an update must not rebuild the stack, and the user
+// must stay in charge of a card they dismissed.
+
+notifications.dismissAll();
+
+const job = notifications.progress({title: 'Installing Monaco', total: 98, source: 'App Manager'});
+check('a progress note is on the stack', notifications.list().map(n => n.title), ['Installing Monaco']);
+check('and carries its bar', notifications.list()[0].progress.total, 98);
+fire(600000);
+// The whole point: this ends when the operation ends, not when a timer says so.
+check('and never expires on its own', notifications.list().length, 1);
+
+check('an update is applied', job.update({value: 12, message: 'vendor/monaco/vs/loader.js'}), true);
+check('and moves the bar', notifications.list()[0].progress.value, 12);
+check('and the line under it', notifications.list()[0].message, 'vendor/monaco/vs/loader.js');
+
+// A 98-file install would otherwise rebuild every card on screen 98 times.
+const card = host.children[0].children[0];
+job.update({value: 13});
+check('updating patches the card in place rather than rebuilding the stack',
+	host.children[0].children[0] === card, true);
+
+// Two installs at once are two operations. Folding them into "×2" would describe neither.
+const second = notifications.progress({title: 'Installing Monaco', total: 98, source: 'App Manager'});
+check('two identical operations are two notes', notifications.list().length, 2);
+check('and not one with a counter', notifications.list()[0].count, 1);
+second.dismiss();
+
+// --- finishing -----------------------------------------------------------------------------
+
+const finished = job.done({title: 'Monaco is installed'});
+check('done() replaces the bar with a sentence',
+	notifications.list().map(n => n.title), ['Monaco is installed']);
+check('which is an ordinary info note, and goes away like one', typeof finished, 'number');
+fire(6000);
+check('and does', notifications.list(), []);
+
+const failing = notifications.progress({title: 'Installing Monaco', total: 98});
+failing.update({value: 40});
+failing.fail({title: 'Could not install Monaco', message: 'The server says there is nothing at that address (404).'});
+check('fail() replaces it with an error', notifications.list().map(n => n.level), ['error']);
+fire(600000);
+check('which stays, like every other error', notifications.list().length, 1);
+notifications.dismissAll();
+
+// --- the × on the card is a decision ---------------------------------------------------------
+
+const dismissed = notifications.progress({title: 'Copying', total: 10});
+dismissed.dismiss();
+check('a dismissed bar is gone', notifications.list(), []);
+check('and an update does not put it back', dismissed.update({value: 5}), false);
+check('nor does it reappear', notifications.list(), []);
+// "Stop telling me about this" is not "do not tell me it broke".
+check('finishing quietly stays quiet', dismissed.done({title: 'Copied'}), null);
+check('but a failure is still raised', typeof dismissed.fail({title: 'Could not copy'}), 'number');
+check('as an error', notifications.list().map(n => n.level), ['error']);
+notifications.dismissAll();
+
+// --- what the bar says --------------------------------------------------------------------
+
+const counted = notifications.progress({title: 'Copying', total: 4, unit: 'count'});
+counted.update({value: 2});
+check('a count reads as a count', notifications.list()[0].progress.unit, 'count');
+
+// The boot sequence advances by a fraction of an app as each of its files lands, and being
+// told three apps were done when the third had barely started is worse than no number.
+counted.update({value: 2.9});
+const countLine = host.children[0].children[0].children.find(node => node.className === 'PixNote__meta');
+check('a fractional count is floored, never rounded up', countLine.children[0].textContent, '2 of 4');
+check('and the percentage is the honest one', countLine.children[1].textContent, '73%');
+
+counted.dismiss();
+
+const sized = notifications.progress({title: 'Copying', total: 1048576, unit: 'bytes'});
+sized.update({value: 524288});
+const sizeLine = host.children[0].children[0].children.find(node => node.className === 'PixNote__meta');
+check('bytes are spelled the one way PixOS spells them',
+	sizeLine.children[0].textContent, '512 KB of 1.0 MB');
+notifications.dismissAll();
+
+// An operation that cannot count its own steps still has to look like it is running.
+const waiting = notifications.progress({title: 'Extracting'});
+check('no total means no percentage', notifications.list()[0].progress.total, null);
+const waitingCard = host.children[0].children[0];
+const bar = waitingCard.children.find(node => String(node.className).indexOf('PixNote__bar') === 0);
+check('and a bar that says so instead', bar.className, 'PixNote__bar PixNote__bar--waiting');
+waiting.dismiss();
+
+check('nothing at all does not throw', typeof notifications.progress().id, 'number');
+notifications.dismissAll();
+
 process.exit(report('notifications') ? 1 : 0);
