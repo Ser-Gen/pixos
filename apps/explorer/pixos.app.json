@@ -1,7 +1,7 @@
 {
 	"id": "explorer",
 	"name": "Explorer",
-	"version": "1.14.0",
+	"version": "1.18.1",
 	"entryPath": "/apps/explorer/index.html",
 	"files": [
 		{
@@ -14,7 +14,19 @@
 		},
 		{
 			"path": "/apps/explorer/index.html",
-			"hash": "sha256:b50622bd9e772b98cc7ae510f273e8a014f99dbb426e525d9c6358fddca53ebd"
+			"hash": "sha256:84f91ec43914b3468dae03281d8196e36335928512931782920a7af447470b9b"
+		},
+		{
+			"path": "/apps/explorer/js/context-menu.js",
+			"hash": "sha256:9c66cd4fe4bf64f24a66b49f402f845d0c9255b33aa8205cc91f2d129e4949c2"
+		},
+		{
+			"path": "/apps/explorer/js/dnd.js",
+			"hash": "sha256:850b914493dcdc9c54d9241333e0b9881ef71885543fc0609d144c01b9269d51"
+		},
+		{
+			"path": "/apps/explorer/js/failure.js",
+			"hash": "sha256:f0e5643654498f61fcd17095d42aa9f244103886562f29f5149cf603f9974de4"
 		},
 		{
 			"path": "/apps/explorer/js/format.js",
@@ -23,6 +35,14 @@
 		{
 			"path": "/apps/explorer/js/fs-helpers.js",
 			"hash": "sha256:992d7c7f6034b81f21151c5f2630f28c94fe0cbeb5ea688f10b19448eaebc041"
+		},
+		{
+			"path": "/apps/explorer/js/open-with.js",
+			"hash": "sha256:fc969db22e70d2cd5f80a26c68ae4d194f7c580e862055e04f78bbcb99d4429b"
+		},
+		{
+			"path": "/apps/explorer/js/selection.js",
+			"hash": "sha256:d90c5ae737532cd91cfb27ee0d6614da306dc123ff34e11a57106f19406dce3a"
 		}
 	],
 	"icon": "/apps/explorer/favicon.svg"

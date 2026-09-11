@@ -70,9 +70,14 @@ import * as archiveNames from "../7z/js/parse.js";
 // Any module added beside these has to be named in four places, and none of them will
 // complain if it is not: `apps/explorer/pixos.app.json`, `settings/preinstall.json`,
 // `PRECACHE` in `sw.js`, and `FALLBACK_PREINSTALL` in the shell's `index.html`.
-// `tests/explorer-files.test.mjs` is what actually enforces that.
+// `tests/explorer-modules.test.mjs` is what actually enforces that.
 import { createFormat } from "./js/format.js";
 import { createFsHelpers } from "./js/fs-helpers.js";
+import { createDragAndDrop } from "./js/dnd.js";
+import { createContextMenu } from "./js/context-menu.js";
+import { createSelection } from "./js/selection.js";
+import { createFailure } from "./js/failure.js";
+import { createOpenWith } from "./js/open-with.js";
 
 window.BrowserFS = parent.BrowserFS;
 
@@ -98,6 +103,16 @@ const {
 	mountManager: window.mountManager,
 	normalizePath: normalizePath
 });
+
+// No `state`, no `ui`, no DOM -- every answer in here comes from the shell or from the
+// extension, which is why this one could move in the same pass as js/failure.js.
+const {
+	getOpenWithApps, getOpenWithAppsForItems, getCatalogLabel, getDefaultAppRows,
+	getInstalledAppsForPicker, getInstalledCompatibleAppsForExtension,
+	getDefaultAppIdForExtension, normalizeExtensionInput, getNormalizedExtension,
+	getSpecificExtension, isAppCompatibleWithExtension, getCompatibilityProfileForItem,
+	getCompatibilityProfileForExtension, isAppCompatibleWithProfile
+} = createOpenWith({ shell: parent, path: window.path });
 
 // Explorer is not a standalone app and cannot become one: the filesystem it browses lives
 // in the shell's window, not in BrowserFS where its own files are. Opened in a bare tab it
@@ -137,8 +152,20 @@ fs.stat('/apps/ffmpeg.0.12.10/ffmpeg.js', function (err, stats) {
 });
 
 async function openExplorer () {
+	var {
+		guarded, report, copyTextToClipboard, copyChordLabel,
+		reportFailure, reportFetchFailure, describeFailure, readableActionName
+	} = createFailure({
+		shell: parent,
+		win: window,
+		doc: document,
+		nav: navigator,
+		openInfoDialog: openInfoDialog
+	});
+
 	var rootElem = document.querySelector('#explorer');
-		var state = {
+
+	var state = {
 		cwd: getInitialCwd(),
 		items: [],
 		selectedPaths: new Set(),
@@ -157,15 +184,56 @@ async function openExplorer () {
 			historyForward: [],
 			dragPaths: [],
 			dragHoverFolderPath: null,
-			lastDragHoverFolderPath: null,
 			dragDropHandled: false,
 			dragCommitInProgress: false,
-			dragOverCommitTimer: null,
 			selectionBox: null,
 			recording: null
 		};
 
 	var ui = {};
+
+	// Phase 21, the modules that need the context object. `state` and `ui` go in by
+	// reference -- they are the shared mutable pair every one of these functions reads and
+	// writes -- and everything else is named. `ui` is still empty here; renderLayout fills it
+	// in two lines down, and only ever mutates it.
+	var {
+		openContextMenu, closeContextMenu, buildContextMenuNode,
+		positionContextMenuNode, buildContextMenuList, positionSubmenuNode
+	} = createContextMenu({
+		state: state,
+		doc: document,
+		win: window,
+		renderOverlays: renderOverlays
+	});
+
+	var {
+		getItemByPath, getCurrentFolderItem, getSelectedItems, applySelectionFromEvent,
+		toggleSelection, setAllSelection, syncSelectionUI, syncSelectAllUI,
+		startSelectionBox, handleSelectionBoxMove, handleSelectionBoxEnd,
+		updateSelectionBoxVisual, updateSelectionBoxSelection, getSelectionBoxRect,
+		getSelectionPoint, getSelectionIntersectedPaths, getNodeRectInMain,
+		intersectsSelectionBox
+	} = createSelection({
+		state: state,
+		ui: ui,
+		rootElem: rootElem,
+		doc: document,
+		closeContextMenu: closeContextMenu,
+		renderStatus: renderStatus,
+		renderToolbarState: renderToolbarState
+	});
+
+	var {
+		handleItemDragStart, handleItemDragOver, handleItemDragLeave, handleItemDrop,
+		handleItemDragEnd, commitPendingDragMove, clearDropTargets,
+		updateDragHoverFromPoint, isInternalDrag
+	} = createDragAndDrop({
+		state: state,
+		rootElem: rootElem,
+		doc: document,
+		win: window,
+		moveItemsToFolder: moveItemsToFolder
+	});
 
 	renderLayout();
 	bindEvents();
@@ -622,8 +690,23 @@ async function openExplorer () {
 		document.body.addEventListener('dragover', function (e) {
 			e.stopPropagation();
 			e.preventDefault();
-			e.dataTransfer.dropEffect = 'copy';
-			document.body.classList.add('Page--onDragOver');
+
+			// This runs *last* -- body is an ancestor of every row, so it fires after the row's
+			// own dragover has said `move`. Answering `copy` to a drag that declared
+			// `effectAllowed = 'move'` at dragstart is not a preference the browser negotiates:
+			// the combination is invalid, so it cancels the drop outright. No `drop` event ever
+			// fires, the drag image animates back to where it started, and for as long as that
+			// was true every move inside Explorer was really being performed by one of the
+			// dragend fallbacks rather than by the drop. Removing those fallbacks is what made
+			// it visible; the drop had been dead the whole time.
+			var internal = isInternalDrag(e.dataTransfer);
+			e.dataTransfer.dropEffect = internal ? 'move' : 'copy';
+
+			// And the whole-page "drop a file here" wash belongs to a file arriving from the
+			// desktop, not to a row being moved from one folder to another.
+			if (!internal) {
+				document.body.classList.add('Page--onDragOver');
+			}
 		});
 
 		rootElem.querySelectorAll('th[data-sort-key]').forEach(function (th) {
@@ -962,107 +1045,6 @@ async function openExplorer () {
 			// app had a focused field.
 			focusDialogInput(dialogNode);
 		}
-	}
-
-	function openContextMenu (payload) {
-		state.contextMenu = payload;
-		renderOverlays();
-	}
-
-	function closeContextMenu () {
-		if (!state.contextMenu) return;
-		state.contextMenu = null;
-		renderOverlays();
-	}
-
-	function buildContextMenuNode (items, x, y) {
-		var menu = document.createElement('div');
-		menu.className = 'ContextMenu';
-		menu.style.left = x + 'px';
-		menu.style.top = y + 'px';
-		menu.onclick = function (e) {
-			e.stopPropagation();
-		};
-		menu.oncontextmenu = function (e) {
-			e.preventDefault();
-		};
-
-		menu.append(buildContextMenuList(items));
-		return menu;
-	}
-
-	function positionContextMenuNode (menu, x, y) {
-		requestAnimationFrame(function () {
-			var margin = 6;
-			var rect = menu.getBoundingClientRect();
-			var left = Math.min(x, Math.max(margin, window.innerWidth - rect.width - margin));
-			var top = Math.min(y, Math.max(margin, window.innerHeight - rect.height - margin));
-			menu.style.left = left + 'px';
-			menu.style.top = top + 'px';
-		});
-	}
-
-	function buildContextMenuList (items) {
-		var ul = document.createElement('ul');
-		ul.className = 'ContextMenu__list';
-		items.forEach(function (item) {
-			if (item.separator) {
-				var sep = document.createElement('li');
-				sep.className = 'ContextMenu__separator';
-				ul.append(sep);
-				return;
-			}
-
-			var li = document.createElement('li');
-			li.className = 'ContextMenu__item' + (item.disabled ? ' ContextMenu__item--disabled' : '');
-			li.textContent = item.label;
-
-			if (item.submenu && item.submenu.length) {
-				var marker = document.createElement('span');
-				marker.textContent = '›';
-				li.append(marker);
-				var sub = document.createElement('div');
-				sub.className = 'ContextMenu__submenu';
-				sub.append(buildContextMenuList(item.submenu));
-				li.onmouseenter = function () {
-					positionSubmenuNode(sub, li);
-				};
-				li.append(sub);
-			}
-
-			if (!item.disabled && item.action) {
-				li.onclick = function (e) {
-					e.stopPropagation();
-					closeContextMenu();
-					item.action();
-				};
-			}
-
-			ul.append(li);
-		});
-		return ul;
-	}
-
-	function positionSubmenuNode (submenu, parentItem) {
-		var margin = 6;
-		var previousDisplay = submenu.style.display;
-		var previousVisibility = submenu.style.visibility;
-		submenu.style.visibility = 'hidden';
-		submenu.style.display = 'block';
-
-		var submenuRect = submenu.getBoundingClientRect();
-		var itemRect = parentItem.getBoundingClientRect();
-		var opensLeft = itemRect.right + submenuRect.width - 6 > window.innerWidth - margin;
-		var desiredTop = -6;
-		var minTop = margin - itemRect.top;
-		var maxTop = window.innerHeight - margin - itemRect.top - submenuRect.height;
-		var top = Math.max(minTop, Math.min(desiredTop, maxTop));
-
-		submenu.style.left = opensLeft ? (-(submenuRect.width - 6)) + 'px' : (parentItem.offsetWidth - 6) + 'px';
-		submenu.style.top = top + 'px';
-		submenu.style.right = 'auto';
-		submenu.style.display = previousDisplay;
-		submenu.style.visibility = previousVisibility;
 	}
 
 	// The archive dialog has four states and they are one dialog on purpose: reading it,
@@ -1886,356 +1868,6 @@ async function openExplorer () {
 		}
 		await parent.clearDefaultAppForExtension(normalizedExt);
 		return true;
-	}
-
-	function getItemByPath (itemPath) {
-		return state.items.find(function (item) {
-			return item.path === itemPath;
-		}) || null;
-	}
-
-	// The folder you are looking *at* is not one of the rows in it, so nothing in the
-	// empty-area menu can look it up. This is where it is described instead.
-	function getCurrentFolderItem () {
-		return {
-			path: state.cwd,
-			name: state.cwd.split('/').filter(Boolean).pop() || '/',
-			isDirectory: true
-		};
-	}
-
-	function getSelectedItems () {
-		return state.items.filter(function (item) {
-			return state.selectedPaths.has(item.path);
-		});
-	}
-
-	function applySelectionFromEvent (itemPath, e) {
-		var visiblePaths = state.items.map(function (item) { return item.path; });
-		if (e.shiftKey && state.lastSelectedPath && visiblePaths.indexOf(state.lastSelectedPath) > -1) {
-			var from = visiblePaths.indexOf(state.lastSelectedPath);
-			var to = visiblePaths.indexOf(itemPath);
-			var start = Math.min(from, to);
-			var end = Math.max(from, to);
-			state.selectedPaths = new Set(visiblePaths.slice(start, end + 1));
-		}
-		else if (e.metaKey || e.ctrlKey) {
-			if (state.selectedPaths.has(itemPath)) {
-				state.selectedPaths.delete(itemPath);
-			}
-			else {
-				state.selectedPaths.add(itemPath);
-			}
-			state.lastSelectedPath = itemPath;
-		}
-		else {
-			state.selectedPaths = new Set([itemPath]);
-			state.lastSelectedPath = itemPath;
-		}
-		syncSelectionUI();
-	}
-
-	function toggleSelection (itemPath, isSelected) {
-		if (isSelected) {
-			state.selectedPaths.add(itemPath);
-			state.lastSelectedPath = itemPath;
-		}
-		else {
-			state.selectedPaths.delete(itemPath);
-			if (state.lastSelectedPath === itemPath) {
-				state.lastSelectedPath = Array.from(state.selectedPaths).pop() || null;
-			}
-		}
-		syncSelectionUI();
-	}
-
-	function setAllSelection (checked) {
-		if (checked) {
-			state.selectedPaths = new Set(state.items.map(function (item) { return item.path; }));
-			state.lastSelectedPath = state.items.length ? state.items[state.items.length - 1].path : null;
-		}
-		else {
-			state.selectedPaths = new Set();
-			state.lastSelectedPath = null;
-		}
-		syncSelectionUI();
-	}
-
-	function syncSelectionUI () {
-		rootElem.querySelectorAll('.Explorer__row[data-path]').forEach(function (node) {
-			node.classList.toggle('Explorer__row--selected', state.selectedPaths.has(node.dataset.path));
-		});
-		rootElem.querySelectorAll('.Explorer__card[data-path]').forEach(function (node) {
-			node.classList.toggle('Explorer__card--selected', state.selectedPaths.has(node.dataset.path));
-		});
-		rootElem.querySelectorAll('.Explorer__itemCheckbox[data-path]').forEach(function (node) {
-			node.checked = state.selectedPaths.has(node.dataset.path);
-		});
-		syncSelectAllUI();
-		renderStatus();
-		renderToolbarState();
-	}
-
-	function syncSelectAllUI () {
-		var allSelected = !!state.items.length && state.selectedPaths.size === state.items.length;
-		var partiallySelected = state.selectedPaths.size > 0 && state.selectedPaths.size < state.items.length;
-		[ui.selectAll, ui.selectAllToolbar].forEach(function (node) {
-			if (!node) return;
-			node.checked = allSelected;
-			node.indeterminate = partiallySelected;
-		});
-	}
-
-	function startSelectionBox (e) {
-		closeContextMenu();
-		var point = getSelectionPoint(e);
-		state.selectionBox = {
-			startX: point.x,
-			startY: point.y,
-			currentX: point.x,
-			currentY: point.y,
-			baseSelection: (e.ctrlKey || e.metaKey) ? new Set(state.selectedPaths) : new Set(),
-			toggledPaths: new Set(),
-			didDrag: false
-		};
-		ui.main.classList.add('Explorer__main--selecting');
-		updateSelectionBoxVisual();
-		document.addEventListener('mousemove', handleSelectionBoxMove);
-		document.addEventListener('mouseup', handleSelectionBoxEnd);
-	}
-
-	function handleSelectionBoxMove (e) {
-		if (!state.selectionBox) return;
-		var point = getSelectionPoint(e);
-		state.selectionBox.currentX = point.x;
-		state.selectionBox.currentY = point.y;
-		state.selectionBox.didDrag = state.selectionBox.didDrag || Math.abs(point.x - state.selectionBox.startX) > 3 || Math.abs(point.y - state.selectionBox.startY) > 3;
-		updateSelectionBoxVisual();
-		updateSelectionBoxSelection();
-	}
-
-	function handleSelectionBoxEnd () {
-		if (!state.selectionBox) return;
-		var didDrag = state.selectionBox.didDrag;
-		if (!didDrag) {
-			state.selectedPaths = new Set();
-			state.lastSelectedPath = null;
-			syncSelectionUI();
-		}
-		state.selectionBox = null;
-		ui.main.classList.remove('Explorer__main--selecting');
-		ui.selectionBox.style.display = 'none';
-		document.removeEventListener('mousemove', handleSelectionBoxMove);
-		document.removeEventListener('mouseup', handleSelectionBoxEnd);
-	}
-
-	function updateSelectionBoxVisual () {
-		if (!state.selectionBox) return;
-		var box = getSelectionBoxRect();
-		ui.selectionBox.style.display = state.selectionBox.didDrag ? 'block' : 'none';
-		ui.selectionBox.style.left = box.left + 'px';
-		ui.selectionBox.style.top = box.top + 'px';
-		ui.selectionBox.style.width = box.width + 'px';
-		ui.selectionBox.style.height = box.height + 'px';
-	}
-
-	function updateSelectionBoxSelection () {
-		if (!state.selectionBox || !state.selectionBox.didDrag) return;
-		var box = getSelectionBoxRect();
-		var nextSelection = new Set(state.selectionBox.baseSelection);
-		var intersected = getSelectionIntersectedPaths(box);
-		intersected.forEach(function (itemPath) {
-			nextSelection.add(itemPath);
-		});
-		state.selectedPaths = nextSelection;
-		state.lastSelectedPath = intersected.length ? intersected[intersected.length - 1] : (Array.from(nextSelection).pop() || null);
-		syncSelectionUI();
-	}
-
-	function getSelectionBoxRect () {
-		var selection = state.selectionBox;
-		var left = Math.min(selection.startX, selection.currentX);
-		var top = Math.min(selection.startY, selection.currentY);
-		var right = Math.max(selection.startX, selection.currentX);
-		var bottom = Math.max(selection.startY, selection.currentY);
-		return {
-			left: left,
-			top: top,
-			right: right,
-			bottom: bottom,
-			width: right - left,
-			height: bottom - top
-		};
-	}
-
-	function getSelectionPoint (e) {
-		var mainRect = ui.main.getBoundingClientRect();
-		return {
-			x: e.clientX - mainRect.left + ui.main.scrollLeft,
-			y: e.clientY - mainRect.top + ui.main.scrollTop
-		};
-	}
-
-	function getSelectionIntersectedPaths (box) {
-		var selector = state.viewMode === 'grid' ? '.Explorer__card[data-path]' : '.Explorer__row[data-path]';
-		return Array.from(rootElem.querySelectorAll(selector)).map(function (node) {
-			var rect = getNodeRectInMain(node);
-			return intersectsSelectionBox(box, rect) ? node.dataset.path : null;
-		}).filter(Boolean);
-	}
-
-	function getNodeRectInMain (node) {
-		var rect = node.getBoundingClientRect();
-		var mainRect = ui.main.getBoundingClientRect();
-		return {
-			left: rect.left - mainRect.left + ui.main.scrollLeft,
-			top: rect.top - mainRect.top + ui.main.scrollTop,
-			right: rect.right - mainRect.left + ui.main.scrollLeft,
-			bottom: rect.bottom - mainRect.top + ui.main.scrollTop
-		};
-	}
-
-	function intersectsSelectionBox (a, b) {
-		return !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom);
-	}
-
-	function handleItemDragStart (e) {
-		var itemNode = e.target.closest('[data-path][data-type]');
-		if (!itemNode) return;
-		var dragPath = itemNode.dataset.path;
-		var dragPaths = state.selectedPaths.has(dragPath) ? Array.from(state.selectedPaths) : [dragPath];
-		state.dragPaths = dragPaths;
-		state.dragDropHandled = false;
-		if (state.dragOverCommitTimer) {
-			clearTimeout(state.dragOverCommitTimer);
-			state.dragOverCommitTimer = null;
-		}
-		if (e.dataTransfer) {
-			var payload = JSON.stringify(dragPaths);
-			e.dataTransfer.setData('application/x-explorer-paths', payload);
-			e.dataTransfer.setData('text/plain', payload);
-			e.dataTransfer.effectAllowed = 'move';
-		}
-	}
-
-	function handleItemDragOver (e) {
-		var folderNode = e.target.closest('[data-path][data-type=\"dir\"]');
-		if (!folderNode) return;
-		e.preventDefault();
-		clearDropTargets();
-		folderNode.classList.add('Explorer__dropTarget');
-		state.dragHoverFolderPath = folderNode.dataset.path;
-		state.lastDragHoverFolderPath = folderNode.dataset.path;
-		scheduleDragoverIdleCommit();
-		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-	}
-
-	function handleItemDragLeave (e) {
-		var folderNode = e.target.closest('[data-path][data-type=\"dir\"]');
-		if (!folderNode) return;
-		if (folderNode.contains(e.relatedTarget)) return;
-		folderNode.classList.remove('Explorer__dropTarget');
-		// Keep last known folder target during drag; some browsers emit dragleave before dragend/drop.
-		if (!state.dragPaths.length && state.dragHoverFolderPath === folderNode.dataset.path) {
-			state.dragHoverFolderPath = null;
-		}
-	}
-
-	async function handleItemDrop (e) {
-		var folderNode = e.target.closest('[data-path][data-type=\"dir\"]');
-		if (!folderNode) return;
-		var dragRaw = e.dataTransfer ? (
-			e.dataTransfer.getData('application/x-explorer-paths')
-			|| e.dataTransfer.getData('text/plain')
-		) : '';
-		e.preventDefault();
-		e.stopPropagation();
-		clearDropTargets();
-		var dragPaths = state.dragPaths && state.dragPaths.length ? state.dragPaths.slice() : [];
-		try {
-			if (dragRaw) {
-				dragPaths = JSON.parse(dragRaw);
-			}
-		}
-		catch (err) {
-			console.error(err);
-		}
-		if (!dragPaths.length) return;
-		state.dragDropHandled = true;
-		await moveItemsToFolder(dragPaths, folderNode.dataset.path, {source: 'direct-drop'});
-		state.dragPaths = [];
-		state.dragHoverFolderPath = null;
-		state.lastDragHoverFolderPath = null;
-	}
-
-	function handleItemDragEnd () {
-		// Some browsers fire dragend before drop bubbling completes.
-		setTimeout(function () {
-			commitPendingDragMove('dragend-fallback');
-			state.dragPaths = [];
-			state.dragHoverFolderPath = null;
-			state.lastDragHoverFolderPath = null;
-			state.dragDropHandled = false;
-			if (state.dragOverCommitTimer) {
-				clearTimeout(state.dragOverCommitTimer);
-				state.dragOverCommitTimer = null;
-			}
-			clearDropTargets();
-		}, 0);
-	}
-
-	async function commitPendingDragMove (source) {
-		if (state.dragCommitInProgress) return;
-		if (state.dragDropHandled) return;
-		var targetFolder = state.dragHoverFolderPath || state.lastDragHoverFolderPath;
-		if (!targetFolder) return;
-		if (!state.dragPaths || !state.dragPaths.length) return;
-
-		state.dragCommitInProgress = true;
-		try {
-			state.dragDropHandled = true;
-			await moveItemsToFolder(state.dragPaths.slice(), targetFolder, {source: source});
-		}
-		finally {
-			state.dragCommitInProgress = false;
-			if (state.dragOverCommitTimer) {
-				clearTimeout(state.dragOverCommitTimer);
-				state.dragOverCommitTimer = null;
-			}
-		}
-	}
-
-	function clearDropTargets () {
-		rootElem.querySelectorAll('.Explorer__dropTarget').forEach(function (node) {
-			node.classList.remove('Explorer__dropTarget');
-		});
-	}
-
-	function scheduleDragoverIdleCommit () {
-		if (state.dragOverCommitTimer) {
-			clearTimeout(state.dragOverCommitTimer);
-		}
-		state.dragOverCommitTimer = setTimeout(function () {
-			commitPendingDragMove('dragover-idle-fallback');
-		}, 220);
-	}
-
-	function updateDragHoverFromPoint (x, y) {
-		var node = document.elementFromPoint(x, y);
-		var folderNode = node && node.closest ? node.closest('[data-path][data-type=\"dir\"]') : null;
-		clearDropTargets();
-		if (folderNode) {
-			state.dragHoverFolderPath = folderNode.dataset.path;
-			state.lastDragHoverFolderPath = folderNode.dataset.path;
-			folderNode.classList.add('Explorer__dropTarget');
-		}
-		else {
-			// During active drag keep last valid hover folder for fallback commit.
-			if (!state.dragPaths.length) {
-				state.dragHoverFolderPath = null;
-				state.lastDragHoverFolderPath = null;
-			}
-		}
 	}
 
 	// --- archives -------------------------------------------------------------------
@@ -3221,14 +2853,18 @@ async function openExplorer () {
 				onSubmit: async function (name) {
 					state.dialog = null;
 					renderOverlays();
-					var target = path.join(state.cwd, name);
-					// mkdir on an existing name is an error rather than a silent no-op, and
-					// an unhandled one looked like the button doing nothing.
-					if (await stat(target)) {
-						report('Create folder', '"' + name + '" already exists in ' + state.cwd + '.', 'warn');
+					// mkdir on an existing name is an error rather than a silent no-op, and an
+					// unhandled one looked like the button doing nothing. It used to report a card
+					// saying the name was taken -- which told you what was wrong and then left you to
+					// do something about it. Renaming onto a taken name asks instead, and so does
+					// pasting onto one, so this asks too, through the same dialog. `true` for
+					// sourceIsDirectory is what greys out *Replace*: replacing a folder would mean
+					// deleting whatever is inside it, which is not a thing one click should do.
+					var resolvedNew = await resolveIncomingDestination(name, state.cwd, 'create folder', true);
+					if (!resolvedNew) {
 						return;
 					}
-					await mkdir(target);
+					await mkdir(resolvedNew.destPath);
 					await refreshCurrentDir(false);
 				}
 			});
@@ -3751,191 +3387,6 @@ async function openExplorer () {
 		}
 	});
 
-	// Runs `fn` and reports whatever it throws -- synchronously or as a rejected promise --
-	// under `label`, rather than letting it disappear.
-	function guarded (fn, label) {
-		return function () {
-			var result;
-			try {
-				result = fn.apply(this, arguments);
-			}
-			catch (err) {
-				reportFailure(label, err);
-				return;
-			}
-			if (result && typeof result.then === 'function') {
-				return result.catch(function (err) {
-					reportFailure(label, err);
-				});
-			}
-			return result;
-		};
-	}
-
-	// The shell now puts a reporter in front of every app document, so that an app whose
-	// script never ran is not a blank window and a console line. Explorer's own three
-	// layers are better than that generic one -- they name the operation and translate the
-	// errno -- so it opts out, and two notes for one failure do not happen. Declared here,
-	// beside the handlers it is talking about, rather than at the top where it would read
-	// as a setting.
-	window.__pixosOwnErrors = true;
-
-	// The last resort, for what neither wrapper covers: a listener, a timer, a promise
-	// nobody awaited. The shell's own handlers cannot see any of it -- a rejection inside
-	// an app fires on that app's window, not on the shell's -- so Explorer has to catch
-	// its own or it stays a console line, which is the thing this phase exists to end.
-	window.addEventListener('unhandledrejection', function (e) {
-		reportFailure('Something went wrong in Explorer', e.reason);
-	});
-
-	window.addEventListener('error', function (e) {
-		// A missing image in a folder listing fires this too, with no error object. Not
-		// worth interrupting anyone for.
-		if (!e.error) {
-			return;
-		}
-		reportFailure('Something went wrong in Explorer', e.error);
-	});
-
-	// Prefers the shell's notification layer, which does not steal the focus and stacks
-	// when several things fail. Standalone -- Explorer opened directly in a tab -- there is
-	// no shell, so it falls back to its own dialog rather than to silence.
-	//
-	// Everything Explorer reports goes through here. A call site that reaches for
-	// openInfoDialog directly gets a modal where the rest of the system gets a card, and
-	// skips the errno translation with it -- which is how a raw ENOENT reached the screen.
-	function report (title, message, level, actions) {
-		try {
-			if (parent !== window && typeof parent.notify === 'function') {
-				parent.notify({
-					level: level || 'error',
-					title: title,
-					message: message,
-					source: 'Explorer',
-					actions: actions || []
-				});
-				return;
-			}
-		}
-		catch (crossOrigin) {
-			// Not our parent. Fall through to the dialog.
-		}
-		openInfoDialog(title, message);
-	}
-
-	// Two attempts and then an honest surrender. The async API is the right one and is
-	// what a modern browser grants; execCommand still works in places it does not --
-	// notably an iframe without clipboard permission, which is exactly what Explorer is.
-	async function copyTextToClipboard (text) {
-		try {
-			if (navigator.clipboard && navigator.clipboard.writeText) {
-				await navigator.clipboard.writeText(text);
-				return true;
-			}
-		}
-		catch (err) {
-			console.warn('Explorer: the clipboard refused a write', err);
-		}
-		try {
-			var area = document.createElement('textarea');
-			area.value = text;
-			area.setAttribute('readonly', '');
-			area.style.position = 'fixed';
-			area.style.top = '-1000px';
-			document.body.appendChild(area);
-			area.select();
-			var copied = document.execCommand('copy');
-			area.remove();
-			return !!copied;
-		}
-		catch (fallbackErr) {
-			return false;
-		}
-	}
-
-	// What to tell someone to press. Not a capability check -- purely which keyboard is
-	// under their hands.
-	function copyChordLabel () {
-		return /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || '')
-			? 'Cmd+C'
-			: 'Ctrl+C';
-	}
-
-	function reportFailure (label, err) {
-		console.error('Explorer: ' + label, err);
-		var described = describeFailure(label, err);
-		report(described.title, described.message);
-	}
-
-	// A download that did not happen, explained. The classification lives in the shell
-	// (js/shell/failure.js) because an app cannot import shell modules -- so this asks the
-	// parent, and degrades to the raw message when there is no parent to ask.
-	function reportFetchFailure (url, outcome) {
-		var described;
-		try {
-			if (parent !== window && typeof parent.describeFetchFailure === 'function') {
-				described = parent.describeFetchFailure(Object.assign({
-					url: url,
-					context: 'Could not download that file'
-				}, outcome));
-			}
-		}
-		catch (crossOrigin) {
-			described = null;
-		}
-		if (!described) {
-			described = {
-				title: 'Could not download that file',
-				message: outcome.response
-					? 'The server answered with ' + outcome.response.status + '.'
-					: String(outcome.error && outcome.error.message ? outcome.error.message : outcome.error)
-			};
-		}
-
-		var actions = [{
-			label: 'Open in a browser tab',
-			run: function () {
-				window.open(url, '_blank', 'noopener');
-			}
-		}];
-
-		try {
-			if (parent !== window && typeof parent.notify === 'function') {
-				parent.notify({
-					level: 'error',
-					title: described.title,
-					message: described.message + '\n\n' + url,
-					source: 'Explorer',
-					actions: actions
-				});
-				return;
-			}
-		}
-		catch (crossOrigin) {
-			// Fall through to the dialog.
-		}
-		openInfoDialog(described.title, described.message + '\n\n' + url);
-	}
-
-	function describeFailure (context, err) {
-		try {
-			if (parent !== window && typeof parent.describeError === 'function') {
-				return parent.describeError(context, err);
-			}
-		}
-		catch (crossOrigin) {
-			// Fall through.
-		}
-		return {title: context, message: String(err && err.message ? err.message : err)};
-	}
-
-	// 'downloadSelected' -> 'Download selected failed'. Better than the raw key, and it
-	// costs nothing to be readable about which thing went wrong.
-	function readableActionName (name) {
-		var words = String(name).replace(/([A-Z])/g, ' $1').toLowerCase().trim();
-		return words.charAt(0).toUpperCase() + words.slice(1) + ' failed';
-	}
-
 	async function ensureFfmpegLoaded () {
 		if (!window.FFmpeg) {
 			openInfoDialog('FFmpeg', 'FFmpeg is not installed');
@@ -3981,17 +3432,15 @@ async function openExplorer () {
 			|| e.dataTransfer.getData('text/plain')
 		) : '';
 		if (internalDragPayload || (state.dragPaths && state.dragPaths.length)) {
-			if ((state.dragHoverFolderPath || state.lastDragHoverFolderPath) && state.dragPaths && state.dragPaths.length) {
+			// `updateDragHoverFromPoint` above has just answered whether the pointer is over a
+			// folder right now. That is the only thing that may commit a move -- a release
+			// anywhere else ends the drag and moves nothing.
+			if (state.dragHoverFolderPath && state.dragPaths && state.dragPaths.length) {
 				await commitPendingDragMove('body-fallback');
 			}
 			state.dragPaths = [];
 			state.dragHoverFolderPath = null;
-			state.lastDragHoverFolderPath = null;
 			state.dragDropHandled = false;
-			if (state.dragOverCommitTimer) {
-				clearTimeout(state.dragOverCommitTimer);
-				state.dragOverCommitTimer = null;
-			}
 			return;
 		}
 		var files = e.dataTransfer ? e.dataTransfer.files : e.target.files;
@@ -4138,6 +3587,7 @@ async function openExplorer () {
 			name: name,
 			targetFolderPath: targetFolderPath,
 			canReplace: canReplace,
+			existingIsDirectory: existing.isDirectory(),
 			operation: operation
 		});
 
@@ -4235,7 +3685,12 @@ async function openExplorer () {
 			openDialog({
 				type: 'pasteConflict',
 				canReplace: payload.canReplace,
-				message: 'A file named "' + payload.name + '" already exists in ' + payload.targetFolderPath + '.',
+				// It used to say "A file named" whatever was in the way. Now that creating a
+				// folder comes through here too, the commonest collision is one folder with
+				// another, and calling that a file is the kind of small wrongness that makes
+				// somebody doubt the rest of the sentence.
+				message: (payload.existingIsDirectory ? 'A folder named "' : 'A file named "')
+					+ payload.name + '" already exists in ' + payload.targetFolderPath + '.',
 				onSubmit: function (decision) {
 					state.dialog = null;
 					renderOverlays();
@@ -4335,202 +3790,6 @@ async function openExplorer () {
 			return;
 		}
 		await writeIncomingFile(destPath, Buffer.from(ab), false);
-	}
-
-	async function getOpenWithApps (item) {
-		if (item.isDirectory) {
-			var dirApps = [
-				{id: 'explorer', label: 'explorer', installed: true},
-				{id: 'new explorer', label: 'new explorer', installed: true},
-				{id: 'terminal', label: 'terminal', installed: true}
-			];
-			var treemapInstalled = (parent.apps || []).some(function (entry) {
-				return entry.id === 'treemap';
-			});
-			var treemapCatalog = typeof parent.getInstallableApps === 'function'
-				? parent.getInstallableApps().some(function (entry) { return entry.id === 'treemap'; })
-				: false;
-			if (treemapInstalled || treemapCatalog) {
-				dirApps.push({
-					id: 'treemap',
-					label: getCatalogLabel('treemap') || 'Disk Treemap',
-					installed: treemapInstalled
-				});
-			}
-			return dirApps;
-		}
-		var profile = await getCompatibilityProfileForItem(item.path);
-		var installedApps = [];
-		var installedIds = new Set();
-		for (var i = 0; i < (parent.apps || []).length; i++) {
-			var app = parent.apps[i];
-			if (await isAppCompatibleWithProfile(app.id, profile)) {
-				installedIds.add(app.id);
-				installedApps.push({
-					id: app.id,
-					label: getCatalogLabel(app.id) || app.id,
-					installed: true
-				});
-			}
-		}
-		var installableApps = [];
-		var catalogApps = typeof parent.getInstallableApps === 'function' ? parent.getInstallableApps() : [];
-		for (var j = 0; j < catalogApps.length; j++) {
-			var catalogApp = catalogApps[j];
-			if (installedIds.has(catalogApp.id)) continue;
-			if (!await isAppCompatibleWithProfile(catalogApp.id, profile)) continue;
-			installableApps.push({
-				id: catalogApp.id,
-				label: catalogApp.label,
-				installed: false
-			});
-		}
-		return installedApps.concat(installableApps);
-	}
-
-	async function getOpenWithAppsForItems (items) {
-		if (!items || !items.length) {
-			return [];
-		}
-		if (items.length === 1) {
-			return getOpenWithApps(items[0]);
-		}
-		if (items.some(function (item) { return item.isDirectory; })) {
-			return [];
-		}
-		var appsPerItem = await Promise.all(items.map(function (item) {
-			return getOpenWithApps(item);
-		}));
-		var commonIds = null;
-		appsPerItem.forEach(function (apps) {
-			var ids = new Set(apps.map(function (app) { return app.id; }));
-			if (commonIds === null) {
-				commonIds = ids;
-			}
-			else {
-				commonIds.forEach(function (id) {
-					if (!ids.has(id)) {
-						commonIds.delete(id);
-					}
-				});
-			}
-		});
-		if (!commonIds || !commonIds.size) {
-			return [];
-		}
-		return appsPerItem[0].filter(function (app) {
-			return commonIds.has(app.id);
-		});
-	}
-
-	function getCatalogLabel (appId) {
-		var app = typeof parent.getInstallableApps === 'function'
-			? parent.getInstallableApps().find(function (item) { return item.id === appId; })
-			: null;
-		return app ? app.label : '';
-	}
-
-	async function getDefaultAppRows () {
-		var associations = typeof parent.getAllDefaultAppAssociations === 'function'
-			? parent.getAllDefaultAppAssociations()
-			: {};
-		var rows = [];
-		var extensions = Object.keys(associations).sort();
-		for (var i = 0; i < extensions.length; i++) {
-			var extension = extensions[i];
-			var appId = associations[extension];
-			var apps = await getInstalledCompatibleAppsForExtension(extension);
-			if (appId && !apps.some(function (app) { return app.id === appId; })) {
-				apps = [{
-					id: appId,
-					label: (getCatalogLabel(appId) || appId) + ' (not installed)',
-					invalid: true
-				}].concat(apps);
-			}
-			rows.push({
-				extension: extension,
-				appId: appId,
-				apps: apps
-			});
-		}
-		return rows;
-	}
-
-	function getInstalledAppsForPicker () {
-		return (parent.apps || [])
-			.map(function (entry) {
-				return {
-					id: entry.id,
-					label: getCatalogLabel(entry.id) || entry.id
-				};
-			});
-	}
-
-	async function getInstalledCompatibleAppsForExtension (extension) {
-		var profile = getCompatibilityProfileForExtension(extension);
-		var apps = [];
-		for (var i = 0; i < (parent.apps || []).length; i++) {
-			var entry = parent.apps[i];
-			if (!await isAppCompatibleWithProfile(entry.id, profile)) continue;
-			apps.push({
-				id: entry.id,
-				label: getCatalogLabel(entry.id) || entry.id
-			});
-		}
-		return apps;
-	}
-
-	function getDefaultAppIdForExtension (extension) {
-		if (!extension || typeof parent.getDefaultAppForExtension !== 'function') {
-			return null;
-		}
-		return parent.getDefaultAppForExtension(extension);
-	}
-
-	function normalizeExtensionInput (extension) {
-		return String(extension || '').trim().replace(/^\./, '').toLowerCase();
-	}
-
-	function getNormalizedExtension (filePath) {
-		return normalizeExtensionInput(path.extname(filePath));
-	}
-
-	// Most specific extension for a path: 'book.fb2.zip' -> 'fb2.zip'.
-	// Used for app association; mount logic keeps the trailing extension.
-	function getSpecificExtension (filePath) {
-		if (typeof parent.getExtensionCandidates === 'function') {
-			return parent.getExtensionCandidates(filePath)[0] || '';
-		}
-		return getNormalizedExtension(filePath);
-	}
-
-	async function isAppCompatibleWithExtension (appId, extension) {
-		return await isAppCompatibleWithProfile(appId, getCompatibilityProfileForExtension(extension));
-	}
-
-	async function getCompatibilityProfileForItem (itemPath) {
-		if (typeof parent.getFileCompatibilityProfile === 'function') {
-			return await parent.getFileCompatibilityProfile(itemPath);
-		}
-		return getCompatibilityProfileForExtension(getSpecificExtension(itemPath));
-	}
-
-	function getCompatibilityProfileForExtension (extension) {
-		if (typeof parent.getExtensionCompatibilityProfile === 'function') {
-			return parent.getExtensionCompatibilityProfile(extension);
-		}
-		return {
-			extension: normalizeExtensionInput(extension),
-			mimeType: null,
-			isText: false
-		};
-	}
-
-	async function isAppCompatibleWithProfile (appId, profile) {
-		if (typeof parent.isAppCompatibleWithProfile === 'function') {
-			return await parent.isAppCompatibleWithProfile(appId, profile);
-		}
-		return false;
 	}
 
 	var FILES3_CONFIG_KEY = 'pixos_files3_config';

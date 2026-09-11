@@ -16,6 +16,8 @@ import {check, report} from './assert.mjs';
 // same module the engine uses, and a menu that disagrees with it would offer the entry on
 // a text file or hide it on a .rar.
 import * as archiveNames from '../apps/7z/js/parse.js';
+import {createFailure} from '../apps/explorer/js/failure.js';
+import {createSelection} from '../apps/explorer/js/selection.js';
 
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
 
@@ -84,7 +86,9 @@ const menus = new Function('shell', `
 	function getNormalizedExtension (p) { return String(p).split('.').pop().toLowerCase(); }
 	function isImageExtension (p) { return /\\.(png|jpg|jpeg|gif|webp)$/i.test(p); }
 	function hasInternalClipboard () { return false; }
-	${fn('getCurrentFolderItem')}
+	// Phase 21 moved this into js/selection.js. The harness builds its own state object, so
+	// the module is built around that one rather than the function being copied out.
+	var getCurrentFolderItem = shell.selectionFor(state).getCurrentFolderItem;
 	${fn('sendToPeerMenu')}
 	function getNameByPath (p) { return String(p).split('/').pop(); }
 	function report () {}
@@ -125,7 +129,16 @@ function build (selected, shellApi) {
 		// Passing null means "opened outside PixOS", where parent *is* window and every
 		// entry that needs the shell has to notice.
 		parent: noShell ? stand : (shellApi || {}),
-		window: noShell ? stand : {}
+		window: noShell ? stand : {},
+		selectionFor: state => createSelection({
+			state: state,
+			ui: {},
+			rootElem: null,
+			doc: {},
+			closeContextMenu () {},
+			renderStatus () {},
+			renderToolbarState () {}
+		})
 	});
 }
 
@@ -234,11 +247,18 @@ check('as an item, so nothing selected inside it can stand in',
 
 // --- the clipboard ---------------------------------------------------------------------
 
-// The real function, bound to a browser that behaves however each case needs.
-const withBrowser = new Function('navigator', 'document', 'console', fn('copyTextToClipboard')
-	+ '\n; return copyTextToClipboard;');
+// The real function, bound to a browser that behaves however each case needs. Phase 21
+// moved it into js/failure.js, so this builds a reporter per case instead of cutting the
+// function back out of the HTML -- the browser it talks to is the `doc` and `nav` handed
+// to the factory, which is the whole reason those became parameters.
 function clipboard (nav, doc) {
-	return withBrowser(nav, doc, quiet)('/home/notes.csv');
+	return createFailure({
+		shell: {},
+		win: {addEventListener () {}},
+		doc: doc,
+		nav: nav,
+		openInfoDialog () {}
+	}).copyTextToClipboard('/home/notes.csv');
 }
 
 const area = {
@@ -257,6 +277,9 @@ function fakeDocument (execResult) {
 	};
 }
 const quiet = {warn () {}, error () {}};
+// The module warns through the real console when the clipboard refuses; that refusal is
+// what half of these cases are, and it is not news here.
+console.warn = quiet.warn;
 
 check('the modern API is used when it works',
 	await clipboard({clipboard: {writeText: async () => {}}}, fakeDocument(false)), true);

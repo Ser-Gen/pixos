@@ -25,7 +25,7 @@ function region (from, to) {
 }
 
 const code = region('async function resolveIncomingDestination', 'function getInitialCwd')
-	+ region('async function refuseOversizedFile', '\n\tasync function getOpenWithApps');
+	+ region('async function refuseOversizedFile', '\n\tvar FILES3_CONFIG_KEY');
 
 // --- a filesystem that remembers what happened -----------------------------------------
 

@@ -170,7 +170,7 @@ function fetchAudioProxy(request) {
 // The version in the cache name is the whole risk: skipWaiting() + clients.claim() means a
 // new worker takes over immediately, and without a versioned name that would be a new
 // worker serving a previous worker's assets. `activate` deletes every cache but this one.
-var SHELL_CACHE = 'pixos-shell-v8';
+var SHELL_CACHE = 'pixos-shell-v14';
 
 // --- an app that dies before its own code runs ---------------------------------------------
 //
@@ -280,6 +280,11 @@ var PRECACHE = [
 	'./apps/explorer/explorer.css',
 	'./apps/explorer/js/format.js',
 	'./apps/explorer/js/fs-helpers.js',
+	'./apps/explorer/js/failure.js',
+	'./apps/explorer/js/open-with.js',
+	'./apps/explorer/js/context-menu.js',
+	'./apps/explorer/js/selection.js',
+	'./apps/explorer/js/dnd.js',
 	'./apps/explorer/favicon.svg',
 	'./apps/app-manager/index.html',
 	'./apps/app-manager/favicon.svg',

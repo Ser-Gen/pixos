@@ -82,7 +82,12 @@ check('it says nothing when there is no shell around the page',
 check('an app that reports its own errors can say so',
 	ERROR_REPORTER.includes('if(window.__pixosOwnErrors){return;}'), true);
 const explorer = fs.readFileSync(new URL('apps/explorer/index.html', root), 'utf8');
-check('and Explorer does', /window\.__pixosOwnErrors = true;/.test(explorer), true);
+// Phase 21 moved the claim into apps/explorer/js/failure.js, beside the handlers it is
+// talking about. It is still set on Explorer's own window -- one import further away.
+const explorerFailure = fs.readFileSync(new URL('apps/explorer/js/failure.js', root), 'utf8');
+check('and Explorer does', /__pixosOwnErrors = true;/.test(explorerFailure), true);
+check('from a module its document actually loads',
+	explorer.includes('./js/failure.js'), true);
 
 // --- when it is not injected ------------------------------------------------------------
 //

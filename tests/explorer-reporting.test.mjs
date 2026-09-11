@@ -12,8 +12,11 @@
 
 import fs from 'fs';
 import {check, report} from './assert.mjs';
+import {createFailure} from '../apps/explorer/js/failure.js';
 
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
+const failureSource = fs.readFileSync(
+	new URL('../apps/explorer/js/failure.js', import.meta.url), 'utf8');
 
 // Pulls out `function name (...) { ... }` by matching braces, so the tests do not depend
 // on what happens to sit after it in the file.
@@ -35,18 +38,43 @@ function fn (name) {
 	process.exit(1);
 }
 
-const code = [fn('isCallbackName'), fn('openDialog'), fn('guarded'), fn('readableActionName')].join('\n');
+const code = [fn('isCallbackName'), fn('openDialog')].join('\n');
 
 const failures = [];
+const logged = [];
 const state = {dialog: null};
 
-const explorer = new Function('state', 'renderOverlays', 'reportFailure', code + `
-	return {openDialog: openDialog, guarded: guarded, readableActionName: readableActionName};
+// `guarded` and `readableActionName` are the real ones now -- phase 21 moved them into
+// js/failure.js, and importing them beats cutting them back out of the HTML. What the
+// factory wants is a shell and a window that are not the same object, which is how every
+// branch in that module decides whether there is a PixOS to report to.
+const shell = {
+	notify: record => { failures.push({label: record.title, message: record.message}); },
+	describeError: (context, err) => ({
+		title: context,
+		message: String(err && err.message ? err.message : err)
+	})
+};
+console.error = (...args) => { logged.push(args.join(' ')); };
+
+const failure = createFailure({
+	shell: shell,
+	win: {addEventListener: () => {}},
+	doc: {},
+	nav: {},
+	openInfoDialog: () => {}
+});
+
+const explorer = new Function('state', 'renderOverlays', 'guarded', 'readableActionName', code + `
+	return {openDialog: openDialog};
 `)(
 	state,
 	() => {},
-	(label, err) => { failures.push({label: label, message: String(err && err.message || err)}); }
+	failure.guarded,
+	failure.readableActionName
 );
+explorer.guarded = failure.guarded;
+explorer.readableActionName = failure.readableActionName;
 
 // --- the wrapper itself ------------------------------------------------------------------
 
@@ -125,7 +153,14 @@ const handBuilt = source.split('\n')
 check('no call site turns a caught error into a dialog by hand',
 	handBuilt.map(entry => entry.number + ': ' + entry.line), []);
 
-check('the last-resort net is installed', /addEventListener\('unhandledrejection'/.test(source), true);
-check('and covers uncaught errors as well', /addEventListener\('error', function \(e\) \{[\s\S]{0,400}reportFailure/.test(source), true);
+// Both listeners moved into js/failure.js with everything else that reports; they are
+// registered by the factory call rather than by reaching the middle of openExplorer, which
+// is strictly earlier and so covers strictly more.
+check('the last-resort net is installed',
+	/addEventListener\('unhandledrejection'/.test(failureSource), true);
+check('and covers uncaught errors as well',
+	/addEventListener\('error', function \(e\) \{[\s\S]{0,400}reportFailure/.test(failureSource), true);
+check('a reported failure also reaches the console, where a bug report can find it',
+	logged.length > 0, true);
 
 process.exit(report('explorer-reporting') ? 1 : 0);

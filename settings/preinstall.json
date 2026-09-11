@@ -25,6 +25,11 @@
     {"path": "/apps/explorer/explorer.css", "refresh": true},
     {"path": "/apps/explorer/js/format.js", "refresh": true},
     {"path": "/apps/explorer/js/fs-helpers.js", "refresh": true},
+    {"path": "/apps/explorer/js/failure.js", "refresh": true},
+    {"path": "/apps/explorer/js/open-with.js", "refresh": true},
+    {"path": "/apps/explorer/js/context-menu.js", "refresh": true},
+    {"path": "/apps/explorer/js/selection.js", "refresh": true},
+    {"path": "/apps/explorer/js/dnd.js", "refresh": true},
     {"path": "/apps/explorer/favicon.svg", "refresh": true},
 
     {"path": "/apps/app-manager/index.html", "refresh": true},

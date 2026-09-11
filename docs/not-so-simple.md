@@ -38,6 +38,22 @@ Explorer's own window catch the rest. All three route through one `report()` —
 that reaches for `openInfoDialog` directly gets a modal where the system gives a card, and
 skips the errno translation with it, which is how a raw `ENOENT` reached the screen twice.
 
+**A question is a modal; a failure is a card — and one of them is not a failure at all.**
+Renaming a file onto a name that already exists looks like it should be an error, and is
+not: `fsRename` does not refuse an occupied name, it silently **replaces** what is there, so
+there is no error to catch and nothing to translate. The question has to be asked *before*
+the call, and it is the same `pasteConflict` dialog a paste asks, with the same three
+answers — Cancel, *Save as new name*, Replace. A card would be wrong here: the operation
+cannot proceed without an answer, and a note in the corner is not somewhere to answer
+anything. **New → Folder** onto an existing name used to go the other way and report a `warn`
+card, on the reasoning that `mkdir` genuinely refuses, so the operation is over before anyone
+could be asked. That reasoning was sound and the result was still worse: being told the name
+is taken and then left to retype it is a refusal where a question would do. It now asks the
+same question through the same dialog, with `sourceIsDirectory` true, which is what greys out
+*Replace* — replacing a folder would mean deleting whatever is inside it, and that is not a
+thing one click should do. The dialog names what is actually in the way, a folder or a file,
+because the commonest collision here is one folder with another.
+
 **A long operation is a note that is not finished yet.** `notifications.progress({title,
 total, unit, source})` returns a *handle* — `update({value, total, message})`, `done()`,
 `fail()`, `dismiss()` — and draws a card in the same stack as everything else the system
@@ -745,7 +761,25 @@ injected **only into navigations**, so every route that reads an app's own sourc
 install, a hash, a `pixos_supported` read — still gets the file byte for byte. It goes in
 after `<head>` and never before the doctype, which would drop the app into quirks mode. And
 `window.__pixosOwnErrors = true` is the opt-out for an app that reports properly: Explorer
-sets it, because two notes for one failure is worse than one.
+sets it, because two notes for one failure is worse than one. Since phase 21 it sets it from
+`apps/explorer/js/failure.js`, which claims the flag and installs Explorer's own two
+listeners as a side effect of being constructed — so that module has to be built early, and
+is the first statement in `openExplorer` for that reason.
+
+**`dropEffect` and `effectAllowed` are a pair, and an invalid pair cancels the drop
+silently.** A drag starting on an Explorer row sets `effectAllowed = 'move'` at `dragstart`.
+`document.body` carries a `dragover` handler for files arriving from the desktop, and body is
+an ancestor of every row, so it runs *after* the row's own handler and has the last word. It
+used to answer `dropEffect = 'copy'` for everything. `move` paired with `copy` is not a
+preference the browser reconciles — the combination is invalid, so it cancels the drop
+outright: **no `drop` event fires at all**, and the drag image animates back to where it
+started. For a long time every move inside Explorer was therefore being performed not by the
+drop but by one of the `dragend` fallbacks that ran afterwards, which is why the snap-back was
+visible before the move and why releasing over the toolbar moved the file too. The page-level
+handler now asks `isInternalDrag(e.dataTransfer)` first and answers `move` for Explorer's own
+drags. During `dragover` the browser refuses `getData` and exposes only `types`, so the *type*
+a drag carries is the only thing available to tell one of our rows from a file off the
+desktop while the pointer is still moving.
 
 **An app that has been renamed keeps answering to its old name.** `/settings/app-aliases.json`
 maps old id to current, written by `renameLocalApp` and read by `buildAppRegistry`;

@@ -34,9 +34,21 @@ run in iframes. Pure static site — no build step, no backend.
   `apps/explorer`, `apps/app-manager` are system apps; `apps/registry.json` and
   `apps/app-catalog.js` are both generated. Explorer is being taken apart by phase 21: its
   stylesheet is `apps/explorer/explorer.css`, and `apps/explorer/js/` holds the modules
-  lifted out of `openExplorer` so far — `format.js` (pure: names, paths, sizes, escaping)
-  and `fs-helpers.js` (every promise wrapper around BrowserFS). Both are factories taking
-  their dependencies as parameters, which is what makes the first of them testable.
+  lifted out of `openExplorer` so far — `format.js` (pure: names, paths, sizes, escaping),
+  `fs-helpers.js` (every promise wrapper around BrowserFS), `failure.js` (`report`,
+  `guarded`, the errno translation and the two last-resort listeners), `open-with.js`
+  (which app can open this file, and which one does by default), `context-menu.js` (drawing
+  and placing a menu, not what is in one), `selection.js` (what is selected, and the rubber
+  band) and `dnd.js` (dragging rows onto a folder, and the three racing paths that must
+  produce exactly one move — its timers are parameters so a test can move that clock by
+  hand). Each is a factory taking its dependencies as parameters — `fs`, `path`,
+  `shell`, `win`, `doc`, `nav`, `rootElem` — and that is the whole reason any of them can be
+  tested. **The context object is `state` and `ui`, passed by reference and nothing else**:
+  they are the shared mutable pair, and a module writing `state.contextMenu` has to write
+  the same object `index.html` reads. Every other dependency stays a named parameter — one
+  bag holding everything would re-create the closure this phase exists to take apart. The
+  three context-menu item builders and `actions` have not moved and are why the remaining
+  modules are harder than these.
   `apps/calendar` (read-only month/year view) and `apps/system-info` (what this browser
   will say about the machine) are the destinations the desktop widgets lead to, and each
   keeps its logic in a pure module beside it — `js/calendar.js`, `js/probe.js` — because
