@@ -1,0 +1,518 @@
+/* Explorer's stylesheet.
+
+   It lived in a `<style>` block inside `index.html` until phase 21, which is also where
+   eleven `style.cssText` assignments in the sidebar render still live -- those come out
+   in phase 23, when that render is rewritten anyway. Nothing here changed on the way
+   out: same rules, same order, same specificity. */
+
+:root {
+	--bg: #101319;
+	--panel: #1a1c1f;
+	--panel-2: #202327;
+	--line: #34383f;
+	--text: #e4e4e4;
+	--muted: #adadad;
+	--accent: #8d9664;
+	--danger: #f25f5c;
+	--hover: #2d3238;
+	--selected: #30353b;
+	--shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	background: radial-gradient(circle at 0% 0%, #242526 0%, #101319 38%);
+	color: var(--text);
+	font-family: "Segoe UI", "Noto Sans", sans-serif;
+	overflow: hidden;
+}
+
+#explorer {
+	height: 100%;
+}
+
+.Explorer {
+	height: 100%;
+	display: grid;
+	grid-template-rows: auto auto 1fr auto;
+	background: rgba(16, 19, 25, 0.85);
+}
+
+.Explorer__toolbar {
+	display: flex;
+	gap: 4px;
+	align-items: center;
+	padding: 4px 6px;
+	border-bottom: 1px solid var(--line);
+	background: var(--panel);
+}
+
+.Explorer__toolbarGroup {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.Explorer__toolbarLabel {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--text);
+	user-select: none;
+}
+
+.Explorer__toolbarGroup--grow {
+	flex: 1;
+	min-width: 0;
+}
+
+button,
+select,
+input,
+textarea {
+	background: #24272c;
+	border: 1px solid #3e424a;
+	color: var(--text);
+	border-radius: 0;
+	font: inherit;
+	font-size: 12px;
+}
+
+button,
+select,
+input {
+	height: 24px;
+	padding: 0 6px;
+}
+
+button {
+	cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+	background: #2f3339;
+}
+
+button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.Explorer__danger {
+	border-color: #6d3a3d;
+	background: #4d2a2c;
+}
+
+.Explorer__breadcrumbs {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	overflow: auto hidden;
+	white-space: nowrap;
+	padding: 4px 6px;
+	border-bottom: 1px solid var(--line);
+	background: var(--panel-2);
+}
+
+.Explorer__crumb {
+	padding: 2px 6px;
+	border-radius: 0;
+	cursor: pointer;
+	color: #d0d0d0;
+	font-size: 12px;
+}
+
+.Explorer__crumb:hover {
+	background: var(--hover);
+}
+
+.Explorer__crumb--current {
+	background: #2f333a;
+	cursor: default;
+}
+
+.Explorer__body {
+	display: grid;
+	grid-template-columns: 160px 1fr;
+	min-height: 0;
+}
+
+.Explorer__sidebar {
+	border-right: 1px solid var(--line);
+	padding: 4px;
+	overflow: auto;
+	background: #16181c;
+}
+
+.Explorer__sidebarTitle {
+	font-size: 10px;
+	text-transform: uppercase;
+	color: var(--muted);
+	margin: 4px;
+}
+
+.Explorer__sidebarItem {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 6px;
+	border-radius: 0;
+	cursor: pointer;
+	color: #d5d5d5;
+	font-size: 12px;
+}
+
+.Explorer__sidebarItem:hover {
+	background: var(--hover);
+}
+
+.Explorer__sidebarItem--active {
+	background: #2f3339;
+}
+
+.Explorer__main {
+	position: relative;
+	overflow: auto;
+	padding: 4px;
+}
+
+.Explorer__main--selecting {
+	user-select: none;
+}
+
+.Explorer__table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.Explorer__table thead {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+
+.Explorer__table th {
+	text-align: left;
+	background: #1f2228;
+	padding: 5px 6px;
+	font-size: 12px;
+	font-weight: 600;
+	border-bottom: 1px solid var(--line);
+	cursor: pointer;
+	user-select: none;
+}
+
+.Explorer__table td {
+	padding: 4px 6px;
+	border-bottom: 1px solid rgba(82, 87, 96, 0.35);
+	font-size: 12px;
+}
+
+.Explorer__selectCol {
+	width: 32px;
+	text-align: center;
+}
+
+.Explorer__row {
+	cursor: default;
+}
+
+.Explorer__row:hover {
+	background: rgba(52, 58, 66, 0.5);
+}
+
+.Explorer__row--selected {
+	background: var(--selected);
+}
+
+.Explorer__nameCell {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+}
+
+.Explorer__check {
+	width: 14px;
+	height: 14px;
+	padding: 0;
+	margin: 0;
+	accent-color: var(--accent);
+	cursor: pointer;
+}
+
+.Explorer__grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+	gap: 8px;
+	padding-top: 4px;
+}
+
+.Explorer__card {
+	border: 1px solid transparent;
+	background: transparent;
+	padding: 8px 6px;
+	cursor: default;
+	display: grid;
+	justify-items: center;
+	gap: 6px;
+	min-height: 120px;
+	position: relative;
+}
+
+.Explorer__card:hover {
+	border-color: #4d525b;
+	background: rgba(52, 58, 66, 0.45);
+}
+
+.Explorer__card--selected {
+	background: var(--selected);
+}
+
+.Explorer__cardIcon {
+	font-size: 36px;
+	line-height: 1;
+}
+
+.Explorer__cardCheck {
+	position: absolute;
+	top: 6px;
+	left: 6px;
+	z-index: 1;
+}
+
+.Explorer__cardName {
+	font-size: 12px;
+	text-align: center;
+	word-break: break-word;
+}
+
+.Explorer__dropTarget {
+	outline: 1px solid var(--accent);
+	outline-offset: -1px;
+}
+
+.Explorer__nameText {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.Explorer__muted {
+	color: var(--muted);
+}
+
+.Explorer__empty {
+	padding: 10px;
+	color: var(--muted);
+	font-size: 12px;
+}
+
+.Explorer__selectionBox {
+	position: absolute;
+	display: none;
+	border: 1px solid rgba(141, 150, 100, 0.95);
+	background: rgba(141, 150, 100, 0.18);
+	pointer-events: none;
+	z-index: 20;
+}
+
+.Explorer__status {
+	border-top: 1px solid var(--line);
+	background: var(--panel);
+	padding: 4px 6px;
+	font-size: 12px;
+	color: #d2d2d2;
+}
+
+.Explorer__recordingIndicator {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-left: 6px;
+	color: #ff4d4d;
+	font-size: 13px;
+}
+
+.Explorer__recordingDot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	background: #ff4d4d;
+	animation: Explorer__recordingPulse 1s infinite;
+	flex-shrink: 0;
+}
+
+@keyframes Explorer__recordingPulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.3; }
+}
+
+.Explorer__recordingBtn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: #ff4d4d;
+	padding: 2px 4px;
+	border-radius: 3px;
+	line-height: 1;
+	display: inline-flex;
+	align-items: center;
+	transition: color 0.15s, background 0.15s;
+}
+
+.Explorer__recordingBtn:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+
+.Explorer__recordingBtn--muted {
+	color: #666;
+}
+
+.ContextMenu {
+	position: fixed;
+	z-index: 1000;
+	min-width: 220px;
+	background: #23262b;
+	border: 1px solid #434850;
+	border-radius: 0;
+	box-shadow: var(--shadow);
+	padding: 6px;
+}
+
+.ContextMenu__list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.ContextMenu__item {
+	position: relative;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 5px 8px;
+	border-radius: 0;
+	font-size: 12px;
+	cursor: pointer;
+	color: #e4e4e4;
+}
+
+.ContextMenu__item:hover {
+	background: #333840;
+}
+
+.ContextMenu__item--disabled,
+.ContextMenu__item--disabled:hover {
+	opacity: 0.45;
+	cursor: not-allowed;
+	background: transparent;
+}
+
+.ContextMenu__separator {
+	height: 1px;
+	background: #424750;
+	margin: 6px 4px;
+}
+
+.ContextMenu__submenu {
+	display: none;
+	position: absolute;
+	left: calc(100% - 6px);
+	top: -6px;
+	min-width: 220px;
+	background: #23262b;
+	border: 1px solid #434850;
+	border-radius: 0;
+	box-shadow: var(--shadow);
+	padding: 6px;
+}
+
+.ContextMenu__item:hover > .ContextMenu__submenu {
+	display: block;
+}
+
+.Modal {
+	position: fixed;
+	inset: 0;
+	background: rgba(2, 6, 12, 0.64);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1200;
+}
+
+.Modal__panel {
+	width: min(560px, calc(100vw - 24px));
+	background: #23262c;
+	border: 1px solid #484d55;
+	border-radius: 0;
+	box-shadow: var(--shadow);
+	display: grid;
+	gap: 8px;
+	padding: 10px;
+}
+
+.Modal__title {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+.Modal__field {
+	display: grid;
+	gap: 4px;
+}
+
+.Modal__field label {
+	font-size: 11px;
+	color: #bdbdbd;
+}
+
+.Modal textarea {
+	min-height: 120px;
+	padding: 4px 6px;
+	resize: vertical;
+}
+
+.Modal__buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 4px;
+}
+
+.Modal__list {
+	max-height: 200px;
+	overflow: auto;
+	padding: 4px 6px;
+	border: 1px solid #444a53;
+	border-radius: 0;
+	background: #1a1d22;
+	font-size: 12px;
+}
+
+.Explorer__table[hidden],
+.Explorer__grid[hidden],
+.Explorer__empty[hidden],
+.Explorer__recordingIndicator[hidden] {
+	display: none !important;
+}
+
+@media (max-width: 900px) {
+	.Explorer__body {
+		grid-template-columns: 1fr;
+	}
+
+	.Explorer__sidebar {
+		display: none;
+	}
+}

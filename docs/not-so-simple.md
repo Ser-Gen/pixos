@@ -461,6 +461,29 @@ re-broadcast**, or two tabs would hand one write back and forth for ever. This d
 two tabs safe to write the same file — that still races, and `tabs.js` still says so — it
 only means the loser finds out.
 
+**An empty listing does not mean an empty folder.** Explorer's `readdir` wrapper resolves
+`contents || []`, so it answers the same for a folder with nothing in it and for a folder
+that is not there any more — and once phase 20 made a window refresh itself when something
+changed elsewhere, deleting the folder somebody was standing in emptied their listing,
+left the dead path in their breadcrumbs, and said nothing. `refreshCurrentDir` now asks
+`stat` **only when the listing came back empty**, which is the only case that can be
+either, and on a folder that is gone walks up to the nearest one that still exists and
+raises a `warn` note naming both. It walks rather than taking the parent because deleting a
+tree takes the parent too. The regression to watch for is the other half: a folder that is
+simply empty must still be left exactly where it is — `tests/explorer-listing.test.mjs`.
+
+**A dropped folder arrives twice, and the obvious half is the wrong one.**
+`dataTransfer.files` carries one entry named after the folder; `dataTransfer.items` carries
+a directory entry that can be walked with `webkitGetAsEntry()`. Choosing between them with
+`if (!files.length)` means the walk never runs — Chrome always fills `files` — and the
+directory goes down the loose-file path, where `FileReader` answers `NotFoundError: A
+requested file or directory could not be found at the time an operation was processed`.
+Explorer did that from the day folder drops were added until phase 21, so they had never
+worked once. The test is *is there a directory among the entries*, not *is `files` empty*.
+And `webkitGetAsEntry()` has to be called **synchronously inside the drop handler**: the
+item list is emptied the moment that handler yields, so resolving the entries after the
+first `await` reads an empty list and drops nothing, silently.
+
 ## Storage, and what the browser will not keep
 
 **The filesystem is evictable unless you ask.** `navigator.storage.persist()` is requested
@@ -513,6 +536,19 @@ apps/explorer/index.html`) and bump `version`. Nothing at boot verifies it, beca
 preloaded with `refresh: true` and never installed through the registry, which is exactly
 why a wrong hash can sit there for months before App Manager surfaces it as a phantom
 "modified locally".
+
+**A file added to a system app has to be named in four lists, and none of them complains.**
+Explorer was two files until phase 21 and this never came up. Now `apps/explorer/` holds a
+stylesheet and a `js/` folder, and each file in it has to appear in `pixos.app.json` (by
+hand, as above), in `settings/preinstall.json` (or it is never copied into BrowserFS, and
+Explorer 404s it on the next boot), in `PRECACHE` in `sw.js` (or a first boot with no
+network gets an Explorer with holes in it), and in `FALLBACK_PREINSTALL` in the shell's
+`index.html` (or a boot that cannot reach `preinstall.json` gets the same). Changing
+`PRECACHE` means bumping `SHELL_CACHE` in the same edit, because the worker already
+installed keeps serving a cache that has never heard of the new file — the symptom is an
+Explorer that opens unstyled, which reads like a CSS bug and is not one.
+`tests/explorer-modules.test.mjs` walks the folder and asserts all four lists agree with
+what is on disk.
 
 **Boot is data-driven.** `settings/preinstall.json` — fetched over HTTP, because on a first
 boot BrowserFS is empty — says which files to copy in (`refresh: true` re-copies every

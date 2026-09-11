@@ -43,519 +43,7 @@
 	<meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>Explorer</title>
-	<style>
-		:root {
-			--bg: #101319;
-			--panel: #1a1c1f;
-			--panel-2: #202327;
-			--line: #34383f;
-			--text: #e4e4e4;
-			--muted: #adadad;
-			--accent: #8d9664;
-			--danger: #f25f5c;
-			--hover: #2d3238;
-			--selected: #30353b;
-			--shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-		}
-
-		* {
-			box-sizing: border-box;
-		}
-
-		html,
-		body {
-			height: 100%;
-		}
-
-		body {
-			margin: 0;
-			background: radial-gradient(circle at 0% 0%, #242526 0%, #101319 38%);
-			color: var(--text);
-			font-family: "Segoe UI", "Noto Sans", sans-serif;
-			overflow: hidden;
-		}
-
-		#explorer {
-			height: 100%;
-		}
-
-		.Explorer {
-			height: 100%;
-			display: grid;
-			grid-template-rows: auto auto 1fr auto;
-			background: rgba(16, 19, 25, 0.85);
-		}
-
-		.Explorer__toolbar {
-			display: flex;
-			gap: 4px;
-			align-items: center;
-			padding: 4px 6px;
-			border-bottom: 1px solid var(--line);
-			background: var(--panel);
-		}
-
-		.Explorer__toolbarGroup {
-			display: flex;
-			align-items: center;
-			gap: 4px;
-		}
-
-		.Explorer__toolbarLabel {
-			display: inline-flex;
-			align-items: center;
-			gap: 6px;
-			font-size: 12px;
-			color: var(--text);
-			user-select: none;
-		}
-
-		.Explorer__toolbarGroup--grow {
-			flex: 1;
-			min-width: 0;
-		}
-
-		button,
-		select,
-		input,
-		textarea {
-			background: #24272c;
-			border: 1px solid #3e424a;
-			color: var(--text);
-			border-radius: 0;
-			font: inherit;
-			font-size: 12px;
-		}
-
-		button,
-		select,
-		input {
-			height: 24px;
-			padding: 0 6px;
-		}
-
-		button {
-			cursor: pointer;
-		}
-
-		button:hover:not(:disabled) {
-			background: #2f3339;
-		}
-
-		button:disabled {
-			opacity: 0.5;
-			cursor: not-allowed;
-		}
-
-		.Explorer__danger {
-			border-color: #6d3a3d;
-			background: #4d2a2c;
-		}
-
-		.Explorer__breadcrumbs {
-			display: flex;
-			align-items: center;
-			gap: 4px;
-			overflow: auto hidden;
-			white-space: nowrap;
-			padding: 4px 6px;
-			border-bottom: 1px solid var(--line);
-			background: var(--panel-2);
-		}
-
-		.Explorer__crumb {
-			padding: 2px 6px;
-			border-radius: 0;
-			cursor: pointer;
-			color: #d0d0d0;
-			font-size: 12px;
-		}
-
-		.Explorer__crumb:hover {
-			background: var(--hover);
-		}
-
-		.Explorer__crumb--current {
-			background: #2f333a;
-			cursor: default;
-		}
-
-		.Explorer__body {
-			display: grid;
-			grid-template-columns: 160px 1fr;
-			min-height: 0;
-		}
-
-		.Explorer__sidebar {
-			border-right: 1px solid var(--line);
-			padding: 4px;
-			overflow: auto;
-			background: #16181c;
-		}
-
-		.Explorer__sidebarTitle {
-			font-size: 10px;
-			text-transform: uppercase;
-			color: var(--muted);
-			margin: 4px;
-		}
-
-		.Explorer__sidebarItem {
-			display: flex;
-			align-items: center;
-			gap: 4px;
-			padding: 4px 6px;
-			border-radius: 0;
-			cursor: pointer;
-			color: #d5d5d5;
-			font-size: 12px;
-		}
-
-		.Explorer__sidebarItem:hover {
-			background: var(--hover);
-		}
-
-		.Explorer__sidebarItem--active {
-			background: #2f3339;
-		}
-
-		.Explorer__main {
-			position: relative;
-			overflow: auto;
-			padding: 4px;
-		}
-
-		.Explorer__main--selecting {
-			user-select: none;
-		}
-
-		.Explorer__table {
-			width: 100%;
-			border-collapse: collapse;
-		}
-
-		.Explorer__table thead {
-			position: sticky;
-			top: 0;
-			z-index: 1;
-		}
-
-		.Explorer__table th {
-			text-align: left;
-			background: #1f2228;
-			padding: 5px 6px;
-			font-size: 12px;
-			font-weight: 600;
-			border-bottom: 1px solid var(--line);
-			cursor: pointer;
-			user-select: none;
-		}
-
-		.Explorer__table td {
-			padding: 4px 6px;
-			border-bottom: 1px solid rgba(82, 87, 96, 0.35);
-			font-size: 12px;
-		}
-
-		.Explorer__selectCol {
-			width: 32px;
-			text-align: center;
-		}
-
-		.Explorer__row {
-			cursor: default;
-		}
-
-		.Explorer__row:hover {
-			background: rgba(52, 58, 66, 0.5);
-		}
-
-		.Explorer__row--selected {
-			background: var(--selected);
-		}
-
-		.Explorer__nameCell {
-			display: flex;
-			align-items: center;
-			gap: 4px;
-			min-width: 0;
-		}
-
-		.Explorer__check {
-			width: 14px;
-			height: 14px;
-			padding: 0;
-			margin: 0;
-			accent-color: var(--accent);
-			cursor: pointer;
-		}
-
-		.Explorer__grid {
-			display: grid;
-			grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-			gap: 8px;
-			padding-top: 4px;
-		}
-
-		.Explorer__card {
-			border: 1px solid transparent;
-			background: transparent;
-			padding: 8px 6px;
-			cursor: default;
-			display: grid;
-			justify-items: center;
-			gap: 6px;
-			min-height: 120px;
-			position: relative;
-		}
-
-		.Explorer__card:hover {
-			border-color: #4d525b;
-			background: rgba(52, 58, 66, 0.45);
-		}
-
-		.Explorer__card--selected {
-			background: var(--selected);
-		}
-
-		.Explorer__cardIcon {
-			font-size: 36px;
-			line-height: 1;
-		}
-
-		.Explorer__cardCheck {
-			position: absolute;
-			top: 6px;
-			left: 6px;
-			z-index: 1;
-		}
-
-		.Explorer__cardName {
-			font-size: 12px;
-			text-align: center;
-			word-break: break-word;
-		}
-
-		.Explorer__dropTarget {
-			outline: 1px solid var(--accent);
-			outline-offset: -1px;
-		}
-
-		.Explorer__nameText {
-			overflow: hidden;
-			text-overflow: ellipsis;
-			white-space: nowrap;
-		}
-
-		.Explorer__muted {
-			color: var(--muted);
-		}
-
-		.Explorer__empty {
-			padding: 10px;
-			color: var(--muted);
-			font-size: 12px;
-		}
-
-		.Explorer__selectionBox {
-			position: absolute;
-			display: none;
-			border: 1px solid rgba(141, 150, 100, 0.95);
-			background: rgba(141, 150, 100, 0.18);
-			pointer-events: none;
-			z-index: 20;
-		}
-
-		.Explorer__status {
-			border-top: 1px solid var(--line);
-			background: var(--panel);
-			padding: 4px 6px;
-			font-size: 12px;
-			color: #d2d2d2;
-		}
-
-		.Explorer__recordingIndicator {
-			display: inline-flex;
-			align-items: center;
-			gap: 6px;
-			margin-left: 6px;
-			color: #ff4d4d;
-			font-size: 13px;
-		}
-
-		.Explorer__recordingDot {
-			width: 10px;
-			height: 10px;
-			border-radius: 50%;
-			background: #ff4d4d;
-			animation: Explorer__recordingPulse 1s infinite;
-			flex-shrink: 0;
-		}
-
-		@keyframes Explorer__recordingPulse {
-			0%, 100% { opacity: 1; }
-			50% { opacity: 0.3; }
-		}
-
-		.Explorer__recordingBtn {
-			background: none;
-			border: none;
-			cursor: pointer;
-			color: #ff4d4d;
-			padding: 2px 4px;
-			border-radius: 3px;
-			line-height: 1;
-			display: inline-flex;
-			align-items: center;
-			transition: color 0.15s, background 0.15s;
-		}
-
-		.Explorer__recordingBtn:hover {
-			background: rgba(255, 255, 255, 0.1);
-		}
-
-		.Explorer__recordingBtn--muted {
-			color: #666;
-		}
-
-		.ContextMenu {
-			position: fixed;
-			z-index: 1000;
-			min-width: 220px;
-			background: #23262b;
-			border: 1px solid #434850;
-			border-radius: 0;
-			box-shadow: var(--shadow);
-			padding: 6px;
-		}
-
-		.ContextMenu__list {
-			list-style: none;
-			margin: 0;
-			padding: 0;
-		}
-
-		.ContextMenu__item {
-			position: relative;
-			display: flex;
-			align-items: center;
-			justify-content: space-between;
-			padding: 5px 8px;
-			border-radius: 0;
-			font-size: 12px;
-			cursor: pointer;
-			color: #e4e4e4;
-		}
-
-		.ContextMenu__item:hover {
-			background: #333840;
-		}
-
-		.ContextMenu__item--disabled,
-		.ContextMenu__item--disabled:hover {
-			opacity: 0.45;
-			cursor: not-allowed;
-			background: transparent;
-		}
-
-		.ContextMenu__separator {
-			height: 1px;
-			background: #424750;
-			margin: 6px 4px;
-		}
-
-		.ContextMenu__submenu {
-			display: none;
-			position: absolute;
-			left: calc(100% - 6px);
-			top: -6px;
-			min-width: 220px;
-			background: #23262b;
-			border: 1px solid #434850;
-			border-radius: 0;
-			box-shadow: var(--shadow);
-			padding: 6px;
-		}
-
-		.ContextMenu__item:hover > .ContextMenu__submenu {
-			display: block;
-		}
-
-		.Modal {
-			position: fixed;
-			inset: 0;
-			background: rgba(2, 6, 12, 0.64);
-			display: flex;
-			align-items: center;
-			justify-content: center;
-			z-index: 1200;
-		}
-
-		.Modal__panel {
-			width: min(560px, calc(100vw - 24px));
-			background: #23262c;
-			border: 1px solid #484d55;
-			border-radius: 0;
-			box-shadow: var(--shadow);
-			display: grid;
-			gap: 8px;
-			padding: 10px;
-		}
-
-		.Modal__title {
-			font-size: 14px;
-			font-weight: 600;
-		}
-
-		.Modal__field {
-			display: grid;
-			gap: 4px;
-		}
-
-		.Modal__field label {
-			font-size: 11px;
-			color: #bdbdbd;
-		}
-
-		.Modal textarea {
-			min-height: 120px;
-			padding: 4px 6px;
-			resize: vertical;
-		}
-
-		.Modal__buttons {
-			display: flex;
-			justify-content: flex-end;
-			gap: 4px;
-		}
-
-		.Modal__list {
-			max-height: 200px;
-			overflow: auto;
-			padding: 4px 6px;
-			border: 1px solid #444a53;
-			border-radius: 0;
-			background: #1a1d22;
-			font-size: 12px;
-		}
-
-		.Explorer__table[hidden],
-		.Explorer__grid[hidden],
-		.Explorer__empty[hidden],
-		.Explorer__recordingIndicator[hidden] {
-			display: none !important;
-		}
-
-		@media (max-width: 900px) {
-			.Explorer__body {
-				grid-template-columns: 1fr;
-			}
-
-			.Explorer__sidebar {
-				display: none;
-			}
-		}
-	</style>
+	<link rel="stylesheet" href="explorer.css">
 </head>
 <body>
 
@@ -573,12 +61,43 @@
 // itself is 1.4 MB of WebAssembly and is loaded on the first extraction, not here.
 import * as archiveNames from "../7z/js/parse.js";
 
+// Phase 21 begins here. These two hold what `openExplorer` used to declare inline: the
+// pure string and path functions, and every promise wrapper around BrowserFS. They are
+// destructured into this module's scope below, so the roughly two hundred call sites
+// inside `openExplorer` still read exactly as they did -- what changed is that the
+// definitions are now somewhere a reader can find, and one of them is testable.
+//
+// Any module added beside these has to be named in four places, and none of them will
+// complain if it is not: `apps/explorer/pixos.app.json`, `settings/preinstall.json`,
+// `PRECACHE` in `sw.js`, and `FALLBACK_PREINSTALL` in the shell's `index.html`.
+// `tests/explorer-files.test.mjs` is what actually enforces that.
+import { createFormat } from "./js/format.js";
+import { createFsHelpers } from "./js/fs-helpers.js";
+
 window.BrowserFS = parent.BrowserFS;
 
 window.fs = parent.fs;
 window.path = parent.path;
 var Buffer = parent.Buffer;
 window.mountManager = parent.mountManager;
+
+const {
+	normalizePath, getParentPath, formatSize, getItemTitle,
+	escapeHtml, escapeAttr, getExt, getNameByPath,
+	splitNameAndExtension, basenameEnd, isImageExtension
+} = createFormat(window.path);
+
+const {
+	listDirectory, readFile, writeFile, ensureDir, mkdir, stat, readdir,
+	fsRename, unlink, unlinkFile, rmdir, deleteFolderRecursive,
+	downloadBlob, blobToFile, fileToAB,
+	getFileFromFileEntry, getAllFileEntries, readAllDirectoryEntries, readEntriesPromise
+} = createFsHelpers({
+	fs: window.fs,
+	path: window.path,
+	mountManager: window.mountManager,
+	normalizePath: normalizePath
+});
 
 // Explorer is not a standalone app and cannot become one: the filesystem it browses lives
 // in the shell's window, not in BrowserFS where its own files are. Opened in a bare tab it
@@ -1154,6 +673,23 @@ async function openExplorer () {
 		try {
 			var previousSelection = keepSelection ? new Set(state.selectedPaths) : new Set();
 			state.items = await withFsTimeout(listDirectory(state.cwd), 20000, 'Directory listing');
+
+			// An empty listing is ambiguous, and one half of it is a lie: `readdir` resolves
+			// `contents || []`, so a folder that has been deleted underneath this window
+			// answers exactly like a folder with nothing in it. The window went on showing
+			// the path in the breadcrumbs, an empty listing, and no indication that the
+			// thing it was standing in no longer existed.
+			//
+			// Only asked when the listing came back empty, which is the only case that can
+			// be either -- a folder with files in it is a folder that is there.
+			if (!state.items.length && state.cwd !== '/' && !(await stat(state.cwd))) {
+				var gone = state.cwd;
+				state.cwd = await nearestExistingFolder(getParentPath(gone));
+				state.items = await withFsTimeout(listDirectory(state.cwd), 20000, 'Directory listing');
+				report('That folder is gone', gone + ' was deleted or unmounted. '
+					+ 'Showing ' + state.cwd + ' instead.', 'warn');
+			}
+
 			sortItems();
 			state.selectedPaths = new Set();
 			state.lastSelectedPath = null;
@@ -1184,6 +720,20 @@ async function openExplorer () {
 				refreshCurrentDir(pending);
 			}
 		}
+	}
+
+	// Walks up until something is actually there. Not merely the parent: deleting a tree
+	// takes the folder you are standing in and its parent with it, and landing on a second
+	// folder that is also gone would report twice and still show nothing.
+	async function nearestExistingFolder (startPath) {
+		var candidate = normalizePath(startPath);
+		while (candidate !== '/') {
+			if (await stat(candidate)) {
+				return candidate;
+			}
+			candidate = getParentPath(candidate);
+		}
+		return '/';
 	}
 
 	function sortItems () {
@@ -2242,13 +1792,6 @@ async function openExplorer () {
 		catch (err) {
 			// Some input types refuse setSelectionRange. Focused is still better than not.
 		}
-	}
-
-	function basenameEnd (name) {
-		var text = String(name == null ? '' : name);
-		var dot = text.lastIndexOf('.');
-		// A leading dot is the whole name of a dotfile, not an extension.
-		return dot > 0 ? dot : text.length;
 	}
 
 	// Everything a dialog does happens after the action that opened it has already
@@ -4393,12 +3936,6 @@ async function openExplorer () {
 		return words.charAt(0).toUpperCase() + words.slice(1) + ' failed';
 	}
 
-	function isImageExtension (fileName) {
-		var imgExts = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg', 'avif', 'tiff', 'tif'];
-		var ext = (fileName.split('.').pop() || '').toLowerCase();
-		return imgExts.indexOf(ext) !== -1;
-	}
-
 	async function ensureFfmpegLoaded () {
 		if (!window.FFmpeg) {
 			openInfoDialog('FFmpeg', 'FFmpeg is not installed');
@@ -4433,6 +3970,12 @@ async function openExplorer () {
 	async function onDrop (e) {
 		e.preventDefault();
 		updateDragHoverFromPoint(e.clientX, e.clientY);
+
+		// Resolved here, first thing, and synchronously: `e.dataTransfer.items` is emptied
+		// as soon as this handler yields, so an `await` anywhere above this line leaves
+		// nothing to read.
+		var entryList = dropEntries(e);
+
 		var internalDragPayload = e.dataTransfer ? (
 			e.dataTransfer.getData('application/x-explorer-paths')
 			|| e.dataTransfer.getData('text/plain')
@@ -4453,8 +3996,19 @@ async function openExplorer () {
 		}
 		var files = e.dataTransfer ? e.dataTransfer.files : e.target.files;
 
-		if (!files || !files.length) {
-			var entries = await getAllFileEntries(e.dataTransfer.items);
+		// A dropped folder arrives in BOTH places: `dataTransfer.files` carries one entry
+		// named after the folder, and `dataTransfer.items` carries a directory entry that
+		// can actually be walked. The old test was `if (!files || !files.length)`, so the
+		// walk never ran -- Chrome always fills `files` -- and the folder went down the
+		// loose-file path instead, where `FileReader` was handed a directory and answered
+		// `NotFoundError: A requested file or directory could not be found at the time an
+		// operation was processed.` Dropping a folder had never worked.
+		var hasDirectory = entryList.some(function (entry) {
+			return entry && entry.isDirectory;
+		});
+
+		if (hasDirectory || !files || !files.length) {
+			var entries = await getAllFileEntries(entryList);
 			for (var i = 0; i < entries.length; i++) {
 				var entryFile = await getFileFromFileEntry(entries[i]);
 				await addIncomingFile(entryFile, entries[i].fullPath);
@@ -4469,6 +4023,24 @@ async function openExplorer () {
 			await addIncomingFile(dropped[d]);
 		}
 		await refreshCurrentDir(false);
+	}
+
+	// Every entry the drag carries, or an empty list if this browser has no entries API --
+	// in which case `dataTransfer.files` is all there is and a folder cannot be read at all.
+	// Must be called before the drop handler awaits anything.
+	function dropEntries (e) {
+		var items = e.dataTransfer ? e.dataTransfer.items : null;
+		if (!items || !items.length || typeof items[0].webkitGetAsEntry !== 'function') {
+			return [];
+		}
+		var entries = [];
+		for (var i = 0; i < items.length; i++) {
+			var entry = items[i].webkitGetAsEntry();
+			if (entry) {
+				entries.push(entry);
+			}
+		}
+		return entries;
 	}
 
 	async function moveItemsToFolder (srcPaths, targetFolderPath, meta) {
@@ -4682,15 +4254,6 @@ async function openExplorer () {
 			index++;
 		} while (await stat(candidate));
 		return candidate;
-	}
-
-	function splitNameAndExtension (fileName) {
-		var ext = path.extname(fileName);
-		var name = ext ? fileName.slice(0, -ext.length) : fileName;
-		return {
-			name: name,
-			ext: ext
-		};
 	}
 
 	// The shell opens a second Explorer with ?cwd=<path>. window.cwd stays supported for
@@ -4970,41 +4533,6 @@ async function openExplorer () {
 		return false;
 	}
 
-	function normalizePath (p) {
-		if (!p) return '/';
-		var normalized = path.normalize(p);
-		if (!normalized.startsWith('/')) {
-			normalized = '/' + normalized;
-		}
-		return normalized;
-	}
-
-	function getParentPath (p) {
-		if (!p || p === '/') return '/';
-		var parentPath = path.dirname(p);
-		return parentPath === '.' ? '/' : parentPath;
-	}
-
-	function formatSize (size) {
-		if (!size) return '0 B';
-		var units = ['B', 'KB', 'MB', 'GB'];
-		var idx = 0;
-		var val = size;
-		while (val >= 1024 && idx < units.length - 1) {
-			val = val / 1024;
-			idx++;
-		}
-		return val.toFixed(val >= 10 || idx === 0 ? 0 : 1) + ' ' + units[idx];
-	}
-
-	function getItemTitle (item) {
-		return [
-			'Name: ' + item.name,
-			'Size: ' + (item.isDirectory ? '-' : formatSize(item.size)),
-			'Modified: ' + item.mtime
-		].join('\n');
-	}
-
 	var FILES3_CONFIG_KEY = 'pixos_files3_config';
 
 	function loadFiles3Config () {
@@ -5027,271 +4555,6 @@ async function openExplorer () {
 			return 'files3_token_' + (host || 'storage');
 		} catch (e) {
 			return 'files3_token_storage';
-		}
-	}
-
-	function escapeHtml (v) {
-		return String(v)
-			.replace(/&/g, '&amp;')
-			.replace(/</g, '&lt;')
-			.replace(/>/g, '&gt;')
-			.replace(/"/g, '&quot;')
-			.replace(/'/g, '&#39;');
-	}
-
-	function escapeAttr (v) {
-		return escapeHtml(v).replace(/`/g, '&#96;');
-	}
-
-	function getExt (name) {
-		var idx = name.lastIndexOf('.');
-		if (idx < 1) return '';
-		return name.slice(idx + 1).toLowerCase();
-	}
-
-	async function listDirectory (dirPath) {
-		if (mountManager && typeof mountManager.refreshFiles3Directory === 'function') {
-			mountManager.refreshFiles3Directory(dirPath);
-		}
-		var contents = await readdir(dirPath);
-		var stats = await Promise.all(contents.map(async function (item) {
-			var itemPath = path.join(dirPath, item);
-			var st = await stat(itemPath);
-			return {
-				name: item,
-				path: itemPath,
-				isDirectory: st && st.isDirectory ? st.isDirectory() : false,
-				size: st && st.size ? st.size : 0,
-				mtime: st && st.mtime ? st.mtime.toISOString().slice(0, 19).replace('T', ' ') : '-',
-				mtimeTs: st && st.mtime ? st.mtime.getTime() : 0
-			};
-		}));
-		return stats;
-	}
-
-	function getNameByPath (p) {
-		return p.split('/').pop();
-	}
-
-	function readFile (p) {
-		return new Promise(function (resolve, reject) {
-			fs.readFile(p, function (e, content) {
-				if (e) {
-					reject(e);
-					return;
-				}
-				resolve(content);
-			});
-		});
-	}
-
-	async function ensureDir (dirPath) {
-		var normalized = normalizePath(dirPath);
-		var segments = normalized.split('/').filter(Boolean);
-		var current = '/';
-		for (var i = 0; i < segments.length; i++) {
-			current = path.join(current, segments[i]);
-			var st = await stat(current);
-			if (!st) {
-				await mkdir(current);
-			}
-		}
-	}
-
-	async function writeFile (p, content) {
-		await ensureDir(path.dirname(p));
-		return new Promise(function (resolve, reject) {
-			fs.writeFile(p, content, function (e) {
-				if (e) {
-					reject(e);
-					return;
-				}
-				resolve();
-			});
-		});
-	}
-
-	function mkdir (p) {
-		return new Promise(function (resolve) {
-			fs.mkdir(p, function () {
-				resolve();
-			});
-		});
-	}
-
-	function stat (p) {
-		return new Promise(function (resolve) {
-			fs.stat(p, function (e, stats) {
-				if (stats) {
-					resolve(stats);
-				}
-				else {
-					resolve(false);
-				}
-			});
-		});
-	}
-
-	function readdir (p) {
-		return new Promise(function (resolve) {
-			fs.readdir(p, function (e, contents) {
-				resolve(contents || []);
-			});
-		});
-	}
-
-	function fsRename (oldPath, newPath) {
-		return new Promise(function (resolve, reject) {
-			fs.rename(oldPath, newPath, function (e) {
-				if (e) {
-					reject(e);
-					return;
-				}
-				resolve();
-			});
-		});
-	}
-
-	async function unlink (p) {
-		var stats = await stat(p);
-		if (stats && stats.isDirectory()) {
-			await deleteFolderRecursive(p);
-		}
-		else {
-			await unlinkFile(p);
-		}
-	}
-
-	function unlinkFile (p) {
-		return new Promise(function (resolve, reject) {
-			fs.unlink(p, function (err) {
-				if (err) {
-					reject(err);
-					return;
-				}
-				resolve();
-			});
-		});
-	}
-
-	function rmdir (p) {
-		return new Promise(function (resolve, reject) {
-			fs.rmdir(p, function (err) {
-				if (err) {
-					reject(err);
-					return;
-				}
-				resolve();
-			});
-		});
-	}
-
-	async function deleteFolderRecursive (p) {
-		var stats = await stat(p);
-		if (!stats) return;
-
-		var dirContent = await readdir(p);
-		await Promise.all(dirContent.map(async function (file) {
-			var curPath = path.join(p, file);
-			var st = await stat(curPath);
-			if (st && st.isDirectory()) {
-				await deleteFolderRecursive(curPath);
-			}
-			else {
-				await unlinkFile(curPath);
-			}
-		}));
-		await rmdir(p);
-	}
-
-	function downloadBlob (blob, filename) {
-		var url = URL.createObjectURL(blob);
-		var a = document.createElement('a');
-		a.href = url;
-		a.download = filename || 'download';
-		a.addEventListener('click', function clickHandler () {
-			setTimeout(function () {
-				URL.revokeObjectURL(url);
-				a.removeEventListener('click', clickHandler);
-				a.remove();
-			}, 150);
-		}, false);
-		a.click();
-	}
-
-	function blobToFile (theBlob, fileName) {
-		return new File([theBlob], fileName, {
-			lastModified: new Date().getTime(),
-			type: theBlob.type
-		});
-	}
-
-	function fileToAB (file) {
-		return new Promise(function (resolve, reject) {
-			var reader = new FileReader();
-			reader.onload = function () {
-				resolve(this.result);
-			};
-			// Without these two a file the browser cannot read -- one removed from the
-			// disk since it was dropped, or one too large to hold in memory -- leaves this
-			// promise pending for ever, and the drop that is waiting on it never finishes
-			// and never reports.
-			reader.onerror = function () {
-				reject(reader.error || new Error('That file could not be read.'));
-			};
-			reader.onabort = function () {
-				reject(new Error('Reading that file was cancelled.'));
-			};
-			reader.readAsArrayBuffer(file);
-		});
-	}
-
-	function getFileFromFileEntry (entry) {
-		return new Promise(function (resolve) {
-			entry.file(function (file) {
-				resolve(file);
-			});
-		});
-	}
-
-	async function getAllFileEntries (dataTransferItemList) {
-		var fileEntries = [];
-		var queue = [];
-		for (var i = 0; i < dataTransferItemList.length; i++) {
-			queue.push(dataTransferItemList[i].webkitGetAsEntry());
-		}
-		while (queue.length > 0) {
-			var entry = queue.shift();
-			if (entry.isFile) {
-				fileEntries.push(entry);
-			}
-			else if (entry.isDirectory) {
-				var reader = entry.createReader();
-				queue.push.apply(queue, await readAllDirectoryEntries(reader));
-			}
-		}
-		return fileEntries;
-	}
-
-	async function readAllDirectoryEntries (directoryReader) {
-		var entries = [];
-		var readEntries = await readEntriesPromise(directoryReader);
-		while (readEntries.length > 0) {
-			entries.push.apply(entries, readEntries);
-			readEntries = await readEntriesPromise(directoryReader);
-		}
-		return entries;
-	}
-
-	async function readEntriesPromise (directoryReader) {
-		try {
-			return await new Promise(function (resolve, reject) {
-				directoryReader.readEntries(resolve, reject);
-			});
-		}
-		catch (err) {
-			console.log(err);
-			return [];
 		}
 	}
 

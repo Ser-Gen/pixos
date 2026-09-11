@@ -17,6 +17,9 @@
 				"/apps/qrcode.js",
 				"/apps/fix-webm-duration.js",
 				"/apps/explorer/index.html",
+				"/apps/explorer/explorer.css",
+				"/apps/explorer/js/format.js",
+				"/apps/explorer/js/fs-helpers.js",
 				"/apps/explorer/favicon.svg",
 				"/apps/app-manager/index.html",
 				"/apps/app-manager/favicon.svg",
@@ -71,7 +74,7 @@
 				},
 				{
 					"path": "/apps/bookmarks/index.html",
-					"hash": "sha256:49d50ce27c784e6c1ef8dc240e8cea56ed9b2cddde8ae1fe2089803bf0fe843a"
+					"hash": "sha256:5ec41ef0c973b6da0a4409e5d6384571fcbabc29dad233cb266c3eb044fa2055"
 				},
 				{
 					"path": "/apps/bookmarks/js/links.js",
@@ -79,7 +82,7 @@
 				},
 				{
 					"path": "/apps/bookmarks/pixos.app.json",
-					"hash": "sha256:17d319894ea36bdac7d805a16af82715e78ad60bd461fd81df680a2e479f2eca"
+					"hash": "sha256:a61355b4b3e5ca61ee8a30a96d2a0c65671fa105df9a30db78bed12d5da23cfc"
 				}
 			],
 			"icon": "/apps/bookmarks/favicon.svg"

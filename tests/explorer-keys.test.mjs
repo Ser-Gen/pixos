@@ -10,7 +10,9 @@
 // a branch and forgot the guard", and a copy of the code could not see that happen.
 
 import fs from 'fs';
+import path from 'path';
 import {check, report} from './assert.mjs';
+import {createFormat} from '../apps/explorer/js/format.js';
 
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
 
@@ -144,9 +146,10 @@ check('and no branch repeats isEditableTarget after it',
 
 // --- renaming selects the name, not the extension ---------------------------------------
 
-const fnStart = source.indexOf('function basenameEnd (name) {');
-const fnEnd = source.indexOf('\n\t}', fnStart) + 3;
-const basenameEnd = new Function(source.slice(fnStart, fnEnd) + '\n; return basenameEnd;')();
+// Imported rather than scraped out of the HTML: phase 21 moved it into a module, which
+// is the difference between `new Function` on a slice of a 4,700-line file and a plain
+// import of the thing being tested.
+const {basenameEnd} = createFormat(path.posix);
 
 check('a plain name selects whole', basenameEnd('README'), 6);
 check('an extension is left out of the selection', basenameEnd('report.pdf'), 6);

@@ -200,8 +200,13 @@ check('a failed write leaves nothing behind',
 check('replacing a file writes somewhere else first',
 	/writeFile\(staging, contents\)[\s\S]{0,200}await unlink\(destPath\);\s*await fsRename\(staging, destPath\)/.test(explorer),
 	true);
+// `fileToAB` moved into apps/explorer/js/fs-helpers.js in phase 21. The check follows it
+// rather than being dropped: a reader with no onerror is a promise that never settles, and
+// the drop waiting on it never finishes and never reports.
+const explorerFs = fs.readFileSync(
+	new URL('../apps/explorer/js/fs-helpers.js', import.meta.url), 'utf8');
 check('and a FileReader that fails rejects rather than hanging for ever',
-	/reader\.onerror = function \(\) \{\s*reject\(/.test(explorer), true);
+	/reader\.onerror = function \(\) \{\s*reject\(/.test(explorerFs), true);
 check('every route a file arrives by reports per file rather than abandoning the rest',
 	explorer.split('await addIncomingFile(').length - 1, 5);
 

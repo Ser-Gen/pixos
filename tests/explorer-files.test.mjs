@@ -10,6 +10,7 @@
 
 import fs from 'fs';
 import {check, report} from './assert.mjs';
+import {createFormat} from '../apps/explorer/js/format.js';
 
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
 
@@ -46,6 +47,7 @@ const state = {cwd: '/home', dialog: null};
 const api = new Function(
 	'path', 'state', 'stat', 'unlink', 'unlinkFile', 'fsRename', 'writeFile', 'fileToAB', 'Buffer',
 	'openDialog', 'renderOverlays', 'parent', 'window', 'report', 'reportFailure',
+	'splitNameAndExtension',
 	code + '\n; return {resolveIncomingDestination, resolvePasteDestination, writeNewFile, writeIncomingFile, onFileHandler, addIncomingFile};'
 )(
 	pathStub, state,
@@ -86,7 +88,10 @@ const api = new Function(
 	{},
 	// report / reportFailure
 	(title, message) => { reported.push([title, message]); },
-	(label, err) => { reported.push([label, String(err && err.message)]); }
+	(label, err) => { reported.push([label, String(err && err.message)]); },
+	// Phase 21 moved this into apps/explorer/js/format.js, so it is the real one, given
+	// the same path stub the code under test is given.
+	createFormat(pathStub).splitNameAndExtension
 );
 
 function reset (existing) {
