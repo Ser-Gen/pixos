@@ -396,6 +396,71 @@ mode still enters but *says* it cannot take the key, because silently doing noth
 than not offering it. `describe()` is the single source of that wording, so the button, the
 palette entry and the note cannot describe the mode three different ways.
 
+## When a file changes underneath a window
+
+**Nobody is asked to announce a write, because the one who forgets is the whole bug.**
+Two Explorer windows on one folder each read their listing once, when the folder was
+opened; delete a file in one and the other still shows it. The obvious fix — have every
+writer say what it wrote — has a hole in it that never closes: every app, every shell
+module and every call site added later has to remember, and the first one that does not is
+a stale window nobody can explain. So the writers are not asked. There is exactly one
+`fs` in this system, created in `fsOnInit` and reached by Explorer, terminal, treemap and
+filmoskop as `parent.fs`, and `js/shell/fs-events.js` wraps its mutating methods at that
+single point, **before `MountManager` exists and before anything has written**. A write is
+announced because it happened, not because somebody remembered.
+
+**The wrap has to be invisible, which is most of its code.** The callback is found as the
+trailing argument rather than at a fixed index, because `writeFile` is called both with and
+without options; a call made with no callback at all gets one appended, which is the shape
+a caller with options already produces. It reports **only after success** — a refused write
+did not change anything, and a listing refreshed because of one would be a lie in the other
+direction. It is idempotent, so a second `watchFs` does not double every event. And nothing
+inside it may throw into a caller: recording is wrapped, and one listener throwing does not
+stop the next one hearing about the change.
+
+**The one writer this cannot see is a mount**, because mounting changes what a directory
+contains without going through `fs` at all. `MountManager` reports itself, from
+`_notifySW` — the one function every one of its six mount-table changes already calls. It
+hands over the **whole table** rather than the difference, because none of those six call
+sites knows which one it is; the shell diffs it. A write made through a file descriptor
+(`open`/`write`/`close`) is the remaining gap, and nothing does that today.
+
+**Coalescing is not a debounce, and not a throttle.** A batch is emitted once writes go
+quiet (80ms), *and* at least every 500ms while they keep coming. Debounce alone would say
+nothing at all for the whole of a long copy — the listing would sit still until it
+finished. Throttle alone would keep firing after it ended. Both together mean a copy of
+five hundred files refreshes a listing twice a second while it runs and once more when it
+stops. A batch is also **capped**: past 200 entries or 50 folders it sets `truncated`
+instead of growing, and **every question a truncated batch is asked is answered `true`** —
+so extracting an archive costs a needless refresh rather than a missed one.
+
+**The questions live on the batch, not in the listener.** `change.affects(dir)` is *did
+this folder's listing change* and `change.touches(path)` is *is what I am holding still
+what is on disk*. Neither is obvious: a rename changed **two** folders and the batch
+carries both ends of it as one entry; the folder you are standing in being removed counts
+as your listing changing, and so does any folder above it; a plain write counts, because
+Explorer shows size and modified time. Every one of those is a thing a listener would get
+wrong once per listener, so no listener is allowed to work it out.
+
+**An app hands over its own window: `parent.watchFiles(window, handler)`.** The shell
+cannot tell which iframe called a `parent.*` function — the same problem `markDirty`
+solves by being injected — but injection happens on `load`, which is already too late for
+an app that wants to subscribe from its first inline script, as Explorer does. Passing the
+window solves both halves at once: the subscription is tied to something the shell can
+check, and it drops itself the moment that window's frame leaves the document, instead of
+pinning a dead app's whole realm in memory for the rest of the session. The returned value
+unsubscribes. `parent.addEventListener('pixos:fs-changed', ...)` is the same batch with no
+handshake at all, for anything that would rather listen that way; it is what App Manager
+already does for `pixos:apps-registry-updated`, and it is the one that leaks.
+`parent.notifyFileChange(kind, paths)` is for a writer the wrap could not see.
+
+**The other tab hears about it too**, over a `pixos-fs` BroadcastChannel — deliberately
+*not* the one `tabs.js` uses, whose vocabulary is an ownership election and would be muddied
+by traffic. A batch that arrived from elsewhere is marked `remote` and is **never
+re-broadcast**, or two tabs would hand one write back and forth for ever. This does not make
+two tabs safe to write the same file — that still races, and `tabs.js` still says so — it
+only means the loser finds out.
+
 ## Storage, and what the browser will not keep
 
 **The filesystem is evictable unless you ask.** `navigator.storage.persist()` is requested

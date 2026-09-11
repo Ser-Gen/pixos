@@ -650,7 +650,45 @@ async function openExplorer () {
 
 	renderLayout();
 	bindEvents();
+	watchForChanges();
 	await refreshCurrentDir(false);
+
+	// Two Explorer windows on one folder each read their listing once. Everything below is
+	// the answer to that: the shell wraps the one fs everyone writes through and hands out
+	// batches, and this asks each batch the only question this window has. The selection is
+	// kept, because a refresh nobody asked for must not take away what they had selected --
+	// refreshCurrentDir drops any row that has since gone, which is the correct half of it.
+	function watchForChanges () {
+		if (parent === window || typeof parent.watchFiles !== 'function') { return; }
+		parent.watchFiles(window, function (change) {
+			// A mount is a change to the sidebar wherever it landed, so it is worth a
+			// refresh even when it is nowhere near the folder on screen.
+			var mounted = (change.entries || []).some(function (entry) {
+				return entry.kind === 'mount' || entry.kind === 'unmount';
+			});
+			if (mounted || change.affects(state.cwd)) {
+				refreshWhenIdle();
+			}
+		});
+	}
+
+	// Re-rendering the rows out from under a pointer that is dragging one of them, or under
+	// a rubber-band selection being drawn over them, loses the gesture. Neither lasts long,
+	// so the refresh waits for it rather than being dropped -- dropping it is how a window
+	// ends up stale again with nothing left to trigger it.
+	var idleRefreshTimer = null;
+	function refreshWhenIdle () {
+		if (state.selectionBox || state.dragCommitInProgress) {
+			if (idleRefreshTimer === null) {
+				idleRefreshTimer = setTimeout(function () {
+					idleRefreshTimer = null;
+					refreshWhenIdle();
+				}, 200);
+			}
+			return;
+		}
+		refreshCurrentDir(true);
+	}
 
 	function renderLayout () {
 		rootElem.innerHTML = `

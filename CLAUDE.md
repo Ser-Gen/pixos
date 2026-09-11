@@ -15,6 +15,8 @@ run in iframes. Pure static site — no build step, no backend.
   `start-menu.js` + `command-palette.js` launchers, `overview.js` the all-windows
   overlay, `file-search.js` the tree walk behind it, `open-with.js` the chooser for a
   file with no default app, `bookmarks.js` the shell's half of `/settings/links.json`,
+  `fs-events.js` the change signal every stale window
+  needed (one wrap of the shared `fs`, coalesced),
   `session.js` desktops/windows persistence, `tabs.js` (which tab may write the settings),
   `peers.js` the connection to another PixOS + `peers-panel.js` where one is made +
   `call-bar.js` the one surface a call is drawn on + `peer-fs.js` a shared folder as a
@@ -49,15 +51,16 @@ run in iframes. Pure static site — no build step, no backend.
   and `apps/app-catalog.js` (the fallback catalog) from one pass over `apps/`.
 - `tests/` — plain node, no framework, no dependencies. `npm test`.
 - `docs/*.ru.md` — architecture and how-to docs (Russian); the newer plans are `.md` English.
-- **`docs/not-so-simple.md` — how this system actually behaves**, in fifteen sections: the
+- **`docs/not-so-simple.md` — how this system actually behaves**, in sixteen sections: the
   things you would not predict from the code, each written after somebody lost an afternoon
   to it. Not loaded with this file, so it has to be opened; see below for what is in it.
 - **`docs/backlog.md` — every open idea, with the reasoning.** Anything raised and not
   scheduled goes there, including things deliberately rejected and why. Read it before
   proposing work; move an item into a plan rather than copying it.
-- `docs/ux-improvements-plan.md` (phases 1–5, built) and `docs/reliability-plan.md`
-  (phases 6–19, all built) are the scheduled work, each phase with a browser
-  checklist beside it (`docs/shell-phase<n>-checklist.md`).
+- `docs/ux-improvements-plan.md` (phases 1–5, built), `docs/reliability-plan.md`
+  (phases 6–20, all built) and `docs/explorer-plan.md` (phases 21–24, planned) are the
+  scheduled work, each phase with a browser checklist beside it
+  (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
 
 ## Commands
@@ -96,6 +99,10 @@ sections, and the kind of thing each one will catch:
   overview, and the file-search deadline.
 - *Launching, and the app contract* — `launch(descriptor)`, `openFile`/`markDirty`/
   `saveFileLocal`, `autosave`, one tab owning the session, and `Ctrl/Cmd+W`.
+- *When a file changes underneath a window* — why no writer is asked to announce a
+  write, the one `fs` that is wrapped instead and the one writer that cannot be,
+  quiet-plus-maxWait coalescing, what a truncated batch is allowed to answer,
+  `affects` versus `touches`, and why `watchFiles` takes the app's own window.
 - *Storage, and what the browser will not keep* — eviction, the 128 MiB ceiling on a file,
   what a refused write does and does not tell you, and one spelling of a size.
 - *Manifests, boot, and what a fresh system is made of* — generated manifests, the two the

@@ -236,6 +236,7 @@ import * as callBar from "./js/shell/call-bar.js";
 import * as fileSearch from "./js/shell/file-search.js";
 import * as openWith from "./js/shell/open-with.js";
 import * as bookmarks from "./js/shell/bookmarks.js";
+import * as fsEvents from "./js/shell/fs-events.js";
 
 var winManager = new WM({
 	root: '#root',
@@ -438,7 +439,72 @@ function fsOnInit () {
 	window.path = BrowserFS.BFSRequire('path');
 	var {Buffer} = BrowserFS.BFSRequire('buffer');
 	window.Buffer = Buffer;
+
+	// Everything that will ever write to this filesystem -- the shell, Explorer, terminal,
+	// an app calling parent.saveFileLocal -- goes through this one object, so wrapping it
+	// here is the whole of the change signal. A writer cannot forget to announce a write
+	// because no writer is asked. See js/shell/fs-events.js.
+	var fsChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('pixos-fs') : null;
+	fsEvents.init({
+		broadcast: fsChannel ? function (payload) { fsChannel.postMessage(payload); } : null
+	});
+	fsEvents.watchFs(window.fs);
+	if (fsChannel) {
+		// The other tab shares this IndexedDB but not this tab's listings, so a write it
+		// made is invisible here until something re-reads. This is that something.
+		fsChannel.onmessage = function (event) { fsEvents.receive(event.data); };
+	}
+	fsEvents.subscribe(function (detail) {
+		// The established way an app hears from the shell (app-manager already listens for
+		// pixos:apps-registry-updated this way), and it needs no handshake, so an app can
+		// subscribe from its own first inline script.
+		window.dispatchEvent(new CustomEvent('pixos:fs-changed', {detail: detail}));
+	});
+
+	// An app hands over its own window because the shell cannot work out which iframe
+	// called a parent.* function -- the same problem markDirty solves by being injected.
+	// Given it, the subscription dies with the window instead of pinning a dead document
+	// in memory for the rest of the session.
+	window.watchFiles = function (win, handler) {
+		if (typeof win === 'function') { handler = win; win = null; }
+		if (typeof handler !== 'function') { return function () {}; }
+		var stop = fsEvents.subscribe(function (detail) {
+			if (win && !frameIsAlive(win)) { stop(); return; }
+			handler(detail);
+		});
+		return stop;
+	};
+
+	function frameIsAlive (win) {
+		try {
+			return !!(win && win.frameElement && win.frameElement.isConnected);
+		}
+		catch (crossOrigin) {
+			return false;
+		}
+	}
+
+	// For a writer that changed what a folder contains without going through fs: a mount,
+	// or a cache somewhere below one that was dropped.
+	window.notifyFileChange = function (kind, paths, extra) {
+		return fsEvents.record(kind, paths, extra);
+	};
+
 	window.mountManager = new MountManager(BrowserFS, window.fs);
+
+	// A mount is the one change to a listing that fs never sees: what /mnt contains, and
+	// what the mount point itself contains, both change without a write. MountManager
+	// reports the whole table rather than the difference -- it is called from six places
+	// and none of them knows which of them it is -- so the difference is worked out here.
+	var knownMounts = [];
+	window.mountManager.onChange = function (mountPoints) {
+		var now = Array.isArray(mountPoints) ? mountPoints : [];
+		now.filter(function (point) { return knownMounts.indexOf(point) === -1; })
+			.forEach(function (point) { fsEvents.record('mount', point); });
+		knownMounts.filter(function (point) { return now.indexOf(point) === -1; })
+			.forEach(function (point) { fsEvents.record('unmount', point); });
+		knownMounts = now.slice();
+	};
 
 	// File System Access API must run in the same window as window.fs / MountManager.
 	window.pickNativeDirectory = async function () {

@@ -26,12 +26,24 @@
 		return this._fs.getRootFS();
 	};
 
+	// Called from every place the mount table changes, which is why the change signal
+	// hangs off it rather than off the six call sites.
 	MountManager.prototype._notifySW = function () {
+		var list = Object.keys(this._mounts);
 		if (navigator.serviceWorker && navigator.serviceWorker.controller) {
 			navigator.serviceWorker.controller.postMessage({
 				type: 'mountPoints',
-				list: Object.keys(this._mounts)
+				list: list
 			});
+		}
+		if (typeof this.onChange === 'function') {
+			try {
+				this.onChange(list);
+			}
+			catch (e) {
+				// Telling somebody about a mount is never a reason to fail the mount.
+				console.error('Announcing a mount change failed', e);
+			}
 		}
 	};
 

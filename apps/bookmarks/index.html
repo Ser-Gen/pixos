@@ -335,7 +335,10 @@ var doc = links.normalize(links.DEFAULT_DOC);
 var editing = null;
 var dragging = null;
 
-boot();
+// Whatever boot decided -- including the first run, which writes the bundled document
+// and returns early, and the reads it refuses to act on -- this window still wants to
+// know when the file changes underneath it.
+boot().then(watchForChanges, watchForChanges);
 
 async function boot () {
 	if (!shell) {
@@ -378,6 +381,58 @@ async function boot () {
 	catch (err) {
 		banner('Could not read ' + FILE + ' — it is not valid JSON. Nothing has been overwritten.');
 	}
+	draw();
+}
+
+// A bookmark added from the desktop writes this file, and this window used to go on showing
+// the collection as it was when it opened. It is deliberately quiet about it: the list
+// changing under a note saying the list changed is one thing too many.
+function watchForChanges () {
+	if (!shell || typeof shell.watchFiles !== 'function') {
+		return;
+	}
+	shell.watchFiles(window, function (change) {
+		if (!change.touches(FILE)) {
+			return;
+		}
+		// Our own save raises a change too, and re-reading it is how we tell: what came
+		// back is what we already have, so nothing is redrawn. Comparing beats trying to
+		// recognise our own write, which would also swallow somebody else's arriving in
+		// the same moment.
+		reload();
+	});
+}
+
+async function reload () {
+	// A half-finished dialog is worth more than a fresh list, and the change will still be
+	// there when it closes.
+	if (editing) {
+		return;
+	}
+	var response;
+	try {
+		response = await fetch('/__browserfs__' + FILE + '?' + Date.now(), {cache: 'no-store'});
+	}
+	catch (err) {
+		return;
+	}
+	// Only the one outcome is acted on. A 404 here means the file was deleted while this
+	// window was open, and drawing the bundled defaults over that would look exactly like
+	// the bookmarks coming back -- the same trap boot() is careful about.
+	if (!response.ok) {
+		return;
+	}
+	var next;
+	try {
+		next = links.normalize(await response.json());
+	}
+	catch (err) {
+		return;
+	}
+	if (links.serialize(next) === links.serialize(doc)) {
+		return;
+	}
+	doc = next;
 	draw();
 }
 
