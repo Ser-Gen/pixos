@@ -165,15 +165,18 @@ const at = needle => {
 	return i;
 };
 
-// The two late-bound pairs, which are what the ordering above costs. Both are written as a
+// The three late-bound pairs, which are what the ordering above costs. All are written as a
 // thunk rather than a reference for the same reason: the function they call is a `var` further
-// down the file, so a reference taken here would be `undefined` for ever. Replace either thunk
-// with the bare name and nothing fails until somebody selects a row or unmounts something.
+// down the file, so a reference taken here would be `undefined` for ever. Replace any thunk
+// with the bare name and nothing fails until somebody selects a row, unmounts something or
+// copies a file.
 check('selection gets its two renders late-bound, because js/view.js is built after it',
 	/renderStatus: function \(\) \{ return renderStatus\(\); \}/.test(entry)
 	&& /renderToolbarState: function \(\) \{ return renderToolbarState\(\); \}/.test(entry), true);
 check('and the mount actions get renderSidebar the same way, the sidebar being built from them',
 	/renderSidebar: function \(\) \{ return renderSidebar\(\); \}/.test(entry), true);
+check('and the view gets hasInternalClipboard the same way, js/clipboard.js redrawing its toolbar',
+	/hasInternalClipboard: function \(\) \{ return hasInternalClipboard\(\); \}/.test(entry), true);
 
 check('the action table is built before the loop that guards it',
 	at('var actions = {') < at('Object.keys(actions).forEach'), true);

@@ -773,7 +773,8 @@ needs an introducer, by default the PeerJS cloud, so the host is configurable fo
 `peerjs-server` and the panel names whichever is in use. Explorer's old *Share* — a second
 peer connection, in the app, that sent the guest a page of HTML and script their browser
 then evaluated — was removed once the mount had been walked; `tests/peers.test.mjs` checks
-Explorer contains no `new Peer(`, no `data:text/html` and no `new Function(`, because that
+that no file of Explorer's — `index.html` or any module beside it — contains a `new Peer(`, a
+`data:text/html` or a `new Function(`, because that
 is the property the removal was for, not the line count. It also removed a bug nothing else
 could see: the peer share and the old one both wrote a `stopSharing` into the same `actions`
 object, the second silently won, and *Stop sharing with peers* in the folder menu had never

@@ -244,20 +244,25 @@ check('replace stages, unlinks and renames, in that order',
 // so no raw writeFile/fsRename into state.cwd is allowed to exist.
 
 const producers = [
-	['createFile', 'createFile: function ()'],
-	['addOnlineFile', 'addOnlineFile: function ()'],
+	['createFile', 'function createFile ()'],
+	['addOnlineFile', 'function addOnlineFile ()'],
 	// Phase 13. The suggested name is already a free one, so this is only ever the race —
 	// but it is the same funnel, and being on this list is what keeps it that way.
 	['compress', 'async function runCompress (dialog)'],
-	['ffmpeg convert', 'window.ffmpeg.exec']
+	['ffmpeg convert', 'win.ffmpeg.exec']
 ];
 
 // Phase 21 moved compress and extract into apps/explorer/js/archive-ui.js. The rule is about
 // every route in Explorer, not about one file, so the search spans both — and a needle that
 // is not found is a failure rather than a pass. It had been passing on a `slice(-1)` of one
 // character, which is what a scraping test does when the code it scrapes moves house.
+// The twelfth pass moved New File, Add Online File and Rename into js/item-actions.js, and the
+// search spans that too.
 const archiveSource = fs.readFileSync(new URL('../apps/explorer/js/archive-ui.js', import.meta.url), 'utf8');
-const producerSource = source + '\n/* --- */\n' + archiveSource;
+const itemSource = fs.readFileSync(new URL('../apps/explorer/js/item-actions.js', import.meta.url), 'utf8');
+// And the fourteenth moved FFmpeg into js/convert.js.
+const convertSource = fs.readFileSync(new URL('../apps/explorer/js/convert.js', import.meta.url), 'utf8');
+const producerSource = [source, archiveSource, itemSource, convertSource].join('\n/* --- */\n');
 
 producers.forEach(function (entry) {
 	const at = producerSource.indexOf(entry[1]);
@@ -281,15 +286,17 @@ check('and writes underneath that folder, never into the current one',
 
 // Rename is the one that uses fsRename rather than writeFile, and fsRename replaces its
 // destination POSIX-style: the reported bug was a renamed file destroying an existing one.
-const renameAction = source.slice(source.indexOf('rename: function (itemPath)'),
-	source.indexOf('deleteSelected: function ()'));
+const renameAt = itemSource.indexOf('function rename (itemPath)');
+const renameEnd = itemSource.indexOf('function deleteSelected ()', renameAt);
+check('rename is still somewhere to be found', renameAt !== -1 && renameEnd !== -1, true);
+const renameAction = itemSource.slice(renameAt, renameEnd);
 check('rename asks before replacing', renameAction.includes('resolveIncomingDestination('), true);
 check('and unlinks the target it was told to replace', renameAction.includes('unlink('), true);
 check('and never renames straight onto a joined path',
 	/await fsRename\(item\.path, newPath\)/.test(renameAction), false);
 
 check('no writeFile into the cwd is left anywhere in the app',
-	(source.match(/await writeFile\(path\.join\(state\.cwd/g) || []).length, 0);
+	(producerSource.match(/await writeFile\(path\.join\(state\.cwd/g) || []).length, 0);
 
 // --- a dialog that declines keeps itself open -------------------------------------------
 //

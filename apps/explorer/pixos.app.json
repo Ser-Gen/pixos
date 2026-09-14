@@ -1,7 +1,7 @@
 {
 	"id": "explorer",
 	"name": "Explorer",
-	"version": "1.26.2",
+	"version": "1.26.5",
 	"entryPath": "/apps/explorer/index.html",
 	"files": [
 		{
@@ -14,15 +14,23 @@
 		},
 		{
 			"path": "/apps/explorer/index.html",
-			"hash": "sha256:926723f9beca0fd456ee096ec3c99710ff6bae1bef39dfe347fb92b12b346ebb"
+			"hash": "sha256:e031cc1e78d1d4cc24c5177571322d303787f0652014feebb772fee5f5d1313e"
 		},
 		{
 			"path": "/apps/explorer/js/archive-ui.js",
-			"hash": "sha256:3f3d71ccb855a32e03a5d5b8b57da59b86a02ca49d1dbed362b5e82dffd8f9cd"
+			"hash": "sha256:e39fc1c2a8c900162cd731c53fb317283a4d01b5a31a027a5eac572462751478"
+		},
+		{
+			"path": "/apps/explorer/js/clipboard.js",
+			"hash": "sha256:57c967925202c34b3033dae5e60404164d99ed3597ca911154513ad0067e6dc5"
 		},
 		{
 			"path": "/apps/explorer/js/context-menu.js",
 			"hash": "sha256:9c66cd4fe4bf64f24a66b49f402f845d0c9255b33aa8205cc91f2d129e4949c2"
+		},
+		{
+			"path": "/apps/explorer/js/convert.js",
+			"hash": "sha256:eeb85d98f346e33f09382976e72d5c7085f8d6ee7afc72b087c6c69d909d7c9c"
 		},
 		{
 			"path": "/apps/explorer/js/dialogs.js",
@@ -49,6 +57,10 @@
 			"hash": "sha256:55b573b72bf73abe62a618a77b7c986a52e03c9741f653a4b0fa9daf5d6bfdd1"
 		},
 		{
+			"path": "/apps/explorer/js/item-actions.js",
+			"hash": "sha256:12b0f97210b925e3d7c640bfcc5a29a3edf8baf2dc9f381680831c00d663abec"
+		},
+		{
 			"path": "/apps/explorer/js/menu-items.js",
 			"hash": "sha256:ed9ec0067efc0c6bde534c13a0927bfc9873aa956b43ef177c3a4ebcf0a8260e"
 		},
@@ -67,6 +79,10 @@
 		{
 			"path": "/apps/explorer/js/selection.js",
 			"hash": "sha256:ae078b3747a31acb9ddd4ba891ae13ef0a0449c767357e7d71dfdf2c970353af"
+		},
+		{
+			"path": "/apps/explorer/js/shell-actions.js",
+			"hash": "sha256:f8057f1d7f640138c8d33e2352b8fb51c9ae401a71fec2e7806520cbbf967fd0"
 		},
 		{
 			"path": "/apps/explorer/js/sidebar.js",

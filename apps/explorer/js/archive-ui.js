@@ -12,6 +12,11 @@
 // The engine itself is never imported at the top. It is 1.4 MB of WebAssembly and most
 // sessions never open an archive, so `loadArchiveEngine` fetches it on the first press and
 // the promise is the cache.
+//
+// The three archive entries of Explorer's action table live here too -- `extract`, `compress` and
+// `extractSelected` -- because each is a sentence about which items the dialogs get, and the
+// dialogs are here. That is the only reason this module reads the selection: `getItemByPath` and
+// `getSelectedItems` come from js/selection.js, which is built before it.
 
 import * as archiveNames from "../../7z/js/parse.js";
 
@@ -32,6 +37,8 @@ export function createArchiveUi (deps) {
 	var renderOverlays = deps.renderOverlays;
 	var refreshCurrentDir = deps.refreshCurrentDir;
 	var navigateTo = deps.navigateTo;
+	var getItemByPath = deps.getItemByPath;
+	var getSelectedItems = deps.getSelectedItems;
 	// BrowserFS puts Buffer on the window; a test hands in its own rather than needing one.
 	var Buffer = deps.Buffer;
 	// The one seam that is not a real dependency. Everything above can be handed a fake, but
@@ -745,7 +752,101 @@ export function createArchiveUi (deps) {
 			[{label: 'Open ' + folder, run: function () { navigateTo(destPath); }}]);
 	}
 
+	// One entry, one dialog, for every format 7-Zip reads. There were two before --
+	// *Extract*, which only ever understood zip, and *Extract 7z*, which did not
+	// extract at all: it unpacked the archive and re-packed the contents as a zip
+	// beside it, leaving you a second job to do by hand.
+	async function extract (itemPath) {
+		var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
+		if (!item || item.isDirectory) {
+			return;
+		}
+		await openArchiveDialog(item);
+	}
+
+	// The other half of the engine. Acts on the selection, or on the row it was
+	// opened from -- a folder, a file, or a dozen of both.
+	function compress (itemPath) {
+		var items = getSelectedItems();
+		// `!items.length` says what is meant rather than changing the answer: with an empty
+		// selection the row lookup below lands on the same `[]` or the same single row.
+		if (!items.length || (itemPath && !state.selectedPaths.has(itemPath))) {
+			var single = getItemByPath(itemPath);
+			items = single ? [single] : [];
+		}
+		if (!items.length) {
+			return;
+		}
+		openCompressDialog(items);
+	}
+
+	// Several at once: no listing and no subset, because a dialog per archive is not
+	// an answer to "extract these five". A locked one is reported rather than
+	// silently skipped, and says how to deal with it.
+	async function extractSelected () {
+		var targets = getSelectedItems().filter(function (item) {
+			return !item.isDirectory;
+		});
+		if (!targets.length) {
+			return;
+		}
+		if (targets.length === 1) {
+			await openArchiveDialog(targets[0]);
+			return;
+		}
+
+		var engine;
+		try {
+			engine = await loadArchiveEngine();
+		}
+		catch (err) {
+			reportArchiveFailure('The archive engine could not be loaded', err);
+			return;
+		}
+
+		var done = [];
+		var locked = [];
+		var failed = [];
+		for (var i = 0; i < targets.length; i++) {
+			try {
+				var bytes = await readFile(targets[i].path);
+				var result = await engine.extract(bytes, {name: targets[i].name});
+				await writeExtracted(targets[i].name, result);
+				done.push(targets[i].name);
+			}
+			catch (err) {
+				var kind = err && err.failure ? err.failure.kind : '';
+				if (kind === 'password' || kind === 'password-needed') {
+					locked.push(targets[i].name);
+				}
+				else {
+					failed.push(targets[i].name + ' — '
+						+ (err && err.failure ? err.failure.title : (err && err.message) || 'failed'));
+				}
+			}
+		}
+		await refreshCurrentDir(false);
+
+		var lines = [];
+		if (done.length) {
+			lines.push(done.length + ' extracted.');
+		}
+		if (locked.length) {
+			lines.push(locked.length + ' need a password: ' + locked.join(', ')
+				+ '. Extract those one at a time — the dialog asks.');
+		}
+		if (failed.length) {
+			lines.push(failed.join('; ') + '.');
+		}
+		report(done.length ? 'Extracted ' + done.length + ' of ' + targets.length
+			: 'Nothing was extracted', lines.join(' '),
+			(locked.length || failed.length) ? 'warn' : 'info');
+	}
+
 	return {
+		extract: extract,
+		compress: compress,
+		extractSelected: extractSelected,
 		buildArchiveDialog: buildArchiveDialog,
 		buildCompressDialog: buildCompressDialog,
 		openArchiveDialog: openArchiveDialog,

@@ -85,6 +85,10 @@ import { createMenuItems } from "./js/menu-items.js";
 import { createView } from "./js/view.js";
 import { createSidebar } from "./js/sidebar.js";
 import { createMounts } from "./js/mounts.js";
+import { createClipboard } from "./js/clipboard.js";
+import { createItemActions } from "./js/item-actions.js";
+import { createShellActions } from "./js/shell-actions.js";
+import { createConvert } from "./js/convert.js";
 
 window.BrowserFS = parent.BrowserFS;
 
@@ -253,7 +257,10 @@ async function openExplorer () {
 		formatSize: formatSize,
 		getExt: getExt,
 		getItemTitle: getItemTitle,
-		hasInternalClipboard: hasInternalClipboard,
+		// Late-bound, the third time this shape comes up: the toolbar greys Paste out by asking
+		// the clipboard, every clipboard action redraws the toolbar, and js/clipboard.js is built
+		// after file-ops because a paste is a copy or a move.
+		hasInternalClipboard: function () { return hasInternalClipboard(); },
 		getSelectedItems: getSelectedItems,
 		syncSelectAllUI: syncSelectAllUI
 	});
@@ -343,8 +350,7 @@ async function openExplorer () {
 	// redraw rather than holding a node. `archiveNames` comes back out because the row menu
 	// needs to know whether a file is an archive before any of this is otherwise reached.
 	var {
-		buildArchiveDialog, buildCompressDialog, openArchiveDialog, openCompressDialog,
-		loadArchiveEngine, reportArchiveFailure, writeExtracted, archiveNames
+		buildArchiveDialog, buildCompressDialog, extract, compress, extractSelected, archiveNames
 	} = createArchiveUi({
 		state: state,
 		doc: document,
@@ -362,6 +368,12 @@ async function openExplorer () {
 		renderOverlays: renderOverlays,
 		refreshCurrentDir: refreshCurrentDir,
 		navigateTo: navigateTo,
+		// For the three archive entries in `actions`, which live in the module now and are the
+		// only reason it reads the selection. `openArchiveDialog`, `openCompressDialog`,
+		// `loadArchiveEngine`, `reportArchiveFailure` and `writeExtracted` are still exported, for
+		// the tests; nothing out here calls them any more.
+		getItemByPath: getItemByPath,
+		getSelectedItems: getSelectedItems,
 		Buffer: Buffer
 	});
 
@@ -418,6 +430,92 @@ async function openExplorer () {
 		// native folder that will not answer is otherwise a ten-second test.
 		setTimer: function (fn, ms) { return setTimeout(fn, ms); },
 		clearTimer: function (handle) { return clearTimeout(handle); }
+	});
+
+	// The internal clipboard, and Copy path onto the system one. Below file-ops, because a paste
+	// is a copy or a move, and below the view, whose `renderToolbarState` every one of these
+	// redraws -- which is why the view takes `hasInternalClipboard` from here late-bound. The
+	// module also exports `getEffectiveSelectedPaths`; only Copy and Cut ever called it.
+	var {
+		hasInternalClipboard, copySelected, cutSelected, pasteClipboard, copyPath
+	} = createClipboard({
+		state: state,
+		normalizePath: normalizePath,
+		getSelectedItems: getSelectedItems,
+		copyItemsToFolder: copyItemsToFolder,
+		moveItemsToFolder: moveItemsToFolder,
+		renderToolbarState: renderToolbarState,
+		copyTextToClipboard: copyTextToClipboard,
+		openDialog: openDialog
+	});
+
+	// New, Rename, Delete, Download and SHA1. Below file-ops for the same reason as the clipboard:
+	// New Folder and Rename both ask its conflict question before they write, and New File writes
+	// through it. `File`, `Blob`, `fetch` and `crypto` come off `win`.
+	var {
+		createFile, createFolder, addOnlineFile, rename, deleteSelected, downloadSelected, getHashSHA1
+	} = createItemActions({
+		state: state,
+		path: window.path,
+		Buffer: Buffer,
+		win: window,
+		getItemByPath: getItemByPath,
+		getSelectedItems: getSelectedItems,
+		getNameByPath: getNameByPath,
+		openDialog: openDialog,
+		openInfoDialog: openInfoDialog,
+		renderOverlays: renderOverlays,
+		resolveIncomingDestination: resolveIncomingDestination,
+		writeNewFile: writeNewFile,
+		mkdir: mkdir,
+		unlink: unlink,
+		fsRename: fsRename,
+		readFile: readFile,
+		downloadBlob: downloadBlob,
+		reportFetchFailure: reportFetchFailure,
+		refreshCurrentDir: refreshCurrentDir
+	});
+
+	// Open, Open with, Manage Defaults, bookmarks and the peer share: the actions whose work the
+	// shell does. `guarded` and `readableActionName` go in because the chooser's Manage Defaults
+	// button runs after `openWith` has returned and needs the same wrapper the loop below gives
+	// the table -- which this module cannot read, being one of the things it is built from.
+	var {
+		open, openWith, manageDefaultApps, addToBookmarks, shareWithPeers, stopSharing
+	} = createShellActions({
+		state: state,
+		shell: parent,
+		getItemByPath: getItemByPath,
+		getSelectedItems: getSelectedItems,
+		getNameByPath: getNameByPath,
+		getOpenWithAppsForItems: getOpenWithAppsForItems,
+		getSpecificExtension: getSpecificExtension,
+		buildDefaultAppsManagerDialog: buildDefaultAppsManagerDialog,
+		openDialog: openDialog,
+		renderOverlays: renderOverlays,
+		navigateTo: navigateTo,
+		refreshCurrentDir: refreshCurrentDir,
+		report: report,
+		guarded: guarded,
+		readableActionName: readableActionName
+	});
+
+	// FFmpeg, the last body the action table had. `ensureFfmpegLoaded` and `splitCommandLine` went
+	// with it and are exported for the tests; nothing out here calls either. The script that puts
+	// `window.FFmpeg` there at all is still at the bottom of this file's module, with the other
+	// loaders, because it runs once for the window rather than once per press.
+	var {ffmpeg} = createConvert({
+		state: state,
+		path: window.path,
+		Buffer: Buffer,
+		win: window,
+		getSelectedItems: getSelectedItems,
+		readFile: readFile,
+		writeNewFile: writeNewFile,
+		openDialog: openDialog,
+		openInfoDialog: openInfoDialog,
+		renderOverlays: renderOverlays,
+		refreshCurrentDir: refreshCurrentDir
 	});
 
 	// Two Explorer windows on one folder each read their listing once. Everything below is
@@ -917,554 +1015,50 @@ async function openExplorer () {
 
 
 	var actions = {
-		// The four recording entries are js/recording.js, named here so the guard loop at the
-		// bottom of this object wraps them like every other action.
+		// Every entry is a name now, not a body: each action lives in the module it belongs to, and
+		// is listed here for two reasons that are both about the loop below this object. It wraps
+		// every entry once, so a failure anywhere is reported whether or not its author thought
+		// about it; and menus, the sidebar and the keyboard read the *wrapped* one off this table.
 		startScreenRecording: startScreenRecording,
 		stopScreenRecording: stopScreenRecording,
 		toggleMicMute: toggleMicMute,
 		toggleSysMute: toggleSysMute,
 
-		open: function (itemPath, forcedApp) {
-			var item = getItemByPath(itemPath);
-			if (!item) return;
+		// js/shell-actions.js: the actions whose work the shell does.
+		open: open,
+		openWith: openWith,
+		manageDefaultApps: manageDefaultApps,
+		addToBookmarks: addToBookmarks,
+		shareWithPeers: shareWithPeers,
+		stopSharing: stopSharing,
 
-			if (item.isDirectory) {
-				if (forcedApp && forcedApp !== 'explorer') {
-					parent.openPath(item.path, forcedApp);
-					return;
-				}
-				navigateTo(item.path);
-				return;
-			}
-			parent.openFile(item.path, forcedApp);
-		},
+		// js/archive-ui.js: the three archive entries, beside the dialogs they open.
+		extract: extract,
+		compress: compress,
+		extractSelected: extractSelected,
 
-		// The clipboard from inside an iframe is the trap here: it needs a secure context,
-		// it needs a gesture, and it can simply be refused. A copy that silently did
-		// nothing is worse than no menu entry at all, so a refusal falls back to showing
-		// the text already selected -- a copy you can finish by hand.
-		copyPath: async function (itemPath) {
-			var paths = itemPath
-				? [itemPath]
-				: getSelectedItems().map(function (entry) { return entry.path; });
-			if (!paths.length) {
-				return;
-			}
-			var text = paths.join('\n');
-			if (await copyTextToClipboard(text)) {
-				return;
-			}
-			openDialog({
-				type: 'copyText',
-				title: paths.length > 1 ? 'Copy paths' : 'Copy path',
-				text: text
-			});
-		},
-
-		addToBookmarks: async function (itemPath) {
-			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
-			if (!item || typeof parent.addBookmark !== 'function') {
-				return;
-			}
-			// The shell reports what happened, including "already bookmarked", so there
-			// is one surface for it rather than two that can disagree.
-			await parent.addBookmark({
-				title: item.name,
-				url: item.path,
-				// A trailing slash is what tells Bookmarks to open it with Explorer
-				// rather than as a file. Explorer is the one that knows which it is.
-				directory: item.isDirectory
-			});
-		},
-
-		// The dialog itself is the shell's (js/shell/open-with.js), the same one a file
-		// with no default app raises. Explorer used to draw its own, and the two came up
-		// in nearly the same situation looking nothing alike -- only one of them knew
-		// about the browser tab, and only one of them had keyboard picking. What stays
-		// here is what only Explorer knows: that a folder can be navigated to in place,
-		// and that several files can be opened at once.
-		// `target` is a path when a row menu opened this, and the selection may still
-		// override it -- several files at once are opened together. It is an *item* when
-		// the caller already knows what it means and the selection is not it: the
-		// empty-area menu acts on the folder you are looking at, and a file left
-		// highlighted inside that folder must not quietly take its place.
-		openWith: async function (target) {
-			var subject = (target && typeof target === 'object') ? target : null;
-			var selectedFiles = subject ? [] : getSelectedItems().filter(function (entry) {
-				return !entry.isDirectory;
-			});
-			var items;
-			if (selectedFiles.length > 1) {
-				items = selectedFiles;
-			}
-			else {
-				var item = subject || getItemByPath(target || Array.from(state.selectedPaths)[0]);
-				if (!item) {
-					return;
-				}
-				items = [item];
-			}
-
-			if (typeof parent.openWithChooser !== 'function') {
-				report('Open with needs PixOS', 'This window is not running inside the '
-					+ 'PixOS shell, so there is nothing to list the apps.', 'warn');
-				return;
-			}
-
-			var apps = await getOpenWithAppsForItems(items);
-			var fileItems = items.filter(function (entry) { return !entry.isDirectory; });
-			var extensions = fileItems.map(function (entry) {
-				return getSpecificExtension(entry.path);
-			}).filter(Boolean);
-			var uniqueExtensions = extensions.filter(function (ext, index) {
-				return extensions.indexOf(ext) === index;
-			});
-			// Only ever offered for one file: an association is one extension to one app,
-			// and "remember this for all five of these" is not a thing it can express.
-			var extension = (fileItems.length === 1 && uniqueExtensions.length === 1)
-				? uniqueExtensions[0]
-				: '';
-
-			// The chooser promises never to be empty, and for one file it keeps that
-			// promise itself — the browser tab and the plain window are always there.
-			// For a folder, or for several files with nothing in common, there is
-			// nothing universal to fall back on, so the empty case is answered here
-			// instead of being shown as a dialog with no rows in it.
-			var universal = items.length === 1 && !items[0].isDirectory;
-			if (!apps.length && !universal) {
-				report('Nothing can open all of these',
-					items.length > 1
-						? 'No installed app takes every one of the ' + items.length + ' files selected. '
-							+ 'Try them one at a time.'
-						: 'No installed app can open a folder.',
-					'warn');
-				return;
-			}
-
-			state.dialog = null;
-			renderOverlays();
-
-			var picked = await parent.openWithChooser({
-				paths: items.map(function (entry) { return entry.path; }),
-				apps: apps,
-				extension: extension,
-				title: items.length > 1
-					? 'Open ' + items.length + ' files with...'
-					: 'Open with...',
-				subtitle: items.length === 1 ? items[0].path : items.length + ' files',
-				// Neither route means anything for a folder, and for several files at
-				// once they would each need a tab or a window of their own.
-				universal: universal,
-				extras: [
-					{
-						label: 'App Manager',
-						run: function () {
-							// An installed app, opened as one.
-							if (typeof parent.openApp === 'function') {
-								parent.openApp('app-manager');
-							}
-							else {
-								parent.openFile('/apps/app-manager/index.html');
-							}
-						}
-					},
-					{
-						label: 'Manage Defaults',
-						run: function () {
-							actions.manageDefaultApps(extension);
-						}
-					}
-				]
-			});
-			if (!picked) {
-				return;
-			}
-			// Installing the app and remembering the choice already happened in the
-			// shell; what is left is the opening, which is the part Explorer knows how
-			// to do differently.
-			if (picked.kind === parent.OPEN_WITH_BROWSER_TAB) {
-				parent.openInBrowserTab(items[0].path);
-				return;
-			}
-			if (picked.kind === parent.OPEN_WITH_RAW_WINDOW) {
-				parent.openRawFile(items[0].path);
-				return;
-			}
-			if (items[0].isDirectory && items.length === 1) {
-				if (picked.appId === 'explorer') {
-					// Navigating to the folder this window is already showing does
-					// nothing, and a chooser entry that does nothing reads as broken.
-					// Asked from inside it, *Explorer* means another one.
-					if (items[0].path === state.cwd) {
-						parent.openPath(items[0].path, 'new explorer');
-					}
-					else {
-						navigateTo(items[0].path);
-					}
-				}
-				else {
-					parent.openPath(items[0].path, picked.appId);
-				}
-				return;
-			}
-			if (fileItems.length > 1 && typeof parent.openFiles === 'function') {
-				parent.openFiles(fileItems.map(function (entry) {
-					return entry.path;
-				}), picked.appId);
-				return;
-			}
-			if (fileItems.length === 1) {
-				parent.openFile(fileItems[0].path, picked.appId);
-			}
-		},
-
-		manageDefaultApps: async function (prefillExtension) {
-			openDialog(await buildDefaultAppsManagerDialog(prefillExtension));
-		},
-
-		createFile: function () {
-			openDialog({
-				type: 'newFile',
-				onSubmit: async function (payload) {
-					state.dialog = null;
-					renderOverlays();
-					var ab = await new File([payload.content || ''], payload.name).arrayBuffer();
-					await writeNewFile(state.cwd, payload.name, Buffer.from(ab));
-					await refreshCurrentDir(false);
-				}
-			});
-		},
-
-		createFolder: function () {
-			openDialog({
-				type: 'newFolder',
-				onSubmit: async function (name) {
-					state.dialog = null;
-					renderOverlays();
-					// mkdir on an existing name is an error rather than a silent no-op, and an
-					// unhandled one looked like the button doing nothing. It used to report a card
-					// saying the name was taken -- which told you what was wrong and then left you to
-					// do something about it. Renaming onto a taken name asks instead, and so does
-					// pasting onto one, so this asks too, through the same dialog. `true` for
-					// sourceIsDirectory is what greys out *Replace*: replacing a folder would mean
-					// deleting whatever is inside it, which is not a thing one click should do.
-					var resolvedNew = await resolveIncomingDestination(name, state.cwd, 'create folder', true);
-					if (!resolvedNew) {
-						return;
-					}
-					await mkdir(resolvedNew.destPath);
-					await refreshCurrentDir(false);
-				}
-			});
-		},
-
-		addOnlineFile: function () {
-			openDialog({
-				type: 'onlineFile',
-				onSubmit: async function (payload) {
-					state.dialog = null;
-					renderOverlays();
-
-					// The original had no catch and never checked response.ok, so a 404 or a
-					// CORS block closed the dialog and did nothing whatsoever. Both are the
-					// ordinary outcomes of typing a URL, not exceptional ones.
-					var response;
-					try {
-						response = await fetch(payload.url);
-					}
-					catch (err) {
-						reportFetchFailure(payload.url, {error: err});
-						return;
-					}
-					if (!response.ok) {
-						reportFetchFailure(payload.url, {response: response});
-						return;
-					}
-
-					var ab = await response.arrayBuffer();
-					var name = payload.name || getNameByPath(decodeURIComponent(payload.url));
-					await writeNewFile(state.cwd, name, Buffer.from(ab));
-					await refreshCurrentDir(false);
-				}
-			});
-		},
-
-		rename: function (itemPath) {
-			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
-			if (!item) return;
-			openDialog({
-				type: 'rename',
-				oldName: item.name,
-				onSubmit: async function (newName) {
-					// The same name is a no-op, not an error -- close, exactly as Cancel
-					// would. Leaving the dialog up made it look like the button was dead.
-					if (!newName || newName === item.name) {
-						state.dialog = null;
-						renderOverlays();
-						return;
-					}
-					state.dialog = null;
-					renderOverlays();
-					try {
-						// fsRename does not fail on an occupied name, it replaces what is
-						// there -- so renaming onto an existing file used to destroy it
-						// silently. There is no error to catch; the question has to be
-						// asked first, the same one a paste asks.
-						var resolved = await resolveIncomingDestination(
-							newName, path.dirname(item.path), 'rename', item.isDirectory);
-						if (!resolved) {
-							return;
-						}
-						if (resolved.replaceExisting) {
-							await unlink(resolved.destPath);
-						}
-						await fsRename(item.path, resolved.destPath);
-					}
-					catch (err) {
-						// Thrown straight to the action wrapper, which translates the errno
-						// and raises a notification. Catching it here to build a dialog by
-						// hand is what put a raw "ENOENT: No such file or directory." on
-						// screen -- the errno translation lives one level up.
-						throw err;
-					}
-					await refreshCurrentDir(false);
-				}
-			});
-		},
-
-		deleteSelected: function () {
-			var targets = getSelectedItems();
-			if (!targets.length) return;
-			openDialog({
-				type: 'confirmDelete',
-				items: targets,
-				onSubmit: async function () {
-					state.dialog = null;
-					renderOverlays();
-					try {
-						await Promise.all(targets.map(function (item) {
-							return unlink(item.path);
-						}));
-					}
-					catch (err) {
-						// Same reasoning as rename: the wrapper translates and reports.
-						throw err;
-					}
-					state.selectedPaths = new Set();
-					await refreshCurrentDir(false);
-				}
-			});
-		},
-
-		downloadSelected: async function () {
-			var targets = getSelectedItems().filter(function (item) { return !item.isDirectory; });
-			await Promise.all(targets.map(async function (item) {
-				var contents = await readFile(item.path);
-				downloadBlob(new Blob([contents]), item.name);
-			}));
-		},
-
-		getHashSHA1: async function () {
-			var targets = getSelectedItems().filter(function (item) { return !item.isDirectory; });
-			if (!targets.length) return;
-			var lines = [];
-			for (var i = 0; i < targets.length; i++) {
-				var contents = await readFile(targets[i].path);
-				var hashBuffer = await crypto.subtle.digest('SHA-1', contents);
-				var hashArray = Array.from(new Uint8Array(hashBuffer));
-				var hashHex = hashArray.map(function (b) {
-					return b.toString(16).padStart(2, '0');
-				}).join('');
-				lines.push(targets[i].name + ': ' + hashHex);
-			}
-			openInfoDialog('SHA1', lines.join('\n'));
-		},
-
-		// One entry, one dialog, for every format 7-Zip reads. There were two before --
-		// *Extract*, which only ever understood zip, and *Extract 7z*, which did not
-		// extract at all: it unpacked the archive and re-packed the contents as a zip
-		// beside it, leaving you a second job to do by hand.
-		extract: async function (itemPath) {
-			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
-			if (!item || item.isDirectory) {
-				return;
-			}
-			await openArchiveDialog(item);
-		},
-
-		// The other half of the engine. Acts on the selection, or on the row it was
-		// opened from -- a folder, a file, or a dozen of both.
-		compress: function (itemPath) {
-			var items = getSelectedItems();
-			if (!items.length || (itemPath && !state.selectedPaths.has(itemPath))) {
-				var single = getItemByPath(itemPath);
-				items = single ? [single] : [];
-			}
-			if (!items.length) {
-				return;
-			}
-			openCompressDialog(items);
-		},
-
-		// Several at once: no listing and no subset, because a dialog per archive is not
-		// an answer to "extract these five". A locked one is reported rather than
-		// silently skipped, and says how to deal with it.
-		extractSelected: async function () {
-			var targets = getSelectedItems().filter(function (item) {
-				return !item.isDirectory;
-			});
-			if (!targets.length) {
-				return;
-			}
-			if (targets.length === 1) {
-				await openArchiveDialog(targets[0]);
-				return;
-			}
-
-			var engine;
-			try {
-				engine = await loadArchiveEngine();
-			}
-			catch (err) {
-				reportArchiveFailure('The archive engine could not be loaded', err);
-				return;
-			}
-
-			var done = [];
-			var locked = [];
-			var failed = [];
-			for (var i = 0; i < targets.length; i++) {
-				try {
-					var bytes = await readFile(targets[i].path);
-					var result = await engine.extract(bytes, {name: targets[i].name});
-					await writeExtracted(targets[i].name, result);
-					done.push(targets[i].name);
-				}
-				catch (err) {
-					var kind = err && err.failure ? err.failure.kind : '';
-					if (kind === 'password' || kind === 'password-needed') {
-						locked.push(targets[i].name);
-					}
-					else {
-						failed.push(targets[i].name + ' — '
-							+ (err && err.failure ? err.failure.title : (err && err.message) || 'failed'));
-					}
-				}
-			}
-			await refreshCurrentDir(false);
-
-			var lines = [];
-			if (done.length) {
-				lines.push(done.length + ' extracted.');
-			}
-			if (locked.length) {
-				lines.push(locked.length + ' need a password: ' + locked.join(', ')
-					+ '. Extract those one at a time — the dialog asks.');
-			}
-			if (failed.length) {
-				lines.push(failed.join('; ') + '.');
-			}
-			report(done.length ? 'Extracted ' + done.length + ' of ' + targets.length
-				: 'Nothing was extracted', lines.join(' '),
-				(locked.length || failed.length) ? 'warn' : 'info');
-		},
-
-		ffmpeg: async function () {
-			var defaultArgs = '-c:v libx264 -movflags faststart -crf 30 -preset superfast';
-			openDialog({
-				type: 'ffmpegOptions',
-				defaultArgs: defaultArgs,
-				onSubmit: async function (argsRaw) {
-					state.dialog = null;
-					renderOverlays();
-					if (!await ensureFfmpegLoaded()) return;
-
-					var targets = getSelectedItems().filter(function (item) { return !item.isDirectory; });
-					var args = splitCommandLine(argsRaw || defaultArgs);
-
-					for (var i = 0; i < targets.length; i++) {
-						var src = targets[i];
-						var file = await readFile(src.path);
-						await window.ffmpeg.writeFile('input', new Uint8Array(file.buffer));
-						await window.ffmpeg.exec(['-i', 'input'].concat(args, ['output.mp4']));
-						var out = await window.ffmpeg.readFile('output.mp4');
-						var fileType = await window.fileTypeFromBuffer(out);
-						var name = path.basename(src.path) + '.' + (fileType && fileType.ext ? fileType.ext : 'mp4');
-						await writeNewFile(state.cwd, name, Buffer.from(out));
-					}
-					await refreshCurrentDir(false);
-				}
-			});
-		},
+		// js/convert.js: FFmpeg.
+		ffmpeg: ffmpeg,
 
 		mountArchive: mountArchive,
 		mountNativeDir: mountNativeDir,
 		mountFiles3: mountFiles3,
 		umount: umount,
 
-		copySelected: function () {
-			var targets = getEffectiveSelectedPaths();
-			if (!targets.length) return;
-			state.clipboard = {
-				mode: 'copy',
-				paths: targets
-			};
-			renderToolbarState();
-		},
+		// js/clipboard.js: the internal clipboard, and Copy path onto the system one.
+		copySelected: copySelected,
+		cutSelected: cutSelected,
+		pasteClipboard: pasteClipboard,
+		copyPath: copyPath,
 
-		cutSelected: function () {
-			var targets = getEffectiveSelectedPaths();
-			if (!targets.length) return;
-			state.clipboard = {
-				mode: 'cut',
-				paths: targets
-			};
-			renderToolbarState();
-		},
-
-		// One folder at a time, on purpose: every extra root is another boundary to get
-		// right, and the panel can only honestly report a list it can show.
-		shareWithPeers: function (dirPath) {
-			try {
-				parent.peers.share(dirPath);
-				report('Sharing ' + getNameByPath(dirPath),
-					'A connected peer can ask to open it, and you answer. They can read '
-					+ 'everything in it and nothing outside it, and they cannot write.',
-					'info', [{label: 'Show the Peers panel', run: function () { parent.peers.open(); }}]);
-				refreshCurrentDir(false);
-			}
-			catch (err) {
-				report('Could not share that folder', (err && err.message) || String(err));
-			}
-		},
-
-		stopSharing: function () {
-			parent.peers.share(null);
-			report('Stopped sharing', 'Anyone who had it open has been told, and their '
-				+ 'copy of the folder is gone.', 'info');
-			refreshCurrentDir(false);
-		},
-
-		pasteClipboard: async function (targetFolderPath) {
-			if (!hasInternalClipboard()) return;
-			var destination = normalizePath(targetFolderPath || state.cwd);
-			var clipboard = {
-				mode: state.clipboard.mode,
-				paths: state.clipboard.paths.slice()
-			};
-			try {
-				if (clipboard.mode === 'copy') {
-					await copyItemsToFolder(clipboard.paths, destination);
-				}
-				else {
-					await moveItemsToFolder(clipboard.paths, destination, {source: 'clipboard-cut'});
-					state.clipboard = null;
-				}
-			}
-			finally {
-				renderToolbarState();
-			}
-		}
+		// js/item-actions.js: New, Rename, Delete, Download and SHA1.
+		createFile: createFile,
+		createFolder: createFolder,
+		addOnlineFile: addOnlineFile,
+		rename: rename,
+		deleteSelected: deleteSelected,
+		downloadSelected: downloadSelected,
+		getHashSHA1: getHashSHA1
 	};
 
 	// Wrapped once, here, rather than each action growing its own try/catch. Most of these
@@ -1535,37 +1129,6 @@ async function openExplorer () {
 	bindEvents();
 	watchForChanges();
 	await refreshCurrentDir(false);
-
-	async function ensureFfmpegLoaded () {
-		if (!window.FFmpeg) {
-			openInfoDialog('FFmpeg', 'FFmpeg is not installed');
-			return false;
-		}
-		if (!window.ffmpeg) {
-			window.ffmpeg = new FFmpeg();
-			window.ffmpeg.on('log', function (ev) {
-				console.log(ev.message);
-			});
-			window.ffmpeg.on('progress', function (ev) {
-				console.log((ev.progress * 100) + ' %');
-			});
-			await window.ffmpeg.load({
-				coreURL: location.href + '../ffmpeg.0.12.10/ffmpeg-core.js'
-			});
-		}
-		return true;
-	}
-
-	function splitCommandLine (line) {
-		if (!line) return [];
-		var re = /[^\s"]+|"([^"]*)"/g;
-		var out = [];
-		var match;
-		while ((match = re.exec(line)) !== null) {
-			out.push(match[1] !== undefined ? match[1] : match[0]);
-		}
-		return out;
-	}
 
 	async function onDrop (e) {
 		e.preventDefault();
@@ -1680,27 +1243,8 @@ async function openExplorer () {
 		return window.cwd || '/';
 	}
 
-	function hasInternalClipboard () {
-		return !!(state.clipboard && state.clipboard.paths && state.clipboard.paths.length);
-	}
-
 	function isEditableTarget (node) {
 		return !!(node && (node.closest('input, textarea, select') || node.isContentEditable));
-	}
-
-	function getEffectiveSelectedPaths () {
-		return Array.from(state.selectedPaths)
-			.map(normalizePath)
-			.sort()
-			.filter(function (candidate, index, list) {
-				for (var i = 0; i < list.length; i++) {
-					if (i === index) continue;
-					if (candidate.indexOf(list[i] + '/') === 0) {
-						return false;
-					}
-				}
-				return true;
-			});
 	}
 }
 </script>

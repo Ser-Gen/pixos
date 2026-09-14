@@ -45,7 +45,8 @@ run in iframes. Pure static site — no build step, no backend.
   microphone into one track, the two-pass stop, and the teardown that must reach every track
   on every route out — `getDisplayMedia`, `MediaRecorder`, `AudioContext` and the clock are
   all parameters, which is the only reason a recording can be driven with no browser) and
-  `archive-ui.js` (the two archive dialogs and the operations behind them — when the 1.4 MB
+  `archive-ui.js` (the two archive dialogs and the operations behind them, and the three archive
+  entries of the action table beside them — when the 1.4 MB
   engine is fetched, what a wrong password does, and why extraction always makes a folder of
   its own; `importEngine` is a parameter because a dynamic import of a path literal is the one
   dependency a test cannot hand in) and `dialogs.js` (the node every modal is built into, the
@@ -67,7 +68,23 @@ run in iframes. Pure static site — no build step, no backend.
   clickable) and `mounts.js` (the four mount actions and the one setting any of them remembers —
   `js/mount-manager.js` owns what a mount *is*, this owns what asking for one looks like: which
   dialog, what a refusal says, and the two steps every success takes **in that order**, draw the
-  sidebar then go there). Nothing in `apps/explorer/js/`
+  sidebar then go there) and `clipboard.js` (Explorer's two clipboards, which are not one: the
+  internal one holds paths to paste and is the only way a folder is ever copied; the system one
+  is only written, by *Copy path*, and can refuse an iframe, so a refusal ends in a dialog with
+  the text in it — plus the two rules a paste depends on, **a snapshot of the clipboard** and **a
+  cut forgotten only once the move succeeded**) and `item-actions.js` (*New File*, *New Folder*,
+  *Add Online File*, *Rename*, *Delete*, *Download*, *Get SHA1* — each asks `file-ops.js`'s
+  conflict question before it writes and catches nothing, because the errno translation is one
+  level up in the guard; `File`, `Blob`, `fetch` and `crypto` come off `win`, and are called *on*
+  it, since a detached `fetch` throws in a browser and not in node) and `shell-actions.js` (*Open*,
+  *Open with...*, *Manage Defaults*, *Add to bookmarks*, *Share with peers*, *Stop sharing* — the
+  actions whose work the shell does, keeping only what Explorer knows: a folder is navigated to in
+  place, several files open together; the chooser's *Manage Defaults* button runs after `openWith`
+  has returned, so the module wraps it with the same `guarded` the table's loop uses rather than
+  reading the table it is part of) and `convert.js` (*FFmpeg*: the options dialog, one engine
+  per window, files converted one at a time and written through `writeNewFile` — for an engine
+  nothing installs, which `docs/backlog.md` records along with what this code gets wrong once one
+  is there). Nothing in `apps/explorer/js/`
   decides whether a file *is* an archive — that is `apps/7z/js/parse.js`, which is pure and is
   imported directly. `dialogs.js` and `archive-ui.js` genuinely need each other — the general
   machinery draws the archive dialogs and the archive module opens them through it — and
@@ -78,21 +95,25 @@ run in iframes. Pure static site — no build step, no backend.
   selection is built first and takes `renderStatus` and `renderToolbarState` late-bound.
   `mounts.js` and `sidebar.js` are the third pair, and the same shape: the sidebar draws the
   mounts and every mount action redraws the sidebar, so `mounts.js` — which `actions` is built
-  from, and `sidebar.js` reads `actions` — takes `renderSidebar` late-bound.
+  from, and `sidebar.js` reads `actions` — takes `renderSidebar` late-bound. `clipboard.js` and
+  `view.js` are the fourth: the toolbar greys out *Paste* by asking the clipboard and every
+  clipboard action redraws the toolbar, so the view takes `hasInternalClipboard` late-bound.
   **`renderOverlays` stayed in `index.html`** although it is a render: it is the junction where
   context-menu and dialogs meet, and five modules call it, so moving it would mean five thunks
   to tidy seventeen lines. The
   construction order in `openExplorer` is load-bearing for one more reason: `file-ops.js` goes
   after `dialogs.js` (the conflict question is a dialog) and before `dnd.js`, `archive-ui.js`
   and `recording.js`, each of which writes a file through it — which is why none of those three
-  needs a thunk.
+  needs a thunk. `clipboard.js`, `item-actions.js`, `shell-actions.js` and `convert.js` go after all of those, a paste being a copy
+  or a move and *New Folder* and *Rename* both asking the conflict question.
   Each is a factory taking its dependencies as parameters — `fs`, `path`,
   `shell`, `win`, `nav`, `doc`, `rootElem` — and that is the whole reason any of them can be
   tested. **The context object is `state` and `ui`, passed by reference and nothing else**:
   they are the shared mutable pair, and a module writing `state.contextMenu` has to write
   the same object `index.html` reads. Every other dependency stays a named parameter — one
-  bag holding everything would re-create the closure this phase exists to take apart. `actions` has not moved and is
-  why the rest of the table is harder than these; `menu-items.js` and `sidebar.js` are built *after* it, at the
+  bag holding everything would re-create the closure this phase exists to take apart. `actions` is now only names —
+  every action lives in a module and is *named* in the table, which is kept because the guard loop
+  wraps each entry once and menus, the sidebar and the keyboard all read the wrapped one; `menu-items.js` and `sidebar.js` are built *after* it, at the
   bottom of the block rather than the top, because a menu entry reads `actions.copySelected` when
   the menu is built and every mount row carries an unmount button. The window's four boot lines —
   `renderLayout`, `bindEvents`, `watchForChanges`, the first `refreshCurrentDir` — sit below them

@@ -48,7 +48,7 @@ const actionOrder = [];
 	// module: `rename: function () {...}` and `mountArchive: mountArchive,`. Reading only the
 	// first left every action a module provides out of this set, which quietly excused the
 	// menu entries that name one.
-	const pattern = /^\t\t([A-Za-z0-9_]+): (?:(?:async )?function|[A-Za-z0-9_]+,$)/gm;
+	const pattern = /^\t\t([A-Za-z0-9_]+): (?:(?:async )?function|[A-Za-z0-9_]+,?$)/gm;
 	let match;
 	while ((match = pattern.exec(table))) {
 		actionNames.add(match[1]);

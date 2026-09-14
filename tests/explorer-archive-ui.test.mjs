@@ -83,6 +83,11 @@ function harness (options) {
 			return Promise.resolve(options.listing);
 		},
 		extract: function (bytes, opts) {
+			// Several archives in one go need an answer per archive, not one for all of them.
+			if (options.extractFor) {
+				log.push('extract-one:' + opts.name);
+				return options.extractFor(opts.name);
+			}
 			log.push('extract:' + (opts.paths || []).join(','));
 			if (options.extractThrows) { return Promise.reject(options.extractThrows); }
 			return Promise.resolve(options.result);
@@ -102,7 +107,8 @@ function harness (options) {
 		}
 	};
 
-	var state = {cwd: '/notes', items: (options.items || []).slice(), dialog: null};
+	var state = {cwd: '/notes', items: (options.items || []).slice(), dialog: null,
+		selectedPaths: new Set(options.selected || [])};
 
 	var ui = createArchiveUi({
 		state: state,
@@ -134,6 +140,8 @@ function harness (options) {
 		renderOverlays: function () { renders++; },
 		refreshCurrentDir: function () { refreshed++; return Promise.resolve(); },
 		navigateTo: function (p) { navigated.push(p); },
+		getItemByPath: function (p) { return state.items.find(i => i.path === p) || null; },
+		getSelectedItems: function () { return state.items.filter(i => state.selectedPaths.has(i.path)); },
 		Buffer: {from: function (data) { return {buffered: data}; }},
 		importEngine: function () {
 			log.push('importEngine');
@@ -496,6 +504,161 @@ const READY = {entries: [{path: 'a.txt', isDirectory: false}, {path: 'sub', isDi
 	check('the compress dialog names every format the rules module knows',
 		h.ui.archiveNames.FORMATS.every(f => text(box).includes(f.label)), true);
 	check('and every compression preset', h.ui.archiveNames.PRESETS.every(p => text(box).includes(p.label)), true);
+}
+
+// --- the three entries in Explorer's action table -------------------------------------------------
+//
+// Moved here from index.html in phase 21's thirteenth pass. Each is a sentence about which items
+// the dialogs get, and the last is the one place several archives are extracted with no dialog.
+
+const zipItem = name => ({name: name, path: '/notes/' + name, isDirectory: false});
+const folderItem = name => ({name: name, path: '/notes/' + name, isDirectory: true});
+
+{
+	const h = harness({listing: READY, items: [zipItem('photos.zip'), folderItem('sub')]});
+	await h.ui.extract('/notes/sub');
+	await h.ui.extract('/notes/missing.zip');
+	check('Extract does nothing for a folder, or for a path not in the listing', h.opened, []);
+	await h.ui.extract('/notes/photos.zip');
+	check('and opens the archive dialog for an archive row', h.opened.map(d => [d.type, d.path]),
+		[['archive', '/notes/photos.zip']]);
+}
+
+{
+	const h = harness({listing: READY, items: [zipItem('photos.zip')], selected: ['/notes/photos.zip']});
+	await h.ui.extract();
+	check('with no row, the selected item', h.opened.map(d => d.path), ['/notes/photos.zip']);
+}
+
+{
+	const items = [zipItem('a.txt'), zipItem('b.txt'), zipItem('c.txt')];
+	const paths = h => h.opened.map(d => d.items.map(i => i.name));
+
+	const inSelection = harness({items: items, selected: ['/notes/a.txt', '/notes/b.txt']});
+	inSelection.ui.compress('/notes/a.txt');
+	check('Compress on a selected row takes the whole selection', paths(inSelection), [['a.txt', 'b.txt']]);
+
+	const outside = harness({items: items, selected: ['/notes/a.txt', '/notes/b.txt']});
+	outside.ui.compress('/notes/c.txt');
+	check('on a row outside the selection, only that row', paths(outside), [['c.txt']]);
+
+	const unselected = harness({items: items});
+	unselected.ui.compress('/notes/c.txt');
+	check('and with nothing selected, that row', paths(unselected), [['c.txt']]);
+
+	const fromMenu = harness({items: items, selected: ['/notes/b.txt']});
+	fromMenu.ui.compress();
+	check('with no row, the selection', paths(fromMenu), [['b.txt']]);
+
+	const nothing = harness({items: items});
+	let threw = null;
+	try {
+		nothing.ui.compress();
+		nothing.ui.compress('/notes/gone.txt');
+	}
+	catch (err) {
+		threw = err.message;
+	}
+	check('with neither, or a row that is not there, no dialog and no exception', [nothing.opened, threw], [[], null]);
+}
+
+{
+	const h = harness({items: [folderItem('sub')], selected: ['/notes/sub']});
+	let threw = null;
+	try {
+		await h.ui.extractSelected();
+	}
+	catch (err) {
+		threw = err.message;
+	}
+	check('Extract all with no files selected does nothing -- not even fetch the engine',
+		[h.opened, h.notes, h.log, threw], [[], [], [], null]);
+}
+
+{
+	const h = harness({listing: READY, items: [zipItem('one.zip'), folderItem('sub')],
+		selected: ['/notes/one.zip', '/notes/sub']});
+	let threw = null;
+	try {
+		await h.ui.extractSelected();
+	}
+	catch (err) {
+		threw = err.message;
+	}
+	check('one file among the selection is the ordinary dialog, with its listing and choices',
+		[h.opened.map(d => d.type), h.notes, threw], [['archive'], [], null]);
+}
+
+{
+	const locked = kind => { const err = new Error('exit 2'); err.failure = {kind: kind, title: 'Locked'}; return err; };
+	const broken = new Error('exit 2');
+	broken.failure = {kind: 'corrupt', title: 'Not an archive'};
+	const outcomes = {
+		'ok.zip': Promise.resolve({files: [{path: 'x.txt', data: 'X'}], dirs: []}),
+		'locked.7z': Promise.reject(locked('password-needed')),
+		'wrong.zip': Promise.reject(locked('password')),
+		'bad.rar': Promise.reject(broken),
+		'odd.zip': Promise.reject(new Error('boom')),
+		'blank.zip': Promise.reject({})
+	};
+	Object.values(outcomes).forEach(p => p.catch(() => {}));
+	const names = Object.keys(outcomes);
+	const h = harness({items: names.map(zipItem), selected: names.map(n => '/notes/' + n),
+		extractFor: name => outcomes[name]});
+	await h.ui.extractSelected();
+
+	check('several are extracted with no dialog, every one attempted however the others went',
+		[h.opened, h.log.filter(l => l.startsWith('extract-one:')).map(l => l.slice(12))], [[], names]);
+	check('what came out is written into a folder of its own', h.written['/notes/ok/x.txt'], {buffered: 'X'});
+	check('the listing is refreshed once, after all of them', h.refreshed(), 1);
+	const summary = h.notes[h.notes.length - 1];
+	check('and one summary says what happened to each', [summary.title, summary.level],
+		['Extracted 1 of 6', 'warn']);
+	check('locked ones by name, with what to do about them -- both kinds of password answer',
+		summary.message.includes('2 need a password: locked.7z, wrong.zip. Extract those one at a time'), true);
+	check('failures in 7-Zip\'s own words, then the error\'s, then just "failed"',
+		summary.message.endsWith('bad.rar — Not an archive; odd.zip — boom; blank.zip — failed.'), true);
+	check('and it starts with the count that worked', summary.message.startsWith('1 extracted. '), true);
+}
+
+{
+	const ok = () => Promise.resolve({files: [], dirs: []});
+	const h = harness({items: [zipItem('a.zip'), zipItem('b.zip')], selected: ['/notes/a.zip', '/notes/b.zip'],
+		extractFor: ok});
+	await h.ui.extractSelected();
+	const summary = h.notes[h.notes.length - 1];
+	check('when every one worked it is information, not a warning',
+		[summary.title, summary.message, summary.level], ['Extracted 2 of 2', '2 extracted.', 'info']);
+}
+
+{
+	const h = harness({items: [zipItem('a.zip'), zipItem('b.zip')], selected: ['/notes/a.zip', '/notes/b.zip'],
+		extractFor: () => Promise.reject(new Error('boom'))});
+	await h.ui.extractSelected();
+	check('when none did, it says nothing was extracted', h.notes[h.notes.length - 1].title, 'Nothing was extracted');
+	check('and lists only what failed, with no "0 extracted" in front', h.notes[h.notes.length - 1].message,
+		'a.zip — boom; b.zip — boom.');
+	check('having still refreshed, since some may have written before failing', h.refreshed(), 1);
+}
+
+{
+	const locked = () => { const err = new Error('exit 2'); err.failure = {kind: 'password-needed'}; return Promise.reject(err); };
+	const h = harness({items: [zipItem('a.7z'), zipItem('b.7z')], selected: ['/notes/a.7z', '/notes/b.7z'],
+		extractFor: locked});
+	await h.ui.extractSelected();
+	const summary = h.notes[h.notes.length - 1];
+	check('locked archives alone are a warning too -- nothing failed, but nothing was done',
+		[summary.title, summary.level], ['Nothing was extracted', 'warn']);
+}
+
+{
+	const h = harness({items: [zipItem('a.zip'), zipItem('b.zip')], selected: ['/notes/a.zip', '/notes/b.zip'],
+		engineFailsOnce: true, extractFor: () => Promise.resolve({files: [], dirs: []})});
+	await h.ui.extractSelected();
+	check('an engine that will not load is reported once, as that',
+		h.failures, ['The archive engine could not be loaded: network']);
+	check('and nothing is read, extracted or refreshed after it',
+		[h.log.filter(l => !l.startsWith('importEngine')), h.refreshed(), h.notes], [[], 0, []]);
 }
 
 // --- the wiring in index.html -------------------------------------------------------------------

@@ -344,7 +344,17 @@ check('and says so when the file and the live connection disagree, rather than d
 // browser evaluated — including `new Function(d.js)` on data straight off the wire. The
 // mount replaced all of it: Explorer now asks the shell which folder is shared, and the
 // only thing crossing the wire is the closed message list above.
-const explorer = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
+//
+// Every file of Explorer's, not only index.html. Phase 21 moved the share and its stop into
+// apps/explorer/js/shell-actions.js, and a check that read the one file the code was leaving would
+// have gone on passing whatever that module did.
+const explorerJs = new URL('../apps/explorer/js/', import.meta.url);
+const explorer = [fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8')]
+	.concat(fs.readdirSync(explorerJs).filter(name => name.endsWith('.js'))
+		.map(name => fs.readFileSync(new URL(name, explorerJs), 'utf8')))
+	.join('\n');
+check('and that means every one of its files, which is more than one now',
+	explorer.includes('function shareWithPeers'), true);
 check('Explorer no longer opens a peer connection of its own',
 	/new Peer\s*\(/.test(explorer), false);
 check('and no longer builds a page for another machine to run',
