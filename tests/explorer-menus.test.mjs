@@ -18,31 +18,14 @@ import {check, report} from './assert.mjs';
 import * as archiveNames from '../apps/7z/js/parse.js';
 import {createFailure} from '../apps/explorer/js/failure.js';
 import {createSelection} from '../apps/explorer/js/selection.js';
+import {createMenuItems} from '../apps/explorer/js/menu-items.js';
 
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
 
-function fn (name) {
-	let start = source.indexOf('function ' + name + ' (');
-	// `async` sits outside the match and is load-bearing: extracted without it the
-	// function's own `await` is a syntax error rather than a test.
-	if (start > 6 && source.slice(start - 6, start) === 'async ') {
-		start -= 6;
-	}
-	if (start === -1) {
-		console.error('explorer-menus.test.mjs: could not find function ' + name);
-		process.exit(1);
-	}
-	let depth = 0;
-	for (let i = source.indexOf('{', start); i < source.length; i++) {
-		if (source[i] === '{') { depth++; }
-		else if (source[i] === '}') {
-			depth--;
-			if (depth === 0) { return source.slice(start, i + 1); }
-		}
-	}
-	console.error('explorer-menus.test.mjs: unbalanced braces in ' + name);
-	process.exit(1);
-}
+// Phase 21's ninth pass moved all four builders into apps/explorer/js/menu-items.js, so
+// they are imported rather than cut out of the HTML with brace counting. `actions` is still
+// read out of index.html below, because that is still where the table lives — and reading the
+// real one rather than a list written here is the whole point of the first two checks.
 
 // --- what the menus offer -------------------------------------------------------------
 
@@ -51,8 +34,21 @@ function fn (name) {
 const actionNames = new Set();
 const actionOrder = [];
 {
-	const table = source.slice(source.indexOf('\tvar actions = {'));
-	const pattern = /^\t\t([A-Za-z0-9_]+): (?:async )?function/gm;
+	// Bounded at both ends. It used to run to the end of the file, which was harmless only
+	// while the pattern below matched nothing but inline functions -- widen that and the
+	// module constructions underneath start answering as actions.
+	const from = source.indexOf('\tvar actions = {');
+	const to = source.indexOf('\n\t};', from);
+	if (from === -1 || to === -1) {
+		console.error('explorer-menus.test.mjs: could not find the actions table in index.html');
+		process.exit(1);
+	}
+	const table = source.slice(from, to);
+	// Two shapes, because an action can be written into the table or handed to it by a
+	// module: `rename: function () {...}` and `mountArchive: mountArchive,`. Reading only the
+	// first left every action a module provides out of this set, which quietly excused the
+	// menu entries that name one.
+	const pattern = /^\t\t([A-Za-z0-9_]+): (?:(?:async )?function|[A-Za-z0-9_]+,$)/gm;
 	let match;
 	while ((match = pattern.exec(table))) {
 		actionNames.add(match[1]);
@@ -67,40 +63,6 @@ check('the actions table was found and read', actionNames.size > 15, true);
 // action that existed, and it ran.
 check('and no action is written twice, where the second would silently shadow the first',
 	actionOrder.filter((name, i) => actionOrder.indexOf(name) !== i), []);
-
-const menus = new Function('shell', `
-	var parent = shell.parent;
-	// Explorer is an iframe: comparing parent with window is how it asks whether a shell
-	// is there at all, and several menu entries turn on that answer.
-	var window = shell.window || {};
-	var navigator = {platform: 'MacIntel'};
-	var state = ${JSON.stringify({recording: false, selectedPaths: [], cwd: '/home'})};
-	state.selectedPaths = new Set(shell.selected.map(function (i) { return i.path; }));
-	var actions = shell.actions;
-	var mountManager = {isMountPoint: function () { return false; }};
-	var archiveNames = shell.archiveNames;
-	var ui = {fileInput: {click: function () {}}};
-	function refreshCurrentDir () {}
-	function getSelectedItems () { return shell.selected; }
-	function getItemByPath (p) { return shell.items[p] || null; }
-	function getNormalizedExtension (p) { return String(p).split('.').pop().toLowerCase(); }
-	function isImageExtension (p) { return /\\.(png|jpg|jpeg|gif|webp)$/i.test(p); }
-	function hasInternalClipboard () { return false; }
-	// Phase 21 moved this into js/selection.js. The harness builds its own state object, so
-	// the module is built around that one rather than the function being copied out.
-	var getCurrentFolderItem = shell.selectionFor(state).getCurrentFolderItem;
-	${fn('sendToPeerMenu')}
-	function getNameByPath (p) { return String(p).split('/').pop(); }
-	function report () {}
-	${fn('getRowMenuItems')}
-	${fn('getMultiMenuItems')}
-	${fn('getEmptyAreaMenuItems')}
-	return {
-		getRowMenuItems: getRowMenuItems,
-		getMultiMenuItems: getMultiMenuItems,
-		getEmptyAreaMenuItems: getEmptyAreaMenuItems
-	};
-`);
 
 // A stand-in for every action, so a menu entry can be pressed and say which one it named.
 const pressed = [];
@@ -118,19 +80,28 @@ const ZIP = {path: '/home/holiday.tar.gz', name: 'holiday.tar.gz', isDirectory: 
 const items = {'/home/notes.csv': FILE, '/home/shot.png': IMAGE, '/home/docs': DIR,
 	'/home/holiday.tar.gz': ZIP};
 
-function build (selected, shellApi) {
+function build (selected, shellApi, opts) {
+	// Passing null means "opened outside PixOS", where `shell` *is* `win` and every entry
+	// that needs the shell has to notice. `opts.sameWindow` is the nastier version of that:
+	// a standalone Explorer whose window happens to carry the API anyway, which is the only
+	// arrangement that can tell `shell !== win` apart from `shell.peers &&`.
+	opts = opts || {};
 	var noShell = shellApi === null;
-	var stand = {};
-	return menus({
-		selected: selected,
-		items: items,
+	var stand = opts.sameWindow ? Object.assign({}, opts.sameWindow) : {};
+	var state = {recording: !!opts.recording, selectedPaths: new Set(selected.map(i => i.path)), cwd: '/home'};
+	return createMenuItems({
+		state: state,
+		ui: {fileInput: {click () {}}},
+		shell: noShell ? stand : (shellApi || {}),
+		win: noShell ? stand : {},
+		mountManager: {isMountPoint: p => (opts.mountPoints || []).indexOf(p) !== -1},
 		actions: actions,
 		archiveNames: archiveNames,
-		// Passing null means "opened outside PixOS", where parent *is* window and every
-		// entry that needs the shell has to notice.
-		parent: noShell ? stand : (shellApi || {}),
-		window: noShell ? stand : {},
-		selectionFor: state => createSelection({
+		getSelectedItems: () => selected,
+		getItemByPath: p => items[p] || null,
+		// Phase 21 moved this into js/selection.js. The harness builds its own state object,
+		// so the module is built around that one rather than the function being copied out.
+		getCurrentFolderItem: createSelection({
 			state: state,
 			ui: {},
 			rootElem: null,
@@ -138,7 +109,13 @@ function build (selected, shellApi) {
 			closeContextMenu () {},
 			renderStatus () {},
 			renderToolbarState () {}
-		})
+		}).getCurrentFolderItem,
+		hasInternalClipboard: () => !!opts.clipboard,
+		refreshCurrentDir () {},
+		report () {},
+		getNameByPath: p => String(p).split('/').pop(),
+		getNormalizedExtension: p => String(p).split('.').pop().toLowerCase(),
+		isImageExtension: p => /\.(png|jpg|jpeg|gif|webp)$/i.test(p)
 	});
 }
 
@@ -238,8 +215,12 @@ check('Copy paths passes nothing, so the action reads the selection',
 // Handed the folder as an item rather than as a path: a path would be looked up among the
 // rows, where the folder you are inside is not, and the selection would answer instead.
 // Found by shape rather than by position — several menus offer *Open with...*.
-const folderOpenWith = pressed.filter(call =>
-	call[0] === 'openWith' && call[1] && typeof call[1] === 'object').pop()[1];
+const folderOpenWithCall = pressed.filter(call =>
+	call[0] === 'openWith' && call[1] && typeof call[1] === 'object').pop();
+// Guarded: an entry that stops being offered at all would otherwise end this file here
+// rather than fail the line that is about it.
+check('the background offers an Open with that was actually pressed', !!folderOpenWithCall, true);
+const folderOpenWith = folderOpenWithCall && folderOpenWithCall[1];
 check('Open with from the background names the folder itself',
 	folderOpenWith && folderOpenWith.path, '/home');
 check('as an item, so nothing selected inside it can stand in',
@@ -358,5 +339,121 @@ check('a different folder being shared does not change this one\'s entry',
 	shareEntry(sharedFolderMenu('/home/other')).label, 'Share with peers…');
 check('and outside the shell there is nobody to share with, so nothing is offered',
 	shareEntry(build([DIR], null).getRowMenuItems('/home/docs')), undefined);
+
+// --- which menu you get, which is decided before any of the above ---------------------------
+//
+// Added in phase 21's ninth pass, when the builders became js/menu-items.js and it turned out
+// a mutation run could take ten of these apart without failing a single check. Every one below
+// is a rule the file already had and nothing had ever asked about.
+
+{
+	const multi = build([FILE, IMAGE], shell).getRowMenuItems('/home/notes.csv');
+	check('right-clicking one row of several gives the selection menu, not that row\'s',
+		labels(multi).includes('Copy selected'), true);
+	check('and not the single-row one', labels(multi).includes('Copy path'), false);
+}
+
+{
+	const stray = build([], shell).getRowMenuItems('/home/vanished.txt');
+	check('a row whose item has gone falls back to the empty-area menu',
+		labels(stray).includes('New Folder'), true);
+	check('rather than to an empty menu, which reads as a broken right-click',
+		stray.length > 0, true);
+}
+
+{
+	const empty = build([], shell).getEmptyAreaMenuItems();
+	// Guarded: a mutation that drops the entry would otherwise crash this file on [0].
+	check('the empty area leads to Open with for the folder you are inside',
+		labels(empty).includes('Open this folder with...'), true);
+	check('and it is the first entry, because there is no row to name',
+		labels(empty)[0], 'Open this folder with...');
+}
+
+{
+	const mixed = build([FILE, DIR], shell).getMultiMenuItems();
+	check('a selection of files and folders is not offered Open with',
+		labels(mixed).includes('Open with...'), false);
+	const allFiles = build([FILE, IMAGE], shell).getMultiMenuItems();
+	check('a selection of only files is', labels(allFiles).includes('Open with...'), true);
+}
+
+// --- the entries that are greyed out rather than hidden ---------------------------------------
+
+{
+	const noClip = build([DIR], shell).getRowMenuItems('/home/docs');
+	const withClip = build([DIR], shell, {clipboard: true}).getRowMenuItems('/home/docs');
+	const paste = list => list.find(e => e.label === 'Paste into Folder');
+	check('with nothing copied, Paste into Folder is greyed', paste(noClip).disabled, true);
+	check('with something copied it is live', paste(withClip).disabled, false);
+}
+
+{
+	const paste = list => list.find(e => e.label === 'Paste');
+	check('the same for Paste in empty space',
+		paste(build([], shell).getEmptyAreaMenuItems()).disabled, true);
+	check('and live once there is something to paste',
+		paste(build([], shell, {clipboard: true}).getEmptyAreaMenuItems()).disabled, false);
+}
+
+{
+	const ZIPFILE = {path: '/home/pack.zip', name: 'pack.zip', isDirectory: false};
+	items['/home/pack.zip'] = ZIPFILE;
+	const mount = list => tools(list).find(e => e.label === 'Mount as filesystem');
+	check('a zip can be mounted', mount(build([ZIPFILE], shell).getRowMenuItems('/home/pack.zip')).disabled, false);
+	check('a text file cannot', mount(build([FILE], shell).getRowMenuItems('/home/notes.csv')).disabled, true);
+	// .tar.gz is an archive 7-Zip reads and not a filesystem anything mounts. The two
+	// questions have different answers and are asked of different things.
+	check('and neither can a tar.gz, which Extract does take',
+		mount(build([ZIP], shell).getRowMenuItems('/home/holiday.tar.gz')).disabled, true);
+}
+
+{
+	check('a folder that is not a mount point is not offered Unmount',
+		labels(build([DIR], shell).getRowMenuItems('/home/docs')).includes('Unmount'), false);
+	check('one that is, is',
+		labels(build([DIR], shell, {mountPoints: ['/home/docs']}).getRowMenuItems('/home/docs'))
+			.includes('Unmount'), true);
+}
+
+// --- the recording entry, which is the same entry in three menus -------------------------------
+
+{
+	// Every entry at any depth: the recording entry lives under *Tools* in one menu, under
+	// *Tools for selected* in another, and at the top level in the third.
+	const flat = list => list.reduce((acc, e) => acc.concat([e], e.submenu ? flat(e.submenu) : []), []);
+	const rec = list => flat(list).find(e => /Screen Recording/.test(e.label || ''));
+	check('with nothing recording it offers to start',
+		rec(build([FILE], shell).getRowMenuItems('/home/notes.csv')).label, 'Screen Recording');
+	check('while recording it offers to stop',
+		rec(build([FILE], shell, {recording: true}).getRowMenuItems('/home/notes.csv')).label,
+		'Stop Screen Recording');
+	check('and so does the selection menu',
+		rec(build([FILE, IMAGE], shell, {recording: true}).getMultiMenuItems()).label,
+		'Stop Screen Recording');
+	check('and the empty-area one',
+		rec(build([], shell, {recording: true}).getEmptyAreaMenuItems()).label,
+		'Stop Screen Recording');
+}
+
+// --- standalone, the hard way -------------------------------------------------------------
+//
+// `shell !== win` is the question, not "is there a peers object" — and the only arrangement
+// that tells those two apart is an Explorer running in its own tab whose window happens to
+// carry the API. Without these, `shell !== win` can be deleted from both places and nothing
+// notices.
+
+{
+	const asOwnWindow = {peers: {
+		list: () => [{id: 'pixos-aaaaaaaa', name: 'Laptop'}],
+		share: () => {}, getShare: () => null, open: () => {}, sendFile: () => {}
+	}};
+	const fileMenuAlone = build([FILE], null, {sameWindow: asOwnWindow}).getRowMenuItems('/home/notes.csv');
+	check('with no shell, Send to peer is disabled even when a peers API is in reach',
+		entry(fileMenuAlone).disabled, true);
+	const dirMenuAlone = build([DIR], null, {sameWindow: asOwnWindow}).getRowMenuItems('/home/docs');
+	check('and sharing a folder is not offered at all',
+		labels(dirMenuAlone).some(l => /shar/i.test(l)), false);
+}
 
 process.exit(report('explorer-menus') ? 1 : 0);

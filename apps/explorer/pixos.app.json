@@ -1,7 +1,7 @@
 {
 	"id": "explorer",
 	"name": "Explorer",
-	"version": "1.18.1",
+	"version": "1.26.2",
 	"entryPath": "/apps/explorer/index.html",
 	"files": [
 		{
@@ -14,19 +14,31 @@
 		},
 		{
 			"path": "/apps/explorer/index.html",
-			"hash": "sha256:84f91ec43914b3468dae03281d8196e36335928512931782920a7af447470b9b"
+			"hash": "sha256:926723f9beca0fd456ee096ec3c99710ff6bae1bef39dfe347fb92b12b346ebb"
+		},
+		{
+			"path": "/apps/explorer/js/archive-ui.js",
+			"hash": "sha256:3f3d71ccb855a32e03a5d5b8b57da59b86a02ca49d1dbed362b5e82dffd8f9cd"
 		},
 		{
 			"path": "/apps/explorer/js/context-menu.js",
 			"hash": "sha256:9c66cd4fe4bf64f24a66b49f402f845d0c9255b33aa8205cc91f2d129e4949c2"
 		},
 		{
+			"path": "/apps/explorer/js/dialogs.js",
+			"hash": "sha256:0e30aec31fb4212d91503853cb938f84f2117326487593ef1930ee6f9b15514e"
+		},
+		{
 			"path": "/apps/explorer/js/dnd.js",
-			"hash": "sha256:850b914493dcdc9c54d9241333e0b9881ef71885543fc0609d144c01b9269d51"
+			"hash": "sha256:45b8d3ac19a8d8a9beb67f5795db8ac2d43712770b1ee058826bc3c6b893225e"
 		},
 		{
 			"path": "/apps/explorer/js/failure.js",
 			"hash": "sha256:f0e5643654498f61fcd17095d42aa9f244103886562f29f5149cf603f9974de4"
+		},
+		{
+			"path": "/apps/explorer/js/file-ops.js",
+			"hash": "sha256:0158a3dde718943e2f9a7cb93678b4ae8cc2198a14b186d0fec6b5472ce97b21"
 		},
 		{
 			"path": "/apps/explorer/js/format.js",
@@ -34,15 +46,35 @@
 		},
 		{
 			"path": "/apps/explorer/js/fs-helpers.js",
-			"hash": "sha256:992d7c7f6034b81f21151c5f2630f28c94fe0cbeb5ea688f10b19448eaebc041"
+			"hash": "sha256:55b573b72bf73abe62a618a77b7c986a52e03c9741f653a4b0fa9daf5d6bfdd1"
+		},
+		{
+			"path": "/apps/explorer/js/menu-items.js",
+			"hash": "sha256:ed9ec0067efc0c6bde534c13a0927bfc9873aa956b43ef177c3a4ebcf0a8260e"
+		},
+		{
+			"path": "/apps/explorer/js/mounts.js",
+			"hash": "sha256:8cf776eb9633b74836ceb743ef7feb0cc10702b89ce05188517d54b7f1229b85"
 		},
 		{
 			"path": "/apps/explorer/js/open-with.js",
 			"hash": "sha256:fc969db22e70d2cd5f80a26c68ae4d194f7c580e862055e04f78bbcb99d4429b"
 		},
 		{
+			"path": "/apps/explorer/js/recording.js",
+			"hash": "sha256:7f67880f5f4a9c80701791fc30f49d4151d8c105ec972d1cd4f251d5b8d8e55a"
+		},
+		{
 			"path": "/apps/explorer/js/selection.js",
-			"hash": "sha256:d90c5ae737532cd91cfb27ee0d6614da306dc123ff34e11a57106f19406dce3a"
+			"hash": "sha256:ae078b3747a31acb9ddd4ba891ae13ef0a0449c767357e7d71dfdf2c970353af"
+		},
+		{
+			"path": "/apps/explorer/js/sidebar.js",
+			"hash": "sha256:c068efd48bda080dec125c2d12b831ba459ed7c959ace747717a3290882408fa"
+		},
+		{
+			"path": "/apps/explorer/js/view.js",
+			"hash": "sha256:faf3cdc14c9048c5daf3d2a7c0859eb8a4d7e434957d58db04aad2d28e7f5ef1"
 		}
 	],
 	"icon": "/apps/explorer/favicon.svg"

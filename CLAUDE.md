@@ -39,16 +39,65 @@ run in iframes. Pure static site — no build step, no backend.
   `guarded`, the errno translation and the two last-resort listeners), `open-with.js`
   (which app can open this file, and which one does by default), `context-menu.js` (drawing
   and placing a menu, not what is in one), `selection.js` (what is selected, and the rubber
-  band) and `dnd.js` (dragging rows onto a folder, and the three racing paths that must
+  band), `dnd.js` (dragging rows onto a folder, and the three racing paths that must
   produce exactly one move — its timers are parameters so a test can move that clock by
-  hand). Each is a factory taking its dependencies as parameters — `fs`, `path`,
-  `shell`, `win`, `doc`, `nav`, `rootElem` — and that is the whole reason any of them can be
+  hand) and `recording.js` (screen recording: the audio graph that sums system sound and the
+  microphone into one track, the two-pass stop, and the teardown that must reach every track
+  on every route out — `getDisplayMedia`, `MediaRecorder`, `AudioContext` and the clock are
+  all parameters, which is the only reason a recording can be driven with no browser) and
+  `archive-ui.js` (the two archive dialogs and the operations behind them — when the 1.4 MB
+  engine is fetched, what a wrong password does, and why extraction always makes a folder of
+  its own; `importEngine` is a parameter because a dynamic import of a path literal is the one
+  dependency a test cannot hand in) and `dialogs.js` (the node every modal is built into, the
+  submit latch, where the focus lands, and the two default-app writes — **every dialog opens
+  through its `openDialog`**, which wraps each `on*`-shaped callback, because a submit handler
+  runs long after the action that opened it has returned) and `file-ops.js` (everything that
+  puts a file somewhere: the move and copy loops, the staged replacement, and the one question
+  they all ask when the name is taken — **asked before the write, never after**, because
+  neither `writeFile` nor `fsRename` refuses an occupied name, so there is no error to catch,
+  and for a dropped folder asked **once, about the root**, because that folder arrives one call
+  per file and the question would otherwise be asked a few hundred times)
+  and `menu-items.js` (what is *in* a context menu, as opposed to `context-menu.js`, which
+  draws one: four builders returning an array of entries, with everything the shell owns —
+  peers, bookmarks, the wallpaper — offered only when there is a shell to own it)
+  and `view.js` (everything Explorer draws of itself: the one template `renderLayout` writes and
+  the thirty nodes it then looks up in it by class, the order the rows go in, and the four
+  redraws that follow a change in `state`) and `sidebar.js` (`renderSidebar` alone — the only
+  render that draws something Explorer does not own, and the only one whose output is
+  clickable) and `mounts.js` (the four mount actions and the one setting any of them remembers —
+  `js/mount-manager.js` owns what a mount *is*, this owns what asking for one looks like: which
+  dialog, what a refusal says, and the two steps every success takes **in that order**, draw the
+  sidebar then go there). Nothing in `apps/explorer/js/`
+  decides whether a file *is* an archive — that is `apps/7z/js/parse.js`, which is pure and is
+  imported directly. `dialogs.js` and `archive-ui.js` genuinely need each other — the general
+  machinery draws the archive dialogs and the archive module opens them through it — and
+  `index.html` breaks that cycle at one point, by passing the two archive builders in
+  late-bound; `failure.js` takes `openInfoDialog` the same way, being built first. `view.js` and
+  `selection.js` are the second such pair, and the cycle is inherent rather than accidental —
+  changing what is selected asks for a redraw and the redraw reads what is selected — so
+  selection is built first and takes `renderStatus` and `renderToolbarState` late-bound.
+  `mounts.js` and `sidebar.js` are the third pair, and the same shape: the sidebar draws the
+  mounts and every mount action redraws the sidebar, so `mounts.js` — which `actions` is built
+  from, and `sidebar.js` reads `actions` — takes `renderSidebar` late-bound.
+  **`renderOverlays` stayed in `index.html`** although it is a render: it is the junction where
+  context-menu and dialogs meet, and five modules call it, so moving it would mean five thunks
+  to tidy seventeen lines. The
+  construction order in `openExplorer` is load-bearing for one more reason: `file-ops.js` goes
+  after `dialogs.js` (the conflict question is a dialog) and before `dnd.js`, `archive-ui.js`
+  and `recording.js`, each of which writes a file through it — which is why none of those three
+  needs a thunk.
+  Each is a factory taking its dependencies as parameters — `fs`, `path`,
+  `shell`, `win`, `nav`, `doc`, `rootElem` — and that is the whole reason any of them can be
   tested. **The context object is `state` and `ui`, passed by reference and nothing else**:
   they are the shared mutable pair, and a module writing `state.contextMenu` has to write
   the same object `index.html` reads. Every other dependency stays a named parameter — one
-  bag holding everything would re-create the closure this phase exists to take apart. The
-  three context-menu item builders and `actions` have not moved and are why the remaining
-  modules are harder than these.
+  bag holding everything would re-create the closure this phase exists to take apart. `actions` has not moved and is
+  why the rest of the table is harder than these; `menu-items.js` and `sidebar.js` are built *after* it, at the
+  bottom of the block rather than the top, because a menu entry reads `actions.copySelected` when
+  the menu is built and every mount row carries an unmount button. The window's four boot lines —
+  `renderLayout`, `bindEvents`, `watchForChanges`, the first `refreshCurrentDir` — sit below them
+  for the same reason: **the window starts when every module exists**, and the first refresh draws
+  the sidebar.
   `apps/calendar` (read-only month/year view) and `apps/system-info` (what this browser
   will say about the machine) are the destinations the desktop widgets lead to, and each
   keeps its logic in a pure module beside it — `js/calendar.js`, `js/probe.js` — because

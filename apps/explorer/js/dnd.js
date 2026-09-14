@@ -78,9 +78,6 @@ export function createDragAndDrop (deps) {
 			e.dataTransfer.getData(EXPLORER_DRAG_TYPE)
 			|| e.dataTransfer.getData('text/plain')
 		) : '';
-		e.preventDefault();
-		e.stopPropagation();
-		clearDropTargets();
 		var dragPaths = state.dragPaths && state.dragPaths.length ? state.dragPaths.slice() : [];
 		try {
 			if (dragRaw) {
@@ -90,7 +87,17 @@ export function createDragAndDrop (deps) {
 		catch (err) {
 			console.error(err);
 		}
+		// Nothing of ours is being dragged, so this is a file arriving from outside the
+		// browser. It is not this handler's to deal with, and it must not be claimed here:
+		// `preventDefault` and `stopPropagation` below are what stop the event reaching the
+		// listener on `body` that knows how to write a file, and claiming it before knowing
+		// whether there was anything to move is why dropping a file from the desktop onto a
+		// folder row did nothing at all -- no file, no error, no console line. Reported while
+		// walking the phase 21 checklist.
 		if (!dragPaths.length) return;
+		e.preventDefault();
+		e.stopPropagation();
+		clearDropTargets();
 		state.dragDropHandled = true;
 		await moveItemsToFolder(dragPaths, folderNode.dataset.path, {source: 'direct-drop'});
 		state.dragPaths = [];

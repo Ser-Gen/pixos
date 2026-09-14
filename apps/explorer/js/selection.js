@@ -9,9 +9,12 @@
 // here is scoped to it rather than to the document, because two Explorer windows are two
 // iframes and a selector that escaped one of them would find the other's rows.
 //
-// `renderStatus` and `renderToolbarState` still live in index.html and move with js/view.js.
-// They are passed in rather than imported, so that when they do move, this file does not
-// have to know about it.
+// `renderStatus` and `renderToolbarState` now live in js/view.js, and they are still passed in
+// rather than imported -- which is what made that move cost this file nothing. They are also
+// the one real cycle here: changing what is selected asks for a redraw, and the redraw reads
+// what is selected (`renderRows` and `renderToolbarState` both call back into `getSelectedItems`
+// and `syncSelectAllUI`). One of the two modules has to be built first; this is the one, and
+// index.html hands these two in late-bound.
 
 export function createSelection (deps) {
 	var state = deps.state;

@@ -67,14 +67,42 @@ export function createFsHelpers (deps) {
 			current = path.join(current, segments[i]);
 			var st = await stat(current);
 			if (!st) {
-				await mkdir(current);
+				// EEXIST is the one errno this loop is allowed to ignore, and only because
+				// it has just checked: two writes into the same new folder race, and the
+				// loser finding the folder already made is the good outcome. Everything
+				// else is a real failure and belongs to the caller -- ensureDir runs in
+				// front of every write there is, so a swallowed one here is a write that
+				// looks like it worked.
+				try {
+					await mkdir(current);
+				}
+				catch (err) {
+					if (errnoOf(err) !== 'EEXIST') throw err;
+				}
 			}
 		}
 	}
 
+	// BrowserFS does not always set `.code` -- some of its errors carry the errno only in
+	// the message ("EEXIST: File exists., '/home/x'"). Same rule as the shell's
+	// describeError, which is where this keeps being rediscovered.
+	function errnoOf (err) {
+		if (!err) return '';
+		return err.code || (/^([A-Z]{4,10}):/.exec(String(err.message || '')) || [])[1] || '';
+	}
+
+	// Rejects, and that is the entire point of the shape. This used to ignore the callback's
+	// error and resolve regardless, so a folder that could not be created -- a name with a
+	// `/` in it naming a folder that is not there, no room left, a path that is a file --
+	// closed its dialog, created nothing, and said nothing whatsoever. There was no error to
+	// catch anywhere above it: it had already been thrown away here.
 	function mkdir (p) {
-		return new Promise(function (resolve) {
-			fs.mkdir(p, function () {
+		return new Promise(function (resolve, reject) {
+			fs.mkdir(p, function (err) {
+				if (err) {
+					reject(err);
+					return;
+				}
 				resolve();
 			});
 		});
@@ -208,9 +236,15 @@ export function createFsHelpers (deps) {
 	}
 
 	function getFileFromFileEntry (entry) {
-		return new Promise(function (resolve) {
+		return new Promise(function (resolve, reject) {
+			// The second callback is not optional, for the same reason FileReader gets its
+			// two handlers above: a file removed from the disk since it was dropped leaves
+			// this promise pending for ever otherwise, and the drop waiting on it never
+			// finishes and never reports.
 			entry.file(function (file) {
 				resolve(file);
+			}, function (err) {
+				reject(err || new Error('That file could not be read.'));
 			});
 		});
 	}

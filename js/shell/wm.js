@@ -15,6 +15,40 @@
 // and shows another; moving a window between desktops moves its *placeholder* and leaves
 // the iframe exactly where it is. Nothing reloads, and nothing unsaved is lost.
 
+// **A window title is a filename, and a filename is not ours to trust.** GoldenLayout draws
+// a tab's title with jQuery's `.html()`, which parses it as markup -- so a file called
+// `<img src=x onerror=alert(1)>` ran its script the moment it was opened, in the shell's own
+// window, where the filesystem and every app's iframe live. It reached that call from three
+// directions (a file opened from Explorer, an app's own `setTitle`, a session restored from
+// disk), and escaping at each of them would have been three places to forget.
+//
+// So it is fixed at the one place it is drawn, and fixed *here* rather than in
+// `js/goldenlayout/goldenlayout.min.js`: that is vendor code, and a patch inside it is a patch
+// that disappears the next time the bundle is replaced. `.text()` is the same call with the
+// parsing taken out. The tooltip gets the title whole, which is better than the original --
+// that ran it through `stripTags`, which deleted whatever part of a filename looked like a tag.
+//
+// Exported and taking the constructor as an argument because the alternative is a test that
+// needs a browser to find out whether a file manager has a stored XSS in it.
+export function makeTabTitlesSafe (GoldenLayoutCtor) {
+	var lm = GoldenLayoutCtor && GoldenLayoutCtor.__lm;
+	var Tab = lm && lm.controls && lm.controls.Tab;
+	if (!Tab || !Tab.prototype || !Tab.prototype.setTitle || Tab.prototype.setTitle.pixosSafe) {
+		return false;
+	}
+	function setTitle (title) {
+		this.element.attr('title', title);
+		this.titleElement.text(title);
+	}
+	setTitle.pixosSafe = true;
+	Tab.prototype.setTitle = setTitle;
+	return true;
+}
+
+// At import, before any layout exists: a tab drawn once with the old method has already run
+// whatever was in its title.
+makeTabTitlesSafe(typeof window === 'undefined' ? null : window.GoldenLayout);
+
 function emptyLayoutConfig () {
 	return {
 		content: [{

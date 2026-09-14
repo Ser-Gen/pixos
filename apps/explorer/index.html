@@ -59,7 +59,6 @@
 <script type="module">
 // Only the rules -- which files are archives, what 7-Zip's output means. The engine
 // itself is 1.4 MB of WebAssembly and is loaded on the first extraction, not here.
-import * as archiveNames from "../7z/js/parse.js";
 
 // Phase 21 begins here. These two hold what `openExplorer` used to declare inline: the
 // pure string and path functions, and every promise wrapper around BrowserFS. They are
@@ -78,6 +77,14 @@ import { createContextMenu } from "./js/context-menu.js";
 import { createSelection } from "./js/selection.js";
 import { createFailure } from "./js/failure.js";
 import { createOpenWith } from "./js/open-with.js";
+import { createRecording } from "./js/recording.js";
+import { createArchiveUi } from "./js/archive-ui.js";
+import { createDialogs } from "./js/dialogs.js";
+import { createFileOps } from "./js/file-ops.js";
+import { createMenuItems } from "./js/menu-items.js";
+import { createView } from "./js/view.js";
+import { createSidebar } from "./js/sidebar.js";
+import { createMounts } from "./js/mounts.js";
 
 window.BrowserFS = parent.BrowserFS;
 
@@ -160,7 +167,10 @@ async function openExplorer () {
 		win: window,
 		doc: document,
 		nav: navigator,
-		openInfoDialog: openInfoDialog
+		// Late-bound, and it has to be: this is the first statement in the function and
+		// `openInfoDialog` is assigned by createDialogs twenty lines down. Nothing calls it
+		// before then, because nothing has failed yet.
+		openInfoDialog: function (title, message) { return openInfoDialog(title, message); }
 	});
 
 	var rootElem = document.querySelector('#explorer');
@@ -219,10 +229,104 @@ async function openExplorer () {
 		rootElem: rootElem,
 		doc: document,
 		closeContextMenu: closeContextMenu,
-		renderStatus: renderStatus,
-		renderToolbarState: renderToolbarState
+		// Late-bound, and the second genuine cycle in this file. Changing what is selected
+		// asks for a redraw and the redraw reads what is selected, so one of the two has to
+		// be built first -- js/view.js is, because it takes four things from here and gives
+		// back two, and two thunks are better than four.
+		renderStatus: function () { return renderStatus(); },
+		renderToolbarState: function () { return renderToolbarState(); }
 	});
 
+	// Everything Explorer draws of itself. It goes after selection for the reason just above,
+	// and before everything else because `renderLayout` has to have run before a single line
+	// below reads a node off `ui` -- which is the call three blocks down, not this one.
+	// `renderOverlays` stayed behind in this file; js/view.js says why.
+	var {
+		renderLayout, sortItems, renderToolbarState, renderBreadcrumbs, renderRows, renderStatus
+	} = createView({
+		state: state,
+		ui: ui,
+		rootElem: rootElem,
+		doc: document,
+		escapeAttr: escapeAttr,
+		escapeHtml: escapeHtml,
+		formatSize: formatSize,
+		getExt: getExt,
+		getItemTitle: getItemTitle,
+		hasInternalClipboard: hasInternalClipboard,
+		getSelectedItems: getSelectedItems,
+		syncSelectAllUI: syncSelectAllUI
+	});
+
+	// The dialog machinery. It goes before the archive module because that one opens its
+	// dialogs through `openDialog`, and after everything that draws, because a dialog is drawn
+	// into the overlay layer. The two archive builders are the one place the dependency runs
+	// the other way -- `buildDialogNode` dispatches on `dialog.type` and has to be able to draw
+	// them -- so they go in late-bound, which is where this genuine cycle is broken.
+	// `wireSimpleDialog`, `isCallbackName` and the two default-app writes are exported for the
+	// tests but not named here: every caller of them is now inside the module.
+	var {
+		buildDialogNode, focusDialogInput, openDialog, closeDialog, openInfoDialog,
+		buildDefaultAppsManagerDialog
+	} = createDialogs({
+		state: state,
+		doc: document,
+		win: window,
+		shell: parent,
+		guarded: guarded,
+		readableActionName: readableActionName,
+		renderOverlays: renderOverlays,
+		escapeHtml: escapeHtml,
+		escapeAttr: escapeAttr,
+		basenameEnd: basenameEnd,
+		getDefaultAppRows: getDefaultAppRows,
+		getInstalledAppsForPicker: getInstalledAppsForPicker,
+		isAppCompatibleWithExtension: isAppCompatibleWithExtension,
+		normalizeExtensionInput: normalizeExtensionInput,
+		buildArchiveDialog: function (dialog) { return buildArchiveDialog(dialog); },
+		buildCompressDialog: function (dialog) { return buildCompressDialog(dialog); }
+	});
+
+	// Everything that puts a file somewhere. It goes after the dialog machinery because the
+	// conflict question is a dialog, and before the three modules that write files through it:
+	// dnd hands it a drop, archive-ui hands it an extracted file, recording hands it a finished
+	// video. That ordering is why none of those three needs a thunk -- the one cycle in this
+	// file is still the archive builders above, and it is still the only one.
+	// Eight names, not fifteen: the module also exports `copyEntryRecursive`,
+	// `writeIncomingFile`, `resolvePasteDestination`, `buildIndexedCopyPath`,
+	// `unlinkQuietly`, `askPasteConflict` and `refuseOversizedFile`, and every caller of
+	// those is now inside it. The tests reach for them by name.
+	var {
+		moveItemsToFolder, copyItemsToFolder, resolveIncomingDestination,
+		resolveIncomingRoots, rerootIncomingPath,
+		writeNewFile, addIncomingFile, onFileHandler
+	} = createFileOps({
+		state: state,
+		path: window.path,
+		Buffer: Buffer,
+		shell: parent,
+		win: window,
+		normalizePath: normalizePath,
+		splitNameAndExtension: splitNameAndExtension,
+		stat: stat,
+		readFile: readFile,
+		writeFile: writeFile,
+		readdir: readdir,
+		ensureDir: ensureDir,
+		fsRename: fsRename,
+		unlink: unlink,
+		unlinkFile: unlinkFile,
+		fileToAB: fileToAB,
+		report: report,
+		reportFailure: reportFailure,
+		openDialog: openDialog,
+		renderOverlays: renderOverlays,
+		refreshCurrentDir: refreshCurrentDir
+	});
+
+	// Below file-ops, because a drop is a move: `moveItemsToFolder` used to be a hoisted
+	// declaration in this file and could be named from anywhere in it, and is now a binding
+	// that has to exist before it is read.
 	var {
 		handleItemDragStart, handleItemDragOver, handleItemDragLeave, handleItemDrop,
 		handleItemDragEnd, commitPendingDragMove, clearDropTargets,
@@ -235,10 +339,86 @@ async function openExplorer () {
 		moveItemsToFolder: moveItemsToFolder
 	});
 
-	renderLayout();
-	bindEvents();
-	watchForChanges();
-	await refreshCurrentDir(false);
+	// Archives. No `ui`: the dialogs are drawn into the overlay layer, so this asks for a
+	// redraw rather than holding a node. `archiveNames` comes back out because the row menu
+	// needs to know whether a file is an archive before any of this is otherwise reached.
+	var {
+		buildArchiveDialog, buildCompressDialog, openArchiveDialog, openCompressDialog,
+		loadArchiveEngine, reportArchiveFailure, writeExtracted, archiveNames
+	} = createArchiveUi({
+		state: state,
+		doc: document,
+		win: window,
+		path: window.path,
+		report: report,
+		reportFailure: reportFailure,
+		formatSize: formatSize,
+		readFile: readFile,
+		writeFile: writeFile,
+		ensureDir: ensureDir,
+		listDirectory: listDirectory,
+		writeNewFile: writeNewFile,
+		openDialog: openDialog,
+		renderOverlays: renderOverlays,
+		refreshCurrentDir: refreshCurrentDir,
+		navigateTo: navigateTo,
+		Buffer: Buffer
+	});
+
+	// Every platform object this one needs is a parameter -- getDisplayMedia, MediaRecorder,
+	// AudioContext, the clock and the timers -- because a recording is otherwise only
+	// reachable by granting a real browser a real screen. The module also exports
+	// `doStartScreenRecording` and `updateRecordingTimer`; neither is
+	// named here because nothing outside it calls them any more -- the dialog's onSubmit and
+	// the timer interval are both set up inside. The tests reach for them.
+	var {
+		startScreenRecording, stopScreenRecording, toggleMicMute, toggleSysMute
+	} = createRecording({
+		state: state,
+		ui: ui,
+		win: window,
+		nav: navigator,
+		reportFailure: reportFailure,
+		guarded: guarded,
+		readableActionName: readableActionName,
+		renderOverlays: renderOverlays,
+		openDialog: openDialog,
+		openInfoDialog: openInfoDialog,
+		onFileHandler: onFileHandler,
+		blobToFile: blobToFile
+	});
+
+	// The four mount actions, lifted out of `actions` whole. They go here because `actions` is
+	// built from what this returns, and the sidebar -- which draws the mounts and is redrawn by
+	// every one of them -- is built from `actions`. That circle is closed with the one thunk
+	// below: `renderSidebar` is a `var` two hundred lines further down, and by the time anybody
+	// has a mount to unmount it holds a function.
+	var {
+		mountArchive, mountNativeDir, mountFiles3, umount
+	} = createMounts({
+		state: state,
+		fs: window.fs,
+		path: window.path,
+		shell: parent,
+		win: window,
+		mountManager: window.mountManager,
+		normalizePath: normalizePath,
+		readFile: readFile,
+		getItemByPath: getItemByPath,
+		getNormalizedExtension: getNormalizedExtension,
+		openDialog: openDialog,
+		openInfoDialog: openInfoDialog,
+		report: report,
+		reportFailure: reportFailure,
+		renderOverlays: renderOverlays,
+		renderSidebar: function () { return renderSidebar(); },
+		navigateTo: navigateTo,
+		refreshCurrentDir: refreshCurrentDir,
+		// Parameters for the same reason js/dnd.js takes its own: the ten-second watch on a
+		// native folder that will not answer is otherwise a ten-second test.
+		setTimer: function (fn, ms) { return setTimeout(fn, ms); },
+		clearTimer: function (handle) { return clearTimeout(handle); }
+	});
 
 	// Two Explorer windows on one folder each read their listing once. Everything below is
 	// the answer to that: the shell wraps the one fs everyone writes through and hands out
@@ -275,107 +455,6 @@ async function openExplorer () {
 			return;
 		}
 		refreshCurrentDir(true);
-	}
-
-	function renderLayout () {
-		rootElem.innerHTML = `
-		<div class="Explorer">
-			<div class="Explorer__toolbar">
-				<div class="Explorer__toolbarGroup">
-					<button class="Explorer__back" title="Back">←</button>
-					<button class="Explorer__forward" title="Forward">→</button>
-					<button class="Explorer__up" title="Up">↑ Up</button>
-				</div>
-				<div class="Explorer__toolbarGroup">
-					<button class="Explorer__new">New</button>
-					<button class="Explorer__upload">Upload</button>
-					<button class="Explorer__copy">Copy</button>
-					<button class="Explorer__cut">Cut</button>
-					<button class="Explorer__paste">Paste</button>
-					<button class="Explorer__defaults">Default Apps</button>
-					<label class="Explorer__toolbarLabel" title="Select all items in current folder">
-						<input class="Explorer__selectAllToolbar Explorer__check" type="checkbox">
-						<span>All</span>
-					</label>
-				</div>
-				<div class="Explorer__toolbarGroup Explorer__toolbarGroup--grow">
-					<select class="Explorer__viewMode">
-						<option value="details">Details</option>
-						<option value="grid">Grid</option>
-					</select>
-					<select class="Explorer__sortKey">
-						<option value="name">Sort: Name</option>
-						<option value="type">Sort: Type</option>
-						<option value="mtime">Sort: Date</option>
-						<option value="size">Sort: Size</option>
-					</select>
-					<button class="Explorer__refresh">Refresh</button>
-					<span class="Explorer__recordingIndicator" hidden>
-						<span class="Explorer__recordingDot"></span>
-						<span class="Explorer__recordingTime">00:00:00</span>
-						<button class="Explorer__recordingBtn Explorer__recordingMicBtn" title="Mute microphone"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V20H9v2h6v-2h-2v-2.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
-						<button class="Explorer__recordingBtn Explorer__recordingSysBtn" title="Mute system audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
-						<button class="Explorer__recordingBtn Explorer__recordingStop" title="Stop recording"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg></button>
-					</span>
-				</div>
-				<input class="Explorer__fileInput" type="file" multiple hidden>
-			</div>
-			<div class="Explorer__breadcrumbs"></div>
-			<div class="Explorer__body">
-				<aside class="Explorer__sidebar"></aside>
-				<main class="Explorer__main">
-					<table class="Explorer__table">
-						<thead>
-							<tr>
-								<th class="Explorer__selectCol"><input class="Explorer__selectAll Explorer__check" type="checkbox" aria-label="Select all"></th>
-								<th data-sort-key="name">Name</th>
-								<th data-sort-key="type">Type</th>
-								<th data-sort-key="mtime">Modified</th>
-								<th data-sort-key="size">Size</th>
-							</tr>
-						</thead>
-						<tbody class="Explorer__rows"></tbody>
-					</table>
-					<div class="Explorer__grid" hidden></div>
-					<div class="Explorer__empty" hidden>No items in this folder</div>
-					<div class="Explorer__selectionBox"></div>
-				</main>
-			</div>
-			<div class="Explorer__status"></div>
-		</div>
-		<div class="Explorer__overlays"></div>
-		`;
-
-		ui.back = rootElem.querySelector('.Explorer__back');
-		ui.forward = rootElem.querySelector('.Explorer__forward');
-		ui.up = rootElem.querySelector('.Explorer__up');
-		ui.newBtn = rootElem.querySelector('.Explorer__new');
-		ui.upload = rootElem.querySelector('.Explorer__upload');
-		ui.copy = rootElem.querySelector('.Explorer__copy');
-		ui.cut = rootElem.querySelector('.Explorer__cut');
-		ui.paste = rootElem.querySelector('.Explorer__paste');
-		ui.defaults = rootElem.querySelector('.Explorer__defaults');
-		ui.selectAll = rootElem.querySelector('.Explorer__selectAll');
-		ui.selectAllToolbar = rootElem.querySelector('.Explorer__selectAllToolbar');
-		ui.fileInput = rootElem.querySelector('.Explorer__fileInput');
-		ui.viewMode = rootElem.querySelector('.Explorer__viewMode');
-		ui.sortKey = rootElem.querySelector('.Explorer__sortKey');
-		ui.refresh = rootElem.querySelector('.Explorer__refresh');
-		ui.recordingIndicator = rootElem.querySelector('.Explorer__recordingIndicator');
-		ui.recordingTime = rootElem.querySelector('.Explorer__recordingTime');
-		ui.recordingMicBtn = rootElem.querySelector('.Explorer__recordingMicBtn');
-		ui.recordingSysBtn = rootElem.querySelector('.Explorer__recordingSysBtn');
-		ui.recordingStop = rootElem.querySelector('.Explorer__recordingStop');
-		ui.breadcrumbs = rootElem.querySelector('.Explorer__breadcrumbs');
-		ui.sidebar = rootElem.querySelector('.Explorer__sidebar');
-		ui.main = rootElem.querySelector('.Explorer__main');
-		ui.rows = rootElem.querySelector('.Explorer__rows');
-		ui.grid = rootElem.querySelector('.Explorer__grid');
-		ui.table = rootElem.querySelector('.Explorer__table');
-		ui.empty = rootElem.querySelector('.Explorer__empty');
-		ui.selectionBox = rootElem.querySelector('.Explorer__selectionBox');
-		ui.status = rootElem.querySelector('.Explorer__status');
-		ui.overlays = rootElem.querySelector('.Explorer__overlays');
 	}
 
 	function bindEvents () {
@@ -819,217 +898,6 @@ async function openExplorer () {
 		return '/';
 	}
 
-	function sortItems () {
-		var dirMul = state.sort.dir === 'asc' ? 1 : -1;
-		state.items.sort(function (a, b) {
-			if (a.isDirectory !== b.isDirectory) {
-				return a.isDirectory ? -1 : 1;
-			}
-
-			if (state.sort.key === 'type') {
-				var at = a.isDirectory ? 'dir' : getExt(a.name);
-				var bt = b.isDirectory ? 'dir' : getExt(b.name);
-				var tcmp = at.localeCompare(bt);
-				if (tcmp) return tcmp * dirMul;
-			}
-			if (state.sort.key === 'mtime') {
-				var mcmp = (a.mtimeTs - b.mtimeTs);
-				if (mcmp) return mcmp * dirMul;
-			}
-			if (state.sort.key === 'size') {
-				var scmp = (a.size - b.size);
-				if (scmp) return scmp * dirMul;
-			}
-
-			return a.name.localeCompare(b.name) * dirMul;
-		});
-	}
-
-	function renderToolbarState () {
-		ui.back.disabled = !state.historyBack.length;
-		ui.forward.disabled = !state.historyForward.length;
-		ui.up.disabled = state.cwd === '/';
-		ui.copy.disabled = !state.selectedPaths.size;
-		ui.cut.disabled = !state.selectedPaths.size;
-		ui.paste.disabled = !hasInternalClipboard();
-		ui.sortKey.value = state.sort.key;
-		ui.viewMode.value = state.viewMode;
-		syncSelectAllUI();
-	}
-
-	function renderBreadcrumbs () {
-		var segments = state.cwd.split('/').filter(Boolean);
-		var crumbs = [{label: 'rootfs', path: '/'}];
-		segments.forEach(function (segment, index) {
-			crumbs.push({
-				label: segment,
-				path: '/' + segments.slice(0, index + 1).join('/')
-			});
-		});
-
-		ui.breadcrumbs.innerHTML = '';
-		crumbs.forEach(function (crumb, index) {
-			var span = document.createElement('span');
-			span.className = 'Explorer__crumb' + (index === crumbs.length - 1 ? ' Explorer__crumb--current' : '');
-			span.dataset.path = crumb.path;
-			span.textContent = crumb.label;
-			ui.breadcrumbs.append(span);
-			if (index < crumbs.length - 1) {
-				var sep = document.createElement('span');
-				sep.className = 'Explorer__muted';
-				sep.textContent = '/';
-				ui.breadcrumbs.append(sep);
-			}
-		});
-	}
-
-	function renderSidebar () {
-		var quickItems = [
-			{label: 'Root', path: '/'},
-			{label: 'Apps', path: '/apps'},
-			{label: 'Current', path: state.cwd},
-			{label: 'Parent', path: getParentPath(state.cwd)}
-		];
-
-		ui.sidebar.innerHTML = '<div class="Explorer__sidebarTitle">Quick access</div>';
-		quickItems.forEach(function (item) {
-			if (!item.path) return;
-			var node = document.createElement('div');
-			node.className = 'Explorer__sidebarItem' + (item.path === state.cwd ? ' Explorer__sidebarItem--active' : '');
-			node.dataset.path = item.path;
-			node.textContent = item.path === '/' ? '📁 ' + item.label : '📂 ' + item.label + ' (' + item.path + ')';
-			ui.sidebar.append(node);
-		});
-
-		// Mounts section
-		if (mountManager) {
-			var mounts = mountManager.listMounts();
-			if (mounts.length > 0) {
-				var mountTitle = document.createElement('div');
-				mountTitle.className = 'Explorer__sidebarTitle';
-				mountTitle.textContent = 'Mounts';
-				ui.sidebar.append(mountTitle);
-
-				mounts.forEach(function (m) {
-					var typeIcon = m.type === 'native' ? '💻' : (m.type === 'iso' ? '💿' : (m.type === 'files3' ? '☁️' : '📦'));
-					var roLabel = m.readOnly ? ' [ro]' : '';
-					var row = document.createElement('div');
-					row.className = 'Explorer__sidebarItem' + (m.mountPoint === state.cwd ? ' Explorer__sidebarItem--active' : '');
-					row.style.display = 'flex';
-					row.style.justifyContent = 'space-between';
-					row.style.alignItems = 'center';
-
-					var label = document.createElement('span');
-					label.dataset.path = m.mountPoint;
-					label.style.cursor = 'pointer';
-					label.textContent = typeIcon + ' ' + m.name + ' (' + m.mountPoint + ')' + roLabel;
-					label.style.flex = '1';
-					label.style.overflow = 'hidden';
-					label.style.textOverflow = 'ellipsis';
-					label.onclick = function () { navigateTo(m.mountPoint); };
-
-					var umountBtn = document.createElement('button');
-					umountBtn.textContent = '⏏';
-					umountBtn.title = 'Unmount';
-					umountBtn.style.cssText = 'background:none;border:none;color:inherit;cursor:pointer;padding:2px 4px;font-size:14px;flex-shrink:0;';
-					umountBtn.onclick = function (e) {
-						e.stopPropagation();
-						actions.umount(m.mountPoint);
-					};
-
-					row.append(label);
-					row.append(umountBtn);
-					ui.sidebar.append(row);
-				});
-			}
-
-			// Mount local folder button
-			if (typeof window.showDirectoryPicker === 'function') {
-				var mountLocalBtn = document.createElement('div');
-				mountLocalBtn.className = 'Explorer__sidebarItem';
-				mountLocalBtn.style.cursor = 'pointer';
-				mountLocalBtn.textContent = '📂 Mount local folder...';
-				mountLocalBtn.onclick = function () { actions.mountNativeDir(); };
-				ui.sidebar.append(mountLocalBtn);
-			}
-
-			var mountFiles3Btn = document.createElement('div');
-			mountFiles3Btn.className = 'Explorer__sidebarItem';
-			mountFiles3Btn.style.cursor = 'pointer';
-			mountFiles3Btn.textContent = '☁️ Mount Files3 storage...';
-			mountFiles3Btn.onclick = function () { actions.mountFiles3(); };
-			ui.sidebar.append(mountFiles3Btn);
-		}
-	}
-
-	function renderRows () {
-		ui.rows.innerHTML = '';
-		ui.grid.innerHTML = '';
-		ui.empty.hidden = !!state.items.length;
-
-		ui.table.hidden = state.viewMode === 'grid';
-		ui.grid.hidden = state.viewMode !== 'grid';
-
-		state.items.forEach(function (item) {
-			var tr = document.createElement('tr');
-			tr.className = 'Explorer__row' + (state.selectedPaths.has(item.path) ? ' Explorer__row--selected' : '');
-			tr.dataset.path = item.path;
-			tr.dataset.type = item.isDirectory ? 'dir' : 'file';
-			tr.draggable = true;
-			tr.title = getItemTitle(item);
-
-			var selectTd = document.createElement('td');
-			selectTd.className = 'Explorer__selectCol';
-			selectTd.innerHTML = '<input class="Explorer__itemCheckbox Explorer__check" type="checkbox" data-path="' + escapeAttr(item.path) + '"' + (state.selectedPaths.has(item.path) ? ' checked' : '') + ' aria-label="Select ' + escapeAttr(item.name) + '">';
-			tr.append(selectTd);
-
-			var nameTd = document.createElement('td');
-			nameTd.innerHTML = `<div class="Explorer__nameCell"><span>${item.isDirectory ? '📁' : '📄'}</span><span class="Explorer__nameText">${escapeHtml(item.name)}</span></div>`;
-			tr.append(nameTd);
-
-			var typeTd = document.createElement('td');
-			typeTd.textContent = item.isDirectory ? 'Folder' : (getExt(item.name) || 'File');
-			tr.append(typeTd);
-
-			var dateTd = document.createElement('td');
-			dateTd.textContent = item.mtime;
-			tr.append(dateTd);
-
-			var sizeTd = document.createElement('td');
-			sizeTd.textContent = item.isDirectory ? '' : formatSize(item.size);
-			tr.append(sizeTd);
-
-			ui.rows.append(tr);
-
-			var card = document.createElement('div');
-			card.className = 'Explorer__card' + (state.selectedPaths.has(item.path) ? ' Explorer__card--selected' : '');
-			card.dataset.path = item.path;
-			card.dataset.type = item.isDirectory ? 'dir' : 'file';
-			card.draggable = true;
-			card.title = getItemTitle(item);
-			card.innerHTML = `
-				<input class="Explorer__itemCheckbox Explorer__check Explorer__cardCheck" type="checkbox" data-path="${escapeAttr(item.path)}"${state.selectedPaths.has(item.path) ? ' checked' : ''} aria-label="Select ${escapeAttr(item.name)}">
-				<div class="Explorer__cardIcon">${item.isDirectory ? '📁' : '📄'}</div>
-				<div class="Explorer__cardName">${escapeHtml(item.name)}</div>
-			`;
-			ui.grid.append(card);
-		});
-
-		renderStatus();
-		syncSelectAllUI();
-	}
-
-	function renderStatus () {
-		var selectedItems = getSelectedItems();
-		var totalSize = selectedItems.reduce(function (acc, item) {
-			return acc + (item.isDirectory ? 0 : item.size);
-		}, 0);
-
-		ui.status.textContent = state.items.length + ' items' +
-			' | selected: ' + selectedItems.length +
-			' | selected size: ' + formatSize(totalSize);
-	}
-
 	function renderOverlays () {
 		ui.overlays.innerHTML = '';
 		if (state.contextMenu) {
@@ -1047,1594 +915,14 @@ async function openExplorer () {
 		}
 	}
 
-	// The archive dialog has four states and they are one dialog on purpose: reading it,
-	// asking for a password, showing what is inside, and working. Each of the first three
-	// is a question you can answer without leaving, and a password that turns out to be
-	// wrong comes back here rather than as a note over a dialog that has closed.
-	function buildArchiveDialog (dialog) {
-		var box = document.createElement('div');
-		var busy = dialog.phase === 'reading' || dialog.phase === 'working';
-
-		var title = document.createElement('div');
-		title.className = 'Modal__title';
-		title.textContent = dialog.phase === 'working'
-			? 'Extracting ' + dialog.name
-			: 'Extract ' + dialog.name;
-		box.append(title);
-
-		if (busy) {
-			var waiting = document.createElement('div');
-			waiting.className = 'Modal__list';
-			// Said plainly because this build of 7-Zip runs on this thread: the window is
-			// not going to redraw again until it is done, and a big archive can take a
-			// while. Better to say so than to look frozen.
-			waiting.textContent = dialog.phase === 'reading'
-				? 'Reading the archive…'
-				: 'Extracting. A large archive holds everything up while it works.';
-			box.append(waiting);
-			box.append(archiveButtons([{label: 'Cancel', className: 'Dialog__cancel', disabled: true}]));
-			return box;
-		}
-
-		if (dialog.phase === 'password') {
-			var ask = document.createElement('div');
-			ask.className = 'Modal__list';
-			ask.textContent = dialog.error || 'This archive needs a password.';
-			box.append(ask);
-
-			var field = document.createElement('div');
-			field.className = 'Modal__field';
-			var label = document.createElement('label');
-			label.textContent = 'Password';
-			var input = document.createElement('input');
-			input.type = 'password';
-			input.className = 'Dialog__input';
-			input.style.width = '100%';
-			input.value = dialog.password || '';
-			input.oninput = function () {
-				dialog.onPassword(input.value);
-			};
-			input.onkeydown = function (e) {
-				if (e.key === 'Enter') {
-					e.preventDefault();
-					e.stopPropagation();
-					dialog.onUnlock(input.value);
-				}
-			};
-			field.append(label, input);
-			box.append(field);
-
-			var note = document.createElement('div');
-			note.className = 'Modal__list';
-			note.style.fontSize = '12px';
-			note.style.color = '#888';
-			// The distinction the whole classifier exists for, in one line.
-			note.textContent = 'Nothing has been written. If the password is right and it '
-				+ 'still fails, the archive itself is damaged rather than locked.';
-			box.append(note);
-
-			box.append(archiveButtons([
-				{label: 'Cancel', className: 'Dialog__cancel'},
-				{label: 'Unlock', primary: true, run: function () { dialog.onUnlock(input.value); }}
-			]));
-			// The field is the only thing here worth typing into.
-			setTimeout(function () { input.focus(); }, 0);
-			return box;
-		}
-
-		var files = dialog.entries.filter(function (entry) {
-			return !entry.isDirectory;
-		});
-		var total = files.reduce(function (sum, entry) {
-			return sum + (entry.size || 0);
-		}, 0);
-
-		var summary = document.createElement('div');
-		summary.className = 'Modal__list';
-		summary.textContent = files.length + (files.length === 1 ? ' file' : ' files')
-			+ ', ' + formatSize(total) + ' unpacked'
-			+ (dialog.unwrapped ? ' — a tar inside a wrapper, and both come off at once.' : '.');
-		box.append(summary);
-
-		var list = document.createElement('div');
-		list.className = 'Modal__list';
-		list.style.maxHeight = '260px';
-		list.style.overflow = 'auto';
-		list.style.border = '1px solid #444';
-		list.style.padding = '6px 8px';
-
-		if (!files.length) {
-			list.textContent = 'This archive is empty.';
-		}
-		files.forEach(function (entry) {
-			var row = document.createElement('label');
-			row.style.display = 'flex';
-			row.style.gap = '8px';
-			row.style.alignItems = 'baseline';
-			row.style.padding = '2px 0';
-
-			var box2 = document.createElement('input');
-			box2.type = 'checkbox';
-			box2.checked = dialog.selected.has(entry.path);
-			box2.onchange = function () {
-				dialog.onToggle(entry.path, box2.checked);
-				updateExtractButton();
-			};
-
-			var name = document.createElement('span');
-			name.textContent = entry.path;
-			name.style.flex = '1 1 auto';
-			name.style.overflowWrap = 'anywhere';
-
-			var size = document.createElement('span');
-			size.style.color = '#888';
-			size.style.fontSize = '12px';
-			size.style.whiteSpace = 'nowrap';
-			size.textContent = formatSize(entry.size || 0) + (entry.encrypted ? ' · locked' : '');
-
-			row.append(box2, name, size);
-			list.append(row);
-		});
-		box.append(list);
-
-		var where = document.createElement('div');
-		where.className = 'Modal__list';
-		where.style.fontSize = '12px';
-		where.textContent = 'Into ' + dialog.destination + '/ — a new folder here. Nothing '
-			+ 'already in this folder is written over.';
-		box.append(where);
-
-		// Contents can be encrypted while the listing is not, so the field is offered
-		// before the attempt rather than after it fails.
-		var passwordInput = null;
-		if (dialog.entries.some(function (entry) { return entry.encrypted; }) || dialog.password) {
-			var pfield = document.createElement('div');
-			pfield.className = 'Modal__field';
-			var plabel = document.createElement('label');
-			plabel.textContent = 'Password';
-			passwordInput = document.createElement('input');
-			passwordInput.type = 'password';
-			passwordInput.style.width = '100%';
-			passwordInput.value = dialog.password || '';
-			passwordInput.oninput = function () {
-				dialog.onPassword(passwordInput.value);
-			};
-			pfield.append(plabel, passwordInput);
-			box.append(pfield);
-		}
-
-		var buttons = archiveButtons([
-			{label: 'Cancel', className: 'Dialog__cancel'},
-			{label: 'Extract', primary: true, className: 'Dialog__extract', run: function () {
-				if (passwordInput) {
-					dialog.onPassword(passwordInput.value);
-				}
-				var chosen = files.filter(function (entry) {
-					return dialog.selected.has(entry.path);
-				}).map(function (entry) {
-					return entry.path;
-				});
-				// All of them is not a selection: handing 7-Zip no list lets it keep the
-				// empty folders too, and there is nothing to spell wrong.
-				dialog.onExtract(chosen.length === files.length ? null : chosen);
-			}}
-		]);
-		box.append(buttons);
-
-		function updateExtractButton () {
-			var button = buttons.querySelector('.Dialog__extract');
-			var chosen = dialog.selected.size;
-			button.disabled = chosen === 0;
-			button.textContent = (chosen === files.length || !files.length)
-				? 'Extract'
-				: 'Extract ' + chosen;
-		}
-		updateExtractButton();
-
-		return box;
-	}
-
-	// Format and preset, and a password when the format can hold one. Everything else
-	// 7-Zip can be told -- dictionary size, solid blocks, threads, volumes -- is left out
-	// deliberately: it is a dialog that has to teach you what a dictionary is, in front of
-	// somebody who wanted to email a folder.
-	function buildCompressDialog (dialog) {
-		var box = document.createElement('div');
-		var format = archiveNames.formatFor(dialog.format);
-
-		var title = document.createElement('div');
-		title.className = 'Modal__title';
-		title.textContent = dialog.items.length === 1
-			? 'Compress ' + dialog.items[0].name
-			: 'Compress ' + dialog.items.length + ' items';
-		box.append(title);
-
-		if (dialog.phase === 'working') {
-			var waiting = document.createElement('div');
-			waiting.className = 'Modal__list';
-			// The engine runs on this thread, and compressing is where that is felt:
-			// there is far more work in `Best` on a folder than in extracting one.
-			waiting.textContent = (dialog.progress || 'Working…')
-				+ ' The window waits for this.';
-			box.append(waiting);
-			box.append(archiveButtons([{label: 'Cancel', className: 'Dialog__cancel', disabled: true}]));
-			return box;
-		}
-
-		var nameField = document.createElement('div');
-		nameField.className = 'Modal__field';
-		var nameLabel = document.createElement('label');
-		nameLabel.textContent = 'Archive name';
-		var nameInput = document.createElement('input');
-		nameInput.className = 'Dialog__input';
-		nameInput.style.width = '100%';
-		nameInput.value = dialog.name;
-		nameInput.oninput = function () {
-			dialog.onName(nameInput.value);
-		};
-		nameField.append(nameLabel, nameInput);
-		box.append(nameField);
-
-		box.append(choiceRow('Format', archiveNames.FORMATS, dialog.format, function (id) {
-			dialog.onFormat(id);
-		}));
-		box.append(hint(format.note));
-
-		box.append(choiceRow('Compression', archiveNames.PRESETS, dialog.preset, function (id) {
-			dialog.onPreset(id);
-		}));
-		box.append(hint(archiveNames.presetFor(dialog.preset).note));
-
-		var passwordField = document.createElement('div');
-		passwordField.className = 'Modal__field';
-		var passwordLabel = document.createElement('label');
-		passwordLabel.textContent = 'Password';
-		var passwordInput = document.createElement('input');
-		passwordInput.type = 'password';
-		passwordInput.style.width = '100%';
-		passwordInput.value = dialog.password || '';
-		// Not hidden when the format cannot hold one: a field that vanishes looks like a
-		// bug, and a disabled one with a reason beside it is the answer to "why can I not
-		// put a password on this".
-		passwordInput.disabled = !format.password;
-		passwordInput.placeholder = format.password ? '' : 'tar.gz cannot hold one';
-		passwordInput.oninput = function () {
-			dialog.onPassword(passwordInput.value);
-		};
-		passwordField.append(passwordLabel, passwordInput);
-		box.append(passwordField);
-
-		if (format.encryptNames) {
-			var namesRow = document.createElement('label');
-			namesRow.className = 'Modal__list';
-			namesRow.style.display = 'flex';
-			namesRow.style.gap = '8px';
-			namesRow.style.alignItems = 'baseline';
-			var namesBox = document.createElement('input');
-			namesBox.type = 'checkbox';
-			namesBox.checked = dialog.encryptNames === true;
-			namesBox.onchange = function () {
-				dialog.onEncryptNames(namesBox.checked);
-			};
-			var namesText = document.createElement('span');
-			// Worth spelling out: in a zip the list of what is inside is readable by
-			// anyone holding the file, password or not.
-			namesText.textContent = 'Hide the file names too — without this, anyone with '
-				+ 'the archive can see what is in it.';
-			namesRow.append(namesBox, namesText);
-			box.append(namesRow);
-		}
-
-		box.append(archiveButtons([
-			{label: 'Cancel', className: 'Dialog__cancel'},
-			{label: 'Compress', primary: true, run: function () {
-				dialog.onName(nameInput.value);
-				if (format.password) {
-					dialog.onPassword(passwordInput.value);
-				}
-				dialog.onCompress();
-			}}
-		]));
-		return box;
-	}
-
-	function choiceRow (label, options, current, onPick) {
-		var row = document.createElement('div');
-		row.className = 'Modal__field';
-		var caption = document.createElement('label');
-		caption.textContent = label;
-		row.append(caption);
-
-		var buttons = document.createElement('div');
-		buttons.style.display = 'flex';
-		buttons.style.gap = '6px';
-		buttons.style.flexWrap = 'wrap';
-		options.forEach(function (option) {
-			var button = document.createElement('button');
-			button.type = 'button';
-			button.textContent = option.label;
-			button.setAttribute('aria-pressed', String(option.id === current));
-			if (option.id === current) {
-				button.classList.add('Dialog__submit');
-			}
-			button.onclick = function () {
-				onPick(option.id);
-			};
-			buttons.append(button);
-		});
-		row.append(buttons);
-		return row;
-	}
-
-	function hint (text) {
-		var node = document.createElement('div');
-		node.className = 'Modal__list';
-		node.style.fontSize = '12px';
-		node.style.color = '#888';
-		node.style.marginTop = '-4px';
-		node.textContent = text;
-		return node;
-	}
-
-	function archiveButtons (specs) {
-		var row = document.createElement('div');
-		row.className = 'Modal__buttons';
-		specs.forEach(function (spec) {
-			var button = document.createElement('button');
-			button.textContent = spec.label;
-			if (spec.className) {
-				button.className = spec.className;
-			}
-			if (spec.primary) {
-				button.classList.add('Dialog__submit');
-			}
-			button.disabled = !!spec.disabled;
-			button.onclick = spec.run || function () {
-				state.dialog = null;
-				renderOverlays();
-			};
-			row.append(button);
-		});
-		return row;
-	}
-
-	function buildDialogNode (dialog) {
-		var modal = document.createElement('div');
-		modal.className = 'Modal';
-
-		var panel = document.createElement('div');
-		panel.className = 'Modal__panel';
-		modal.append(panel);
-
-		if (dialog.type === 'rename') {
-			panel.innerHTML = `
-				<div class="Modal__title">Rename</div>
-				<div class="Modal__field"><label>New name</label><input class="Dialog__input" data-select-basename value="${escapeAttr(dialog.oldName)}"></div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Rename</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				var input = panel.querySelector('.Dialog__input');
-				var value = input.value.trim();
-				if (!value) {
-					// Declined, not submitted: keep the dialog and the focus rather than
-					// closing on a name that cannot be used.
-					input.focus();
-					return false;
-				}
-				dialog.onSubmit(value);
-			});
-		}
-		else if (dialog.type === 'newFile') {
-			panel.innerHTML = `
-				<div class="Modal__title">Create file</div>
-				<div class="Modal__field"><label>File name</label><input class="Dialog__name" data-select-basename value="new.txt"></div>
-				<div class="Modal__field"><label>Content</label><textarea class="Dialog__content">a,b,c,d</textarea></div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Create</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				var nameInput = panel.querySelector('.Dialog__name');
-				if (!nameInput.value.trim()) {
-					nameInput.focus();
-					return false;
-				}
-				dialog.onSubmit({
-					name: nameInput.value.trim(),
-					content: panel.querySelector('.Dialog__content').value
-				});
-			});
-		}
-		else if (dialog.type === 'newFolder') {
-			panel.innerHTML = `
-				<div class="Modal__title">Create folder</div>
-				<div class="Modal__field"><label>Folder name</label><input class="Dialog__input" value="new-folder"></div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Create</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				var folderInput = panel.querySelector('.Dialog__input');
-				if (!folderInput.value.trim()) {
-					folderInput.focus();
-					return false;
-				}
-				dialog.onSubmit(folderInput.value.trim());
-			});
-		}
-		else if (dialog.type === 'onlineFile') {
-			panel.innerHTML = `
-				<div class="Modal__title">Add online file</div>
-				<div class="Modal__field"><label>URL</label><input class="Dialog__url" placeholder="https://..."></div>
-				<div class="Modal__field"><label>Optional file name override</label><input class="Dialog__name" placeholder="leave empty"></div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Add</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				var urlInput = panel.querySelector('.Dialog__url');
-				if (!urlInput.value.trim()) {
-					urlInput.focus();
-					return false;
-				}
-				dialog.onSubmit({
-					url: urlInput.value.trim(),
-					name: panel.querySelector('.Dialog__name').value.trim()
-				});
-			});
-		}
-		else if (dialog.type === 'confirmDelete') {
-			var names = dialog.items.map(function (item) {
-				return '<div>' + escapeHtml(item.name) + '</div>';
-			}).join('');
-
-			panel.innerHTML = `
-				<div class="Modal__title">Delete ${dialog.items.length} item(s)?</div>
-				<div class="Modal__list">${names}</div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit Explorer__danger">Delete</button></div>
-			`;
-			wireSimpleDialog(panel, dialog.onSubmit);
-		}
-		else if (dialog.type === 'defaultAppsManager') {
-			var associationRows = dialog.rows.length ? dialog.rows.map(function (row) {
-				var options = row.apps.map(function (app) {
-					return '<option value="' + escapeAttr(app.id) + '"' + (app.id === row.appId ? ' selected' : '') + '>' + escapeHtml(app.label) + '</option>';
-				}).join('');
-				return `
-					<div class="Modal__field" data-ext-row="${escapeAttr(row.extension)}">
-						<label>.${escapeHtml(row.extension)}</label>
-						<select class="Dialog__defaultRowApp">${options}</select>
-						<button class="Dialog__rowSave" data-extension="${escapeAttr(row.extension)}">Save</button>
-						<button class="Dialog__rowClear" data-extension="${escapeAttr(row.extension)}">Clear</button>
-					</div>
-				`;
-			}).join('') : '<div class="Modal__list">No default apps configured</div>';
-
-			var addOptions = dialog.addableApps.map(function (app) {
-				return '<option value="' + escapeAttr(app.id) + '">' + escapeHtml(app.label) + '</option>';
-			}).join('');
-
-			panel.innerHTML = `
-				<div class="Modal__title">Default Apps</div>
-				${associationRows}
-				<div class="Modal__field">
-					<label>Add association</label>
-					<input class="Dialog__defaultExt" placeholder="png" value="${escapeAttr(dialog.prefillExtension || '')}">
-					<select class="Dialog__defaultApp"${dialog.addableApps.length ? '' : ' disabled'}>
-						${addOptions || '<option value="">No installed apps</option>'}
-					</select>
-					<button class="Dialog__defaultAdd"${dialog.addableApps.length ? '' : ' disabled'}>Add</button>
-				</div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Close</button></div>
-			`;
-
-			panel.querySelectorAll('.Dialog__rowSave').forEach(function (node) {
-				node.onclick = function () {
-					var row = node.closest('[data-ext-row]');
-					dialog.onSave(row.dataset.extRow, row.querySelector('.Dialog__defaultRowApp').value);
-				};
-			});
-			panel.querySelectorAll('.Dialog__rowClear').forEach(function (node) {
-				node.onclick = function () {
-					dialog.onClear(node.dataset.extension);
-				};
-			});
-			var addBtn = panel.querySelector('.Dialog__defaultAdd');
-			if (addBtn) {
-				addBtn.onclick = function () {
-					dialog.onAdd(
-						panel.querySelector('.Dialog__defaultExt').value.trim(),
-						panel.querySelector('.Dialog__defaultApp').value
-					);
-				};
-			}
-			var cancelBtn = panel.querySelector('.Dialog__cancel');
-			if (cancelBtn) {
-				cancelBtn.onclick = function () {
-					state.dialog = null;
-					renderOverlays();
-				};
-			}
-		}
-		else if (dialog.type === 'archive') {
-			panel.append(buildArchiveDialog(dialog));
-		}
-		else if (dialog.type === 'compress') {
-			panel.append(buildCompressDialog(dialog));
-		}
-		else if (dialog.type === 'ffmpegOptions') {
-			panel.innerHTML = `
-				<div class="Modal__title">FFmpeg options</div>
-				<div class="Modal__field">
-					<label>Arguments between input and output file</label>
-					<input class="Dialog__args" value="${escapeAttr(dialog.defaultArgs)}">
-				</div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Run</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				dialog.onSubmit(panel.querySelector('.Dialog__args').value.trim());
-			});
-		}
-		else if (dialog.type === 'files3Mount') {
-			panel.innerHTML = `
-				<div class="Modal__title">Mount Files3 Storage</div>
-				<div class="Modal__list">If no token is saved, an authorization window will open on the storage server.</div>
-				<div class="Modal__field">
-					<label>Base URL API</label>
-					<input class="Dialog__files3BaseUrl" type="url" value="${escapeAttr(dialog.baseUrl || '')}" placeholder="https://storage.example.com/api" style="width:100%">
-				</div>
-				<div class="Modal__field">
-					<label>Root Folder ID</label>
-					<input class="Dialog__files3RootFolderId" type="number" min="1" value="${escapeAttr(String(dialog.rootFolderId || ''))}" placeholder="42" style="width:100%">
-				</div>
-				<div class="Modal__field">
-					<label>localStorage ID (token key)</label>
-					<input class="Dialog__files3LocalStorageId" type="text" value="${escapeAttr(dialog.localStorageId || '')}" placeholder="files3_token_demo" style="width:100%">
-				</div>
-				<div class="Modal__field">
-					<label>Mount point</label>
-					<input class="Dialog__files3MountPoint" type="text" value="${escapeAttr(dialog.mountPoint || '')}" placeholder="/mnt/files3" style="width:100%">
-				</div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Connect</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				dialog.onSubmit({
-					baseUrl: panel.querySelector('.Dialog__files3BaseUrl').value.trim(),
-					rootFolderId: panel.querySelector('.Dialog__files3RootFolderId').value.trim(),
-					localStorageId: panel.querySelector('.Dialog__files3LocalStorageId').value.trim(),
-					mountPoint: panel.querySelector('.Dialog__files3MountPoint').value.trim()
-				});
-			});
-		}
-		else if (dialog.type === 'prompt') {
-			panel.innerHTML = `
-				<div class="Modal__title">${escapeHtml(dialog.title)}</div>
-				<div class="Modal__list">${escapeHtml(dialog.message)}</div>
-				<div class="Modal__field"><input class="Dialog__input" value="${escapeAttr(dialog.defaultValue || '')}"></div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">OK</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				dialog.onSubmit(panel.querySelector('.Dialog__input').value.trim());
-			});
-		}
-		else if (dialog.type === 'info') {
-			panel.innerHTML = `
-				<div class="Modal__title">${escapeHtml(dialog.title)}</div>
-				<div class="Modal__list">${escapeHtml(dialog.message).replace(/\n/g, '<br>')}</div>
-				<div class="Modal__buttons"><button class="Dialog__submit">OK</button></div>
-			`;
-			panel.querySelector('.Dialog__submit').onclick = function () {
-				state.dialog = null;
-				renderOverlays();
-			};
-		}
-		else if (dialog.type === 'copyText') {
-			panel.innerHTML = `
-				<div class="Modal__title">${escapeHtml(dialog.title)}</div>
-				<div class="Modal__list">Your browser did not let PixOS write to the clipboard. Press ${escapeHtml(copyChordLabel())} to copy it yourself.</div>
-				<div class="Modal__field"><textarea class="Dialog__copyText" readonly rows="${Math.min(8, dialog.text.split('\n').length)}" style="width:100%">${escapeHtml(dialog.text)}</textarea></div>
-				<div class="Modal__buttons"><button class="Dialog__submit">Close</button></div>
-			`;
-			var copyArea = panel.querySelector('.Dialog__copyText');
-			copyArea.focus();
-			copyArea.select();
-			panel.querySelector('.Dialog__submit').onclick = function () {
-				state.dialog = null;
-				renderOverlays();
-			};
-		}
-		else if (dialog.type === 'screenRecordingOptions') {
-			var recFormats = [
-				{mime: 'video/mp4;codecs=avc1,mp4a.40.2', label: 'MP4 (H.264 + AAC)'},
-				{mime: 'video/webm;codecs=vp9,opus',      label: 'WebM VP9 + Opus'},
-				{mime: 'video/webm;codecs=vp8,opus',      label: 'WebM VP8 + Opus'},
-				{mime: 'video/webm',                      label: 'WebM'}
-			].filter(function (f) { return MediaRecorder.isTypeSupported(f.mime); });
-			if (!recFormats.length) recFormats = [{mime: 'video/webm', label: 'WebM'}];
-			var recFormatOptions = recFormats.map(function (f) {
-				return '<option value="' + escapeAttr(f.mime) + '">' + escapeHtml(f.label) + '</option>';
-			}).join('');
-			panel.innerHTML = `
-				<div class="Modal__title">Screen Recording</div>
-				<div class="Modal__field"><label>Format</label><select class="Dialog__recFormat">${recFormatOptions}</select></div>
-				<div class="Modal__field"><label>Resolution</label><select class="Dialog__recResolution">
-					<option value="">Native (full screen)</option>
-					<option value="1080">1080p (1920×1080)</option>
-					<option value="720">720p (1280×720)</option>
-					<option value="480">480p (854×480)</option>
-				</select></div>
-				<div class="Modal__field"><label>Quality</label><select class="Dialog__recQuality">
-					<option value="">Auto (browser default)</option>
-					<option value="8000000">High (8 Mbps)</option>
-					<option value="2500000">Medium (2.5 Mbps)</option>
-					<option value="1000000">Low (1 Mbps)</option>
-				</select></div>
-				<div class="Modal__field"><label><input type="checkbox" class="Dialog__recVideo" checked> Record screen video</label></div>
-				<div class="Modal__field"><label><input type="checkbox" class="Dialog__recSysAudio" checked> Record system audio</label></div>
-				<div class="Modal__field"><label><input type="checkbox" class="Dialog__recMicAudio" checked> Record microphone</label></div>
-				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">Start Recording</button></div>
-			`;
-			wireSimpleDialog(panel, function () {
-				var mimeType = panel.querySelector('.Dialog__recFormat').value;
-				var resolution = panel.querySelector('.Dialog__recResolution').value;
-				var videoBitrate = panel.querySelector('.Dialog__recQuality').value;
-				var recordVideo = panel.querySelector('.Dialog__recVideo').checked;
-				var recordSysAudio = panel.querySelector('.Dialog__recSysAudio').checked;
-				var recordMic = panel.querySelector('.Dialog__recMicAudio').checked;
-				dialog.onSubmit({mimeType: mimeType, resolution: resolution, videoBitrate: videoBitrate, recordVideo: recordVideo, recordSysAudio: recordSysAudio, recordMic: recordMic});
-			});
-		}
-		else if (dialog.type === 'pasteConflict') {
-			panel.innerHTML = `
-				<div class="Modal__title">File already exists</div>
-				<div class="Modal__list">
-					<div>${escapeHtml(dialog.message)}</div>
-				</div>
-				<div class="Modal__buttons">
-					<button class="Dialog__cancel">Cancel</button>
-					<button class="Dialog__rename">Save as new name</button>
-					<button class="Dialog__submit"${dialog.canReplace ? '' : ' disabled'}>Replace</button>
-				</div>
-			`;
-			panel.querySelector('.Dialog__cancel').onclick = function () {
-				dialog.onSubmit('cancel');
-			};
-			panel.querySelector('.Dialog__rename').onclick = function () {
-				dialog.onSubmit('rename');
-			};
-			panel.querySelector('.Dialog__submit').onclick = function () {
-				if (!dialog.canReplace) return;
-				dialog.onSubmit('replace');
-			};
-		}
-
-		return modal;
-	}
-
-	function wireSimpleDialog (panel, onSubmit) {
-		var submitted = false;
-		function submitOnce () {
-			if (submitted) return;
-			submitted = true;
-			// `false` means the handler declined -- an empty filename, say -- and left the
-			// dialog open. The latch has to release, or every later click and Enter is
-			// swallowed and the dialog is dead with no way out but Cancel.
-			if (onSubmit() === false) {
-				submitted = false;
-			}
-		}
-		var cancel = panel.querySelector('.Dialog__cancel');
-		if (cancel) {
-			cancel.onclick = function () {
-				state.dialog = null;
-				renderOverlays();
-			};
-		}
-		var submit = panel.querySelector('.Dialog__submit');
-		if (submit) {
-			submit.onclick = submitOnce;
-		}
-		panel.onkeydown = function (e) {
-			if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
-				e.preventDefault();
-				// preventDefault stops the default action, not the bubble. Without this the
-				// event still reached the document handler above, which opened the path the
-				// dialog had just renamed away from.
-				e.stopPropagation();
-				submitOnce();
-			}
-		};
-	}
-
-	// The first field of a dialog, focused with its value selected -- except on a filename
-	// field, where the extension is left out of the selection: typing straight over
-	// "report" should keep ".final.pdf", which is what makes the autofocus useful rather
-	// than something to undo first.
-	//
-	// A dialog with no field at all focuses its default button instead, so Enter confirms
-	// it rather than falling through to the window behind.
-	function focusDialogInput (root) {
-		// Never a checkbox: it cannot be typed into, and focusing the first one in a list
-		// of them buries the field -- or the button -- that the dialog is actually asking
-		// you to use. The archive dialog is a list of checkboxes and made this visible.
-		var input = root.querySelector('input:not([type="checkbox"]), textarea, select');
-		if (!input) {
-			var submit = root.querySelector('.Dialog__submit');
-			if (submit) {
-				submit.focus();
-			}
-			return;
-		}
-		input.focus();
-		if (input.tagName !== 'INPUT') {
-			return;
-		}
-		try {
-			if (input.dataset.selectBasename !== undefined) {
-				input.setSelectionRange(0, basenameEnd(input.value));
-			}
-			else {
-				input.select();
-			}
-		}
-		catch (err) {
-			// Some input types refuse setSelectionRange. Focused is still better than not.
-		}
-	}
-
-	// Everything a dialog does happens after the action that opened it has already
-	// returned, so the wrapper around `actions` is long gone by the time a submit handler
-	// runs. A rejection in there escaped into nothing: a rename onto a file another window
-	// had just deleted reported itself as "Uncaught (in promise)" in a console nobody has
-	// open, and as absolutely nothing on screen. The callbacks are wrapped here for the
-	// same reason the actions are -- so that a dialog added later gets it too.
-	// Every on*-shaped function on the dialog, rather than a list of the ones that exist
-	// today: a list is a thing to forget to add to, and forgetting is the failure this is
-	// here to prevent.
-	function isCallbackName (name) {
-		return /^on[A-Z]/.test(name);
-	}
-
-	function openDialog (dialog) {
-		if (dialog) {
-			Object.keys(dialog).forEach(function (name) {
-				if (isCallbackName(name) && typeof dialog[name] === 'function') {
-					dialog[name] = guarded(dialog[name], readableActionName(dialog.type || 'dialog'));
-				}
-			});
-		}
-		state.dialog = dialog;
-		renderOverlays();
-	}
-
-	function closeDialog (result) {
-		if (!state.dialog) return;
-		var dialog = state.dialog;
-		state.dialog = null;
-		renderOverlays();
-		if (dialog.type === 'pasteConflict' && dialog.onSubmit) {
-			dialog.onSubmit(result || 'cancel');
-		}
-	}
-
-	function openInfoDialog (title, message) {
-		openDialog({type: 'info', title: title, message: message});
-	}
-
-	async function buildDefaultAppsManagerDialog (prefillExtension) {
-		return {
-			type: 'defaultAppsManager',
-			rows: await getDefaultAppRows(),
-			addableApps: getInstalledAppsForPicker(),
-			prefillExtension: prefillExtension || '',
-			onSave: async function (extension, appId) {
-				if (await saveDefaultAppAssociation(extension, appId)) {
-					openDialog(await buildDefaultAppsManagerDialog(extension));
-				}
-			},
-			onClear: async function (extension) {
-				if (await clearDefaultAppAssociation(extension)) {
-					openDialog(await buildDefaultAppsManagerDialog(''));
-				}
-			},
-			onAdd: async function (extension, appId) {
-				if (await saveDefaultAppAssociation(extension, appId)) {
-					openDialog(await buildDefaultAppsManagerDialog(extension));
-				}
-			}
-		};
-	}
-
-	async function saveDefaultAppAssociation (extension, appId) {
-		var normalizedExt = normalizeExtensionInput(extension);
-		if (!normalizedExt) {
-			openInfoDialog('Default apps', 'Extension is required');
-			return false;
-		}
-		if (!appId) {
-			openInfoDialog('Default apps', 'Application is required');
-			return false;
-		}
-		if (!await isAppCompatibleWithExtension(appId, normalizedExt)) {
-			openInfoDialog('Default apps', 'Selected app does not support .' + normalizedExt);
-			return false;
-		}
-		if (typeof parent.setDefaultAppForExtension !== 'function') {
-			openInfoDialog('Default apps', 'Default app storage is unavailable');
-			return false;
-		}
-		await parent.setDefaultAppForExtension(normalizedExt, appId);
-		return true;
-	}
-
-	async function clearDefaultAppAssociation (extension) {
-		var normalizedExt = normalizeExtensionInput(extension);
-		if (!normalizedExt || typeof parent.clearDefaultAppForExtension !== 'function') {
-			return false;
-		}
-		await parent.clearDefaultAppForExtension(normalizedExt);
-		return true;
-	}
-
-	// --- archives -------------------------------------------------------------------
-	//
-	// The engine is 1.4 MB of WebAssembly and most sessions never open an archive, so it
-	// arrives on the first press of *Extract* rather than with Explorer. The rules it
-	// needs (../7z/js/parse.js) are imported at the top, because deciding whether a file
-	// is an archive at all must not cost a download.
-
-	var archiveEngine = null;
-
-	function loadArchiveEngine () {
-		if (!archiveEngine) {
-			archiveEngine = import('../7z/js/archive.js');
-			// A failed load is not the answer for the rest of the session: the next press
-			// tries again rather than replaying it.
-			archiveEngine.catch(function () {
-				archiveEngine = null;
-			});
-		}
-		return archiveEngine;
-	}
-
-	// The engine describes its own failures -- a wrong password and a truncated file are
-	// the same exit code, and only the text tells them apart -- so its sentence is used
-	// where there is one, and only an unexpected exception falls back to the generic
-	// reporter.
-	function reportArchiveFailure (label, err) {
-		if (err && err.failure) {
-			report(err.failure.title, err.failure.message, 'warn');
-			return;
-		}
-		reportFailure(label, err);
-	}
-
-	async function openArchiveDialog (item) {
-		var dialog = {
-			type: 'archive',
-			name: item.name,
-			path: item.path,
-			phase: 'reading',
-			entries: [],
-			selected: null,
-			password: '',
-			error: '',
-			destination: '',
-			unwrapped: false,
-			bytes: null,
-			onUnlock: function (password) {
-				readArchive(dialog, password);
-			},
-			onExtract: function (paths) {
-				runExtract(dialog, paths);
-			},
-			onToggle: function (entryPath, on) {
-				if (on) {
-					dialog.selected.add(entryPath);
-				}
-				else {
-					dialog.selected.delete(entryPath);
-				}
-			},
-			onPassword: function (value) {
-				dialog.password = value;
-			}
-		};
-		openDialog(dialog);
-		await readArchive(dialog, '');
-	}
-
-	// Listing first, always. Reading an archive to see inside it writes nothing anywhere,
-	// which is what makes it safe to do before asking anything.
-	async function readArchive (dialog, password) {
-		dialog.phase = 'reading';
-		dialog.error = '';
-		dialog.password = password || '';
-		refreshArchiveDialog(dialog);
-
-		var engine = null;
-		var listing;
-		try {
-			engine = await loadArchiveEngine();
-			if (!dialog.bytes) {
-				dialog.bytes = await readFile(dialog.path);
-			}
-			listing = await engine.inspect(dialog.bytes, {
-				name: dialog.name,
-				password: dialog.password
-			});
-		}
-		catch (err) {
-			closeArchiveDialog(dialog);
-			reportArchiveFailure('Could not read ' + dialog.name, err);
-			return;
-		}
-
-		// Closed while the engine was working. Its answer is no longer wanted, and
-		// reopening the dialog over whatever is on screen now would be worse than useless.
-		if (state.dialog !== dialog) {
-			return;
-		}
-
-		if (listing.needsPassword) {
-			dialog.phase = 'password';
-			dialog.error = listing.failure ? listing.failure.title : '';
-			refreshArchiveDialog(dialog);
-			return;
-		}
-		if (listing.failure) {
-			closeArchiveDialog(dialog);
-			report(listing.failure.title, listing.failure.message, 'warn');
-			return;
-		}
-
-		dialog.entries = listing.entries;
-		dialog.unwrapped = !!listing.unwrapped;
-		dialog.selected = new Set(listing.entries.filter(function (entry) {
-			return !entry.isDirectory;
-		}).map(function (entry) {
-			return entry.path;
-		}));
-		dialog.destination = engine.destinationFor(dialog.name, function (name) {
-			return state.items.some(function (entry) {
-				return entry.name === name;
-			});
-		});
-		dialog.phase = 'ready';
-		refreshArchiveDialog(dialog);
-	}
-
-	async function runExtract (dialog, paths) {
-		dialog.phase = 'working';
-		dialog.error = '';
-		refreshArchiveDialog(dialog);
-
-		var result;
-		try {
-			var engine = await loadArchiveEngine();
-			result = await engine.extract(dialog.bytes, {
-				name: dialog.name,
-				password: dialog.password,
-				// Everything selected is not a selection: without a list 7-Zip keeps the
-				// empty folders too, and there is nothing to get wrong.
-				paths: paths
-			});
-		}
-		catch (err) {
-			var kind = err && err.failure ? err.failure.kind : '';
-			// A password is a question, not a failure: the dialog stays open and asks
-			// again, with what went wrong above the field.
-			if (kind === 'password' || kind === 'password-needed') {
-				dialog.phase = 'password';
-				dialog.error = err.failure.title;
-				refreshArchiveDialog(dialog);
-				return;
-			}
-			closeArchiveDialog(dialog);
-			reportArchiveFailure('Could not extract ' + dialog.name, err);
-			return;
-		}
-
-		closeArchiveDialog(dialog);
-		await writeExtracted(dialog.name, result, dialog.destination);
-		await refreshCurrentDir(false);
-	}
-
-	// Nothing here needs the engine: the names, formats and presets are all in the rules
-	// module Explorer already has. The 1.4 MB arrives when Compress is pressed, and not
-	// for somebody who opened the dialog to look at it.
-	function openCompressDialog (items) {
-		var folderName = state.cwd.split('/').filter(Boolean).pop() || 'archive';
-		var dialog = {
-			type: 'compress',
-			items: items,
-			folderName: folderName,
-			format: '7z',
-			preset: 'normal',
-			password: '',
-			encryptNames: false,
-			phase: 'ready',
-			progress: '',
-			name: ''
-		};
-		dialog.name = freeArchiveName(items, dialog.format, folderName);
-
-		dialog.onFormat = function (formatId) {
-			// The name follows the format rather than being left saying .zip on a 7z.
-			var stem = archiveNames.stripExtension(dialog.name, dialog.format);
-			dialog.format = formatId;
-			dialog.name = freeArchiveName(items, formatId, folderName, stem);
-			refreshArchiveDialog(dialog);
-		};
-		dialog.onPreset = function (presetId) {
-			dialog.preset = presetId;
-			refreshArchiveDialog(dialog);
-		};
-		dialog.onName = function (value) {
-			dialog.name = value;
-		};
-		dialog.onPassword = function (value) {
-			dialog.password = value;
-		};
-		dialog.onEncryptNames = function (on) {
-			dialog.encryptNames = on;
-		};
-		dialog.onCompress = function () {
-			runCompress(dialog);
-		};
-
-		openDialog(dialog);
-	}
-
-	function freeArchiveName (items, formatId, folderName, stem) {
-		var suggested = stem
-			? stem + '.' + archiveNames.formatFor(formatId).extension
-			: archiveNames.archiveNameFor(items, formatId, folderName);
-		var base = archiveNames.stripExtension(suggested, formatId);
-		return archiveNames.uniqueName(base, archiveNames.formatFor(formatId).extension, function (name) {
-			return state.items.some(function (entry) {
-				return entry.name === name;
-			});
-		});
-	}
-
-	async function runCompress (dialog) {
-		dialog.phase = 'working';
-		dialog.progress = 'Reading the files…';
-		refreshArchiveDialog(dialog);
-
-		var made;
-		try {
-			var engine = await loadArchiveEngine();
-			var source = await collectForArchive(dialog.items);
-			dialog.progress = 'Compressing ' + source.files.length
-				+ (source.files.length === 1 ? ' file…' : ' files…');
-			refreshArchiveDialog(dialog);
-			made = await engine.compress({
-				name: dialog.name,
-				format: dialog.format,
-				preset: dialog.preset,
-				password: dialog.password,
-				encryptNames: dialog.encryptNames,
-				files: source.files,
-				dirs: source.dirs
-			});
-		}
-		catch (err) {
-			closeArchiveDialog(dialog);
-			reportArchiveFailure('Could not make ' + dialog.name, err);
-			return;
-		}
-
-		closeArchiveDialog(dialog);
-		try {
-			// Through the same funnel every other route that produces a file uses, so a
-			// name that has appeared since the dialog opened is asked about rather than
-			// written over. The suggested name is already a free one; this is the race.
-			var written = await writeNewFile(state.cwd, made.name, Buffer.from(made.data), 'compress');
-			if (!written) {
-				return;
-			}
-		}
-		catch (err) {
-			reportFailure('Writing ' + made.name, err);
-			return;
-		}
-		await refreshCurrentDir(false);
-		report('Made ' + made.name, formatSize(made.data.length) + ' from '
-			+ dialog.items.length + (dialog.items.length === 1 ? ' item' : ' items') + '.',
-			'info');
-	}
-
-	// Every file under everything that was selected, with paths relative to this folder --
-	// so the archive holds `notes/a.txt` and not the whole path from the root of PixOS.
-	// Empty folders are collected separately, because they are part of the shape and
-	// nothing else would record them.
-	async function collectForArchive (items) {
-		var files = [];
-		var dirs = [];
-
-		async function walk (item, relative) {
-			if (!item.isDirectory) {
-				files.push({path: relative, data: await readFile(item.path)});
-				return;
-			}
-			dirs.push(relative);
-			var children = await listDirectory(item.path);
-			for (var i = 0; i < children.length; i++) {
-				await walk(children[i], relative + '/' + children[i].name);
-			}
-		}
-
-		for (var i = 0; i < items.length; i++) {
-			await walk(items[i], items[i].name);
-		}
-		return {files: files, dirs: dirs};
-	}
-
-	// The first render of a dialog goes through openDialog, which wraps its callbacks so a
-	// throw inside one is reported rather than lost. Every render after that must not:
-	// openDialog wraps again each time it is called, and a dialog with four states would
-	// end up several layers deep in its own error handling.
-	function refreshArchiveDialog (dialog) {
-		if (state.dialog === dialog) {
-			renderOverlays();
-			return;
-		}
-		openDialog(dialog);
-	}
-
-	function closeArchiveDialog (dialog) {
-		if (state.dialog === dialog) {
-			state.dialog = null;
-			renderOverlays();
-		}
-	}
-
-	// Straight into a folder beside the archive -- the whole point of the phase. The name
-	// is never one that is already taken: extracting the same archive twice is ordinary,
-	// and merging into a folder somebody has since put their own files in cannot be undone.
-	async function writeExtracted (archiveName, result, destination) {
-		var engine = await loadArchiveEngine();
-		var folder = destination || engine.destinationFor(archiveName, function (name) {
-			return state.items.some(function (entry) {
-				return entry.name === name;
-			});
-		});
-		var destPath = path.join(state.cwd, folder);
-
-		try {
-			await ensureDir(destPath);
-			for (var i = 0; i < result.files.length; i++) {
-				await writeFile(path.join(destPath, result.files[i].path),
-					Buffer.from(result.files[i].data));
-			}
-			// An empty folder is part of the archive's shape, and writeFile only makes the
-			// ones with something in them.
-			for (var d = 0; d < (result.dirs || []).length; d++) {
-				await ensureDir(path.join(destPath, result.dirs[d]));
-			}
-		}
-		catch (err) {
-			reportFailure('Writing the contents of ' + archiveName, err);
-			return;
-		}
-
-		var partial = result.failure && result.failure.kind === 'partial';
-		report(partial ? 'Extracted part of ' + archiveName : 'Extracted ' + archiveName,
-			result.files.length + (result.files.length === 1 ? ' file' : ' files')
-				+ ' into ' + folder + '/'
-				+ (result.unwrapped ? ' — both layers of it, so there is no .tar left over.' : '')
-				+ (partial ? ' ' + result.failure.message : ''),
-			partial ? 'warn' : 'info',
-			[{label: 'Open ' + folder, run: function () { navigateTo(destPath); }}]);
-	}
-
-	// The shell owns the connection; this only asks who is on it. A submenu rather than a
-	// dialog because the answer is a short list of names, and disabled with the reason
-	// when it is empty -- an entry that opens an empty picker is the dead end this whole
-	// pattern keeps having to undo.
-	function sendToPeerMenu (filePath) {
-		var connected = (parent !== window && parent.peers && parent.peers.list)
-			? parent.peers.list()
-			: null;
-		if (!connected) {
-			return {label: 'Send to peer', disabled: true};
-		}
-		if (!connected.length) {
-			return {
-				label: 'Send to peer — nobody connected',
-				action: function () { parent.peers.open(); }
-			};
-		}
-		return {
-			label: 'Send to peer',
-			submenu: connected.map(function (peer) {
-				return {
-					label: peer.name,
-					action: function () {
-						Promise.resolve(parent.peers.sendFile(peer.id, filePath)).then(function () {
-							report('Offered ' + getNameByPath(filePath) + ' to ' + peer.name,
-								'They have to accept it before anything is sent.', 'info');
-						}, function (err) {
-							report('Could not send ' + getNameByPath(filePath),
-								(err && err.message) || String(err));
-						});
-					}
-				};
-			})
-		};
-	}
-
-	function getRowMenuItems (path) {
-		var selected = getSelectedItems();
-		if (selected.length > 1) {
-			return getMultiMenuItems();
-		}
-		var item = getItemByPath(path);
-		if (!item) return getEmptyAreaMenuItems();
-
-		if (item.isDirectory) {
-			var dirIsMountPoint = mountManager && mountManager.isMountPoint(item.path);
-			var dirMenuItems = [
-				{label: 'Open', action: function () { actions.open(item.path); }},
-				{label: 'Open in New Explorer', action: function () { actions.open(item.path, 'new explorer'); }},
-				{label: 'Open with...', action: function () { actions.openWith(item.path); }},
-				{separator: true},
-				{label: 'Copy', action: actions.copySelected},
-				{label: 'Cut', action: actions.cutSelected},
-				{label: 'Copy path', action: function () { actions.copyPath(item.path); }},
-				{label: 'Compress…', action: function () { actions.compress(item.path); }},
-				{label: 'Paste into Folder', action: function () { actions.pasteClipboard(item.path); }, disabled: !hasInternalClipboard()},
-				{separator: true},
-				{label: 'Rename', action: function () { actions.rename(item.path); }},
-				{label: 'Delete', action: function () { actions.deleteSelected(); }},
-				{separator: true},
-				{label: 'New', submenu: [
-					{label: 'New File', action: actions.createFile},
-					{label: 'New Folder', action: actions.createFolder},
-					{label: 'Add Online File', action: actions.addOnlineFile}
-				]}
-			];
-			// The shell holds which folder is shared, because it is the shell that answers
-			// when somebody asks to open it. Explorer only offers the folder.
-			if (parent !== window && parent.peers && parent.peers.share) {
-				var shared = parent.peers.getShare();
-				dirMenuItems.push({separator: true});
-				dirMenuItems.push(shared === item.path
-					? {label: 'Stop sharing with peers', action: function () { actions.stopSharing(); }}
-					: {label: 'Share with peers…', action: function () { actions.shareWithPeers(item.path); }});
-			}
-			// Only under the shell: it is the shell that owns the bookmarks document.
-			if (typeof parent.addBookmark === 'function') {
-				dirMenuItems.push({separator: true});
-				dirMenuItems.push({label: 'Add to bookmarks', action: function () { actions.addToBookmarks(item.path); }});
-			}
-			if (dirIsMountPoint) {
-				dirMenuItems.push({separator: true});
-				dirMenuItems.push({label: 'Unmount', action: function () { actions.umount(item.path); }});
-			}
-			return dirMenuItems;
-		}
-
-		var ext = getNormalizedExtension(item.path);
-		var mountableExts = ['zip', 'iso'];
-		var isMountable = mountableExts.indexOf(ext) !== -1;
-		var isMountPoint = mountManager && mountManager.isMountPoint(item.path);
-
-		var fileMenuItems = [
-			{label: 'Open', action: function () { actions.open(item.path); }},
-			{label: 'Open with...', action: function () { actions.openWith(item.path); }},
-			{separator: true},
-			{label: 'Copy', action: actions.copySelected},
-			{label: 'Cut', action: actions.cutSelected},
-			{label: 'Copy path', action: function () { actions.copyPath(item.path); }},
-			// Top level rather than in Tools, unlike *Extract…*: compressing applies to
-			// anything, extracting only to an archive.
-			{label: 'Compress…', action: function () { actions.compress(item.path); }},
-			sendToPeerMenu(item.path),
-			{label: 'Rename', action: function () { actions.rename(item.path); }},
-			{label: 'Download', action: actions.downloadSelected},
-			{label: 'Delete', action: actions.deleteSelected},
-			{separator: true},
-			{label: 'Tools', submenu: [
-				{label: 'Get SHA1', action: actions.getHashSHA1},
-				// One entry for every format 7-Zip reads, and disabled when the name is
-				// not one of them -- an *Extract* that opens a dialog to say "this is not
-				// an archive" is a worse answer than an entry you can see is not for this
-				// file. The name is a hint, not the truth, so the engine still checks.
-				{label: 'Extract…', action: function () { actions.extract(item.path); },
-					disabled: !archiveNames.isArchiveName(item.name)},
-				{label: 'Mount as filesystem', action: function () { actions.mountArchive(item.path); }, disabled: !isMountable},
-				{label: 'FFmpeg', action: actions.ffmpeg},
-				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
-			]}
-		];
-
-		// Both of these only exist under the shell -- it owns the desktop and it owns the
-		// bookmarks document -- and they share one separator so a standalone Explorer does
-		// not end its menu with a rule and nothing after it.
-		var shellExtras = [];
-		if (typeof parent.addBookmark === 'function') {
-			shellExtras.push({label: 'Add to bookmarks', action: function () {
-				actions.addToBookmarks(item.path);
-			}});
-		}
-		// The images are already here, so this is the natural place to set one as the
-		// wallpaper.
-		if (isImageExtension(item.path) && typeof parent.setWallpaperImage === 'function') {
-			shellExtras.push({label: 'Set as wallpaper', action: function () {
-				parent.setWallpaperImage(item.path);
-			}});
-		}
-		if (shellExtras.length) {
-			fileMenuItems.push({separator: true});
-			fileMenuItems = fileMenuItems.concat(shellExtras);
-		}
-
-		return fileMenuItems;
-	}
-
-	function getMultiMenuItems () {
-		var selected = getSelectedItems();
-		var allFiles = selected.length > 0 && selected.every(function (item) {
-			return !item.isDirectory;
-		});
-		var items = [];
-		if (allFiles) {
-			items.push(
-				{label: 'Open with...', action: function () { actions.openWith(); }},
-				{separator: true}
-			);
-		}
-		items.push(
-			{label: 'Copy selected', action: actions.copySelected},
-			{label: 'Cut selected', action: actions.cutSelected},
-			{label: 'Copy paths', action: function () { actions.copyPath(); }},
-			{label: 'Compress…', action: function () { actions.compress(); }},
-			{separator: true},
-			{label: 'Delete selected', action: actions.deleteSelected},
-			{label: 'Download selected', action: actions.downloadSelected},
-			{separator: true},
-			{label: 'Tools for selected', submenu: [
-				{label: 'Get SHA1', action: actions.getHashSHA1},
-				{label: 'Extract all', action: actions.extractSelected},
-				{label: 'FFmpeg', action: actions.ffmpeg},
-				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
-			]}
-		);
-		return items;
-	}
-
-	function getEmptyAreaMenuItems () {
-		return [
-			// No row under the pointer, so this entry has to name what it acts on. It is
-			// also the only way to reach *Open with...* for the folder you are inside --
-			// otherwise you have to go up a level to right-click it.
-			{label: 'Open this folder with...', action: function () { actions.openWith(getCurrentFolderItem()); }},
-			{separator: true},
-			{label: 'New File', action: actions.createFile},
-			{label: 'New Folder', action: actions.createFolder},
-			{label: 'Add Online File', action: actions.addOnlineFile},
-			{separator: true},
-			{label: 'Upload', action: function () { ui.fileInput.click(); }},
-			{label: 'Paste', action: actions.pasteClipboard, disabled: !hasInternalClipboard()},
-			{label: 'Refresh', action: function () { refreshCurrentDir(false); }},
-			{separator: true},
-			// Tools was a submenu while it held Share as well. One entry behind a submenu
-			// is a click spent on nothing, so it is a plain entry until there is a second.
-			{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
-		];
-	}
-
-	function updateRecordingTimer () {
-		if (!state.recording) return;
-		var elapsed = Date.now() - state.recording.startTime;
-		var totalSec = Math.floor(elapsed / 1000);
-		var h = Math.floor(totalSec / 3600);
-		var m = Math.floor((totalSec % 3600) / 60);
-		var s = totalSec % 60;
-		var pad = function (n) { return String(n).padStart(2, '0'); };
-		ui.recordingTime.textContent = pad(h) + ':' + pad(m) + ':' + pad(s);
-	}
-
-	var resolutionMap = {
-		'1080': {width: 1920, height: 1080},
-		'720':  {width: 1280, height: 720},
-		'480':  {width: 854,  height: 480}
-	};
-
-	async function doStartScreenRecording (settings) {
-		state.dialog = null;
-		renderOverlays();
-
-		var videoConstraint;
-		if (!settings.recordVideo) {
-			videoConstraint = false;
-		} else if (settings.resolution && resolutionMap[settings.resolution]) {
-			var res = resolutionMap[settings.resolution];
-			videoConstraint = {width: {ideal: res.width}, height: {ideal: res.height}};
-		} else {
-			videoConstraint = true;
-		}
-
-		var sysAudioConstraint = settings.recordSysAudio
-			? {echoCancellation: false, noiseSuppression: false, autoGainControl: false}
-			: false;
-
-		var screenStream;
-		try {
-			screenStream = await navigator.mediaDevices.getDisplayMedia({
-				video: videoConstraint,
-				audio: sysAudioConstraint,
-				selfBrowserSurface: 'include'
-			});
-		}
-		catch (err) {
-			reportFailure('Could not start screen capture', err);
-			return;
-		}
-
-		var micStream = null;
-		if (settings.recordMic) {
-			try {
-				micStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true, autoGainControl: true}});
-			}
-			catch (err) {
-				// Mic is optional — continue without it
-			}
-		}
-
-		var composedStream = new MediaStream();
-		screenStream.getVideoTracks().forEach(function (track) {
-			composedStream.addTrack(track);
-		});
-
-		var audioContext, audioDestination, mediaRecorder;
-		try {
-			var hasAudio = (settings.recordSysAudio && screenStream.getAudioTracks().length > 0) ||
-				(micStream && micStream.getAudioTracks().length > 0);
-
-			if (hasAudio) {
-				audioContext = new AudioContext();
-				await audioContext.resume();
-				audioDestination = audioContext.createMediaStreamDestination();
-
-				if (settings.recordSysAudio && screenStream.getAudioTracks().length > 0) {
-					var systemSource = audioContext.createMediaStreamSource(screenStream);
-					var systemGain = audioContext.createGain();
-					systemGain.gain.value = 1.0;
-					systemSource.connect(systemGain).connect(audioDestination);
-				}
-
-				if (micStream && micStream.getAudioTracks().length > 0) {
-					var micSource = audioContext.createMediaStreamSource(micStream);
-					var micGain = audioContext.createGain();
-					micGain.gain.value = 1.0;
-					micSource.connect(micGain).connect(audioDestination);
-				}
-
-				audioDestination.stream.getAudioTracks().forEach(function (track) {
-					composedStream.addTrack(track);
-				});
-			}
-
-			var recorderOptions = {mimeType: settings.mimeType};
-			if (settings.videoBitrate) recorderOptions.videoBitsPerSecond = parseInt(settings.videoBitrate, 10);
-			mediaRecorder = new MediaRecorder(composedStream, recorderOptions);
-		}
-		catch (err) {
-			screenStream.getTracks().forEach(function (t) { t.stop(); });
-			if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
-			reportFailure('Could not start the recording', err);
-			return;
-		}
-
-		var isWebm = settings.mimeType.startsWith('video/webm');
-		var ext = isWebm ? '.webm' : '.mp4';
-		var chunks = [];
-
-		mediaRecorder.ondataavailable = function (e) {
-			if (e.data && e.data.size > 0) chunks.push(e.data);
-		};
-
-		mediaRecorder.onstop = async function () {
-			var blob = new Blob(chunks, {type: chunks[0] ? chunks[0].type : settings.mimeType});
-			var duration = state.recording ? Date.now() - state.recording.startTime : 0;
-			if (isWebm && duration > 0 && typeof window.ysFixWebmDuration === 'function') {
-				try { blob = await window.ysFixWebmDuration(blob, duration); } catch (e) { /* use original blob */ }
-			}
-			var now = new Date();
-			var pad = function (n) { return String(n).padStart(2, '0'); };
-			var name = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '-' + pad(now.getHours()) + '-' + pad(now.getMinutes()) + ext;
-			// Awaited: onFileHandler can prompt, and stopScreenRecording re-renders the
-			// overlays -- which would tear the prompt down before it was answered.
-			await onFileHandler(blobToFile(blob, name));
-			actions.stopScreenRecording(true);
-		};
-
-		// Auto-stop when user closes browser's "Stop sharing" dialog
-		screenStream.getVideoTracks().forEach(function (track) {
-			track.onended = function () {
-				if (state.recording && state.recording.mediaRecorder.state !== 'inactive') {
-					state.recording.mediaRecorder.stop();
-				}
-			};
-		});
-
-		try {
-			mediaRecorder.start(1000);
-		}
-		catch (err) {
-			screenStream.getTracks().forEach(function (t) { t.stop(); });
-			if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
-			reportFailure('Could not start the recorder', err);
-			return;
-		}
-
-		state.recording = {
-			mediaRecorder: mediaRecorder,
-			chunks: chunks,
-			startTime: Date.now(),
-			timerInterval: setInterval(updateRecordingTimer, 1000),
-			screenStream: screenStream,
-			micStream: micStream,
-			micMuted: false,
-			sysMuted: false
-		};
-
-		ui.recordingTime.textContent = '00:00:00';
-		ui.recordingMicBtn.classList.remove('Explorer__recordingBtn--muted');
-		ui.recordingMicBtn.title = 'Mute microphone';
-		ui.recordingSysBtn.classList.remove('Explorer__recordingBtn--muted');
-		ui.recordingSysBtn.title = 'Mute system audio';
-		ui.recordingIndicator.hidden = false;
-	}
 
 	var actions = {
-		startScreenRecording: function () {
-			if (state.recording) {
-				openInfoDialog('Screen Recording', 'Recording is already in progress.');
-				return;
-			}
-			openDialog({type: 'screenRecordingOptions', onSubmit: doStartScreenRecording});
-		},
-
-		stopScreenRecording: function (fromOnstop) {
-			if (!state.recording) return;
-			if (!fromOnstop && state.recording.mediaRecorder.state !== 'inactive') {
-				state.recording.mediaRecorder.stop();
-				// onstop will call stopScreenRecording(true) to finish cleanup
-				return;
-			}
-			clearInterval(state.recording.timerInterval);
-			if (state.recording.screenStream) {
-				state.recording.screenStream.getTracks().forEach(function (t) { t.stop(); });
-			}
-			if (state.recording.micStream) {
-				state.recording.micStream.getTracks().forEach(function (t) { t.stop(); });
-			}
-			ui.recordingIndicator.hidden = true;
-			state.recording = null;
-		},
-
-		toggleMicMute: function () {
-			if (!state.recording) return;
-			state.recording.micMuted = !state.recording.micMuted;
-			if (state.recording.micStream) {
-				state.recording.micStream.getAudioTracks().forEach(function (t) {
-					t.enabled = !state.recording.micMuted;
-				});
-			}
-			ui.recordingMicBtn.classList.toggle('Explorer__recordingBtn--muted', state.recording.micMuted);
-			ui.recordingMicBtn.title = state.recording.micMuted ? 'Unmute microphone' : 'Mute microphone';
-		},
-
-		toggleSysMute: function () {
-			if (!state.recording) return;
-			state.recording.sysMuted = !state.recording.sysMuted;
-			if (state.recording.screenStream) {
-				state.recording.screenStream.getAudioTracks().forEach(function (t) {
-					t.enabled = !state.recording.sysMuted;
-				});
-			}
-			ui.recordingSysBtn.classList.toggle('Explorer__recordingBtn--muted', state.recording.sysMuted);
-			ui.recordingSysBtn.title = state.recording.sysMuted ? 'Unmute system audio' : 'Mute system audio';
-		},
+		// The four recording entries are js/recording.js, named here so the guard loop at the
+		// bottom of this object wraps them like every other action.
+		startScreenRecording: startScreenRecording,
+		stopScreenRecording: stopScreenRecording,
+		toggleMicMute: toggleMicMute,
+		toggleSysMute: toggleSysMute,
 
 		open: function (itemPath, forcedApp) {
 			var item = getItemByPath(itemPath);
@@ -3109,204 +1397,10 @@ async function openExplorer () {
 			});
 		},
 
-		mountArchive: async function (itemPath) {
-			if (!mountManager) {
-				openInfoDialog('Mount', 'Mount manager is not available');
-				return;
-			}
-			var item = getItemByPath(itemPath || Array.from(state.selectedPaths)[0]);
-			if (!item || item.isDirectory) return;
-			var ext = getNormalizedExtension(item.path);
-			var defaultMp = mountManager.suggestMountPoint(path.basename(item.path));
-			openDialog({
-				type: 'prompt',
-				title: 'Mount ' + ext.toUpperCase(),
-				message: 'Mount point path:',
-				defaultValue: defaultMp,
-				onSubmit: async function (mountPoint) {
-					state.dialog = null;
-					renderOverlays();
-					if (!mountPoint) return;
-					try {
-						var buf = await readFile(item.path);
-						var cb = function (err) {
-							if (err) {
-								reportFailure('Could not mount ' + item.name, err);
-							} else {
-								renderSidebar();
-								navigateTo(mountPoint);
-							}
-						};
-						if (ext === 'zip') {
-							mountManager.mountZip(buf, mountPoint, path.basename(item.path), cb);
-						} else if (ext === 'iso') {
-							mountManager.mountIso(buf, mountPoint, path.basename(item.path), cb);
-						} else {
-							openInfoDialog('Mount', 'Unsupported format: ' + ext);
-						}
-					} catch (e) {
-						reportFailure('Could not mount ' + item.name, e);
-					}
-				}
-			});
-		},
-
-		mountNativeDir: async function () {
-			if (!mountManager) {
-				openInfoDialog('Mount', 'Mount manager is not available');
-				return;
-			}
-			var pickDir = (parent && typeof parent.pickNativeDirectory === 'function')
-				? parent.pickNativeDirectory.bind(parent)
-				: (typeof window.showDirectoryPicker === 'function' ? function () { return window.showDirectoryPicker(); } : null);
-			if (!pickDir) {
-				openInfoDialog('Mount', 'File System Access API is not supported in this browser');
-				return;
-			}
-			try {
-				var handle = await pickDir();
-				var name = handle.name || 'local';
-				var defaultMp = mountManager.suggestMountPoint(name);
-				openDialog({
-					type: 'prompt',
-					title: 'Mount Local Folder',
-					message: 'Mount point path:',
-					defaultValue: defaultMp,
-					onSubmit: function (mountPoint) {
-						state.dialog = null;
-						renderOverlays();
-						if (!mountPoint) return;
-						mountPoint = normalizePath(mountPoint);
-						mountManager.mountNativeDir(handle, mountPoint, name, function (err) {
-							if (err) {
-								reportFailure('Could not mount ' + name, err);
-								return;
-							}
-							renderSidebar();
-							var readDone = false;
-							var readTimer = setTimeout(function () {
-								if (readDone) return;
-								readDone = true;
-								report('Mounted, but slow to read',
-									mountPoint + ' is mounted, but reading it timed out. Open it from the '
-									+ 'Mounts sidebar when it responds.', 'warn');
-							}, 10000);
-							fs.readdir(mountPoint, function (readErr) {
-								if (readDone) return;
-								readDone = true;
-								clearTimeout(readTimer);
-								if (readErr) {
-									reportFailure('Mounted ' + mountPoint + ', but cannot read it', readErr);
-									return;
-								}
-								navigateTo(mountPoint);
-							});
-						});
-					}
-				});
-			} catch (e) {
-				// Picking no folder is not a failure; the browser reports it as one.
-				if (e.name !== 'AbortError') {
-					reportFailure('Could not mount that folder', e);
-				}
-			}
-		},
-
-		mountFiles3: function () {
-			if (!mountManager) {
-				openInfoDialog('Mount Files3', 'Mount manager is not available');
-				return;
-			}
-			var saved = loadFiles3Config();
-			var defaultBaseUrl = saved ? saved.baseUrl : '';
-			var defaultRootFolderId = saved ? saved.rootFolderId : '';
-			var defaultLocalStorageId = saved ? saved.localStorageId : defaultFiles3LocalStorageId(defaultBaseUrl);
-			var defaultMountPoint = mountManager.suggestMountPoint('files3_' + (defaultRootFolderId || 'storage'));
-			openDialog({
-				type: 'files3Mount',
-				baseUrl: defaultBaseUrl,
-				rootFolderId: defaultRootFolderId,
-				localStorageId: defaultLocalStorageId,
-				mountPoint: defaultMountPoint,
-				onSubmit: function (fields) {
-					state.dialog = null;
-					renderOverlays();
-
-					var baseUrl = fields.baseUrl;
-					var rootFolderId = parseInt(fields.rootFolderId, 10);
-					var localStorageId = fields.localStorageId;
-					var mountPoint = fields.mountPoint;
-
-					if (!baseUrl) {
-						openInfoDialog('Mount Files3', 'Base URL API is required');
-						return;
-					}
-					if (!rootFolderId || rootFolderId < 1) {
-						openInfoDialog('Mount Files3', 'Root Folder ID must be a positive number');
-						return;
-					}
-					if (!localStorageId) {
-						openInfoDialog('Mount Files3', 'localStorage ID is required');
-						return;
-					}
-					if (!mountPoint || mountPoint.charAt(0) !== '/') {
-						openInfoDialog('Mount Files3', 'Mount point must start with /');
-						return;
-					}
-
-					saveFiles3Config({
-						baseUrl: baseUrl,
-						rootFolderId: rootFolderId,
-						localStorageId: localStorageId
-					});
-
-					var callbackUrl = location.origin + location.pathname;
-					var displayName = 'Files3';
-					try {
-						displayName = new URL(baseUrl).hostname || displayName;
-					} catch (e) { /* ignore */ }
-
-					mountManager.mountFiles3({
-						baseUrl: baseUrl,
-						rootFolderId: rootFolderId,
-						localStorageId: localStorageId,
-						callbackUrl: callbackUrl,
-						onUnauthorized: function (mp) {
-							report('Files3 session expired', 'The session for ' + mp + ' has expired. Mount it again.', 'warn');
-						}
-					}, mountPoint, displayName, function (err) {
-						if (err) {
-							var msg = err.message || String(err);
-							if (msg === 'Auth window closed without token.') {
-								openInfoDialog('Mount Files3', 'Authorization window was closed without completing login.');
-							} else if (msg.indexOf('Popup blocked') === 0) {
-								openInfoDialog('Mount Files3', msg + ' Allow popups for this site and try again.');
-							} else {
-								report('Could not mount Files3', msg);
-							}
-						} else {
-							renderSidebar();
-							navigateTo(mountPoint);
-						}
-					});
-				}
-			});
-		},
-
-		umount: function (mountPoint) {
-			if (!mountManager) return;
-			try {
-				mountManager.umount(mountPoint);
-				renderSidebar();
-				if (state.cwd.indexOf(mountPoint) === 0) {
-					navigateTo('/');
-				} else {
-					refreshCurrentDir(false);
-				}
-			} catch (e) {
-				reportFailure('Could not unmount that', e);
-			}
-		},
+		mountArchive: mountArchive,
+		mountNativeDir: mountNativeDir,
+		mountFiles3: mountFiles3,
+		umount: umount,
 
 		copySelected: function () {
 			var targets = getEffectiveSelectedPaths();
@@ -3387,6 +1481,61 @@ async function openExplorer () {
 		}
 	});
 
+	// What is in a menu, as opposed to js/context-menu.js, which draws one. Built *here*
+	// rather than with the other modules at the top of this function, and that is the whole
+	// reason it is the last line of this block: several entries read `actions.copySelected`
+	// and the like at build time, so the table has to exist and to have been through the
+	// guard loop above -- otherwise every menu would hold the unwrapped version and a failed
+	// Copy would go back to being a console line.
+	var {
+		getRowMenuItems, getMultiMenuItems, getEmptyAreaMenuItems
+	} = createMenuItems({
+		state: state,
+		ui: ui,
+		shell: parent,
+		win: window,
+		mountManager: window.mountManager,
+		actions: actions,
+		archiveNames: archiveNames,
+		getSelectedItems: getSelectedItems,
+		getItemByPath: getItemByPath,
+		getCurrentFolderItem: getCurrentFolderItem,
+		hasInternalClipboard: hasInternalClipboard,
+		refreshCurrentDir: refreshCurrentDir,
+		report: report,
+		getNameByPath: getNameByPath,
+		getNormalizedExtension: getNormalizedExtension,
+		isImageExtension: isImageExtension
+	});
+
+	// The sidebar, built here for the same reason menu-items is: every mount row carries an
+	// unmount button and the two buttons under the list call `mountNativeDir` and
+	// `mountFiles3`, all three read off `actions` as the list is drawn.
+	var {renderSidebar} = createSidebar({
+		state: state,
+		ui: ui,
+		doc: document,
+		win: window,
+		mountManager: window.mountManager,
+		actions: actions,
+		navigateTo: navigateTo,
+		getParentPath: getParentPath
+	});
+
+	// Every module exists by this line, which is why the window starts on it rather than two
+	// hundred lines up where the other constructions end. `renderSidebar` is the reason it
+	// moved: the first `refreshCurrentDir` draws the sidebar, the sidebar is built after
+	// `actions`, and a boot that ran before it got `undefined is not a function` on a window
+	// that had looked fine for nine passes. Nothing between here and there is more than a
+	// declaration, so this is a move of the starting line, not of any work.
+	//
+	// `renderLayout` first and on its own: it is what puts the nodes in `ui`, and everything
+	// below reads one.
+	renderLayout();
+	bindEvents();
+	watchForChanges();
+	await refreshCurrentDir(false);
+
 	async function ensureFfmpegLoaded () {
 		if (!window.FFmpeg) {
 			openInfoDialog('FFmpeg', 'FFmpeg is not installed');
@@ -3445,6 +1594,13 @@ async function openExplorer () {
 		}
 		var files = e.dataTransfer ? e.dataTransfer.files : e.target.files;
 
+		// Where the file is going. `updateDragHoverFromPoint` at the top of this handler has
+		// just answered whether the pointer is over a folder row, and a file dropped onto one
+		// belongs in it -- that is what dropping it there means. The row's own drop handler
+		// cannot take this: only this side knows how to write a file, which is why it lets an
+		// external drop fall through to here rather than claiming it.
+		var destinationFolder = state.dragHoverFolderPath || state.cwd;
+
 		// A dropped folder arrives in BOTH places: `dataTransfer.files` carries one entry
 		// named after the folder, and `dataTransfer.items` carries a directory entry that
 		// can actually be walked. The old test was `if (!files || !files.length)`, so the
@@ -3458,9 +1614,24 @@ async function openExplorer () {
 
 		if (hasDirectory || !files || !files.length) {
 			var entries = await getAllFileEntries(entryList);
+
+			// The walk first, the question second: every file below a dropped folder comes back
+			// with a path rooted at the drag, and the conflict question is asked once about each
+			// of those roots rather than once per file. Cancelling one skips everything under it
+			// and leaves the rest of the drop alone.
+			var rootMapping = await resolveIncomingRoots(entryList.filter(function (entry) {
+				return entry && entry.isDirectory;
+			}).map(function (entry) {
+				return entry.name;
+			}), destinationFolder);
+
 			for (var i = 0; i < entries.length; i++) {
+				var incomingPath = rerootIncomingPath(entries[i].fullPath, rootMapping);
+				if (!incomingPath) {
+					continue;
+				}
 				var entryFile = await getFileFromFileEntry(entries[i]);
-				await addIncomingFile(entryFile, entries[i].fullPath);
+				await addIncomingFile(entryFile, incomingPath, destinationFolder);
 			}
 			await refreshCurrentDir(false);
 			return;
@@ -3469,7 +1640,7 @@ async function openExplorer () {
 		// Sequential for the same reason as the upload button: one dialog at a time.
 		var dropped = Array.from(files);
 		for (var d = 0; d < dropped.length; d++) {
-			await addIncomingFile(dropped[d]);
+			await addIncomingFile(dropped[d], null, destinationFolder);
 		}
 		await refreshCurrentDir(false);
 	}
@@ -3492,225 +1663,6 @@ async function openExplorer () {
 		return entries;
 	}
 
-	async function moveItemsToFolder (srcPaths, targetFolderPath, meta) {
-		if (!srcPaths || !srcPaths.length) return;
-		var moved = 0;
-		for (var i = 0; i < srcPaths.length; i++) {
-			var src = normalizePath(srcPaths[i]);
-			var base = path.basename(src);
-			var dest = path.join(targetFolderPath, base);
-			if (src === targetFolderPath || src === dest) continue;
-			if (targetFolderPath.indexOf(src + '/') === 0) continue;
-			if (path.dirname(src) === targetFolderPath) continue;
-			try {
-				var resolvedMove = await resolvePasteDestination(src, targetFolderPath, 'move');
-				if (!resolvedMove) continue;
-				dest = resolvedMove.destPath;
-				if (resolvedMove.replaceExisting) {
-					await unlink(dest);
-				}
-				await fsRename(src, dest);
-				moved++;
-			}
-			catch (err) {
-				// Per item, so one refusal does not abandon the rest of the selection.
-				reportFailure('Could not move ' + base, err);
-			}
-		}
-		if (moved > 0) {
-			await refreshCurrentDir(false);
-		}
-	}
-
-	async function copyItemsToFolder (srcPaths, targetFolderPath) {
-		if (!srcPaths || !srcPaths.length) return;
-		var copied = 0;
-		for (var i = 0; i < srcPaths.length; i++) {
-			var src = normalizePath(srcPaths[i]);
-			var base = path.basename(src);
-			var dest = path.join(targetFolderPath, base);
-			if (src === targetFolderPath || src === dest) continue;
-			if (targetFolderPath.indexOf(src + '/') === 0) continue;
-			try {
-				var resolvedCopy = await resolvePasteDestination(src, targetFolderPath, 'copy');
-				if (!resolvedCopy) continue;
-				dest = resolvedCopy.destPath;
-				if (resolvedCopy.replaceExisting) {
-					await unlink(dest);
-				}
-				await copyEntryRecursive(src, dest);
-				copied++;
-			}
-			catch (err) {
-				reportFailure('Could not copy ' + base, err);
-			}
-		}
-		if (copied > 0) {
-			await refreshCurrentDir(false);
-		}
-	}
-
-	async function copyEntryRecursive (srcPath, destPath) {
-		var srcStat = await stat(srcPath);
-		if (!srcStat) {
-			throw new Error('Source not found');
-		}
-		if (srcStat.isDirectory()) {
-			await ensureDir(destPath);
-			var children = await readdir(srcPath);
-			for (var i = 0; i < children.length; i++) {
-				await copyEntryRecursive(path.join(srcPath, children[i]), path.join(destPath, children[i]));
-			}
-			return;
-		}
-		var content = await readFile(srcPath);
-		await writeFile(destPath, Buffer.from(content));
-	}
-
-	// Two things arrive in a folder: a path being copied or moved, and a File with no path
-	// of its own -- dropped, pasted from the clipboard, or picked with Upload. Both ask the
-	// same question when the name is taken, so both go through here. Returns null when the
-	// answer is "cancel".
-	async function resolveIncomingDestination (name, targetFolderPath, operation, sourceIsDirectory) {
-		var destPath = path.join(targetFolderPath, name);
-		var existing = await stat(destPath);
-		if (!existing) {
-			return {
-				destPath: destPath,
-				replaceExisting: false
-			};
-		}
-
-		// A directory is never replaced by one command, in either direction.
-		var canReplace = !sourceIsDirectory && !existing.isDirectory();
-		var decision = await askPasteConflict({
-			name: name,
-			targetFolderPath: targetFolderPath,
-			canReplace: canReplace,
-			existingIsDirectory: existing.isDirectory(),
-			operation: operation
-		});
-
-		if (decision === 'cancel') {
-			return null;
-		}
-
-		if (decision === 'replace') {
-			return {
-				destPath: destPath,
-				replaceExisting: true
-			};
-		}
-
-		return {
-			destPath: await buildIndexedCopyPath(targetFolderPath, name),
-			replaceExisting: false
-		};
-	}
-
-	// Every route that produces a new file in a folder ends here: create, download, extract,
-	// convert, drop, paste, upload. Both of the underlying calls replace their destination
-	// without complaint -- writeFile overwrites, and fsRename replaces POSIX-style -- so
-	// there is no error to catch and the check has to happen before the write.
-	//
-	// Returns the path actually written, or null if the answer was "cancel".
-	async function writeNewFile (folderPath, name, contents, operation) {
-		var resolved = await resolveIncomingDestination(name, folderPath, operation || 'copy', false);
-		if (!resolved) {
-			return null;
-		}
-		await writeIncomingFile(resolved.destPath, contents, resolved.replaceExisting);
-		return resolved.destPath;
-	}
-
-	// A file arriving from outside -- dropped, pasted, uploaded, recorded -- and the two
-	// things that must not happen when the write fails halfway.
-	//
-	// **Nothing is left behind.** BrowserFS commits the inode before it stores the data,
-	// so a refused write leaves a file of the right name and zero bytes sitting there
-	// looking like it worked. That is what a 150 MB drop produced.
-	//
-	// **Replacing writes somewhere else first.** This used to delete the existing file and
-	// then write over the name, so a write that failed took the old file with it and left
-	// the empty one in its place. The new bytes go to a temporary name in the same folder
-	// and only replace anything once they are actually stored.
-	async function writeIncomingFile (destPath, contents, replaceExisting) {
-		if (!replaceExisting) {
-			try {
-				await writeFile(destPath, contents);
-			}
-			catch (err) {
-				await unlinkQuietly(destPath);
-				throw err;
-			}
-			return destPath;
-		}
-		var staging = destPath + '.pixos-part';
-		try {
-			await writeFile(staging, contents);
-		}
-		catch (err) {
-			await unlinkQuietly(staging);
-			throw err;
-		}
-		await unlink(destPath);
-		await fsRename(staging, destPath);
-		return destPath;
-	}
-
-	// Used only to clean up after a failure, where a second failure is not news: the error
-	// worth reporting is the one that got us here.
-	async function unlinkQuietly (p) {
-		try {
-			await unlinkFile(p);
-		}
-		catch (err) {
-			// It was never created, or it cannot be removed either. Either way the write
-			// is what failed.
-		}
-	}
-
-	async function resolvePasteDestination (srcPath, targetFolderPath, operation) {
-		var sourceStat = await stat(srcPath);
-		return resolveIncomingDestination(
-			path.basename(srcPath),
-			targetFolderPath,
-			operation,
-			!!(sourceStat && sourceStat.isDirectory())
-		);
-	}
-
-	function askPasteConflict (payload) {
-		return new Promise(function (resolve) {
-			openDialog({
-				type: 'pasteConflict',
-				canReplace: payload.canReplace,
-				// It used to say "A file named" whatever was in the way. Now that creating a
-				// folder comes through here too, the commonest collision is one folder with
-				// another, and calling that a file is the kind of small wrongness that makes
-				// somebody doubt the rest of the sentence.
-				message: (payload.existingIsDirectory ? 'A folder named "' : 'A file named "')
-					+ payload.name + '" already exists in ' + payload.targetFolderPath + '.',
-				onSubmit: function (decision) {
-					state.dialog = null;
-					renderOverlays();
-					resolve(decision);
-				}
-			});
-		});
-	}
-
-	async function buildIndexedCopyPath (folderPath, fileName) {
-		var parsed = splitNameAndExtension(fileName);
-		var index = 1;
-		var candidate = '';
-		do {
-			candidate = path.join(folderPath, parsed.name + '-' + index + parsed.ext);
-			index++;
-		} while (await stat(candidate));
-		return candidate;
-	}
-
 	// The shell opens a second Explorer with ?cwd=<path>. window.cwd stays supported for
 	// anything that still assigns it, but it can only be read after the iframe has loaded,
 	// by which time this state object has long been built -- hence the query string.
@@ -3726,95 +1678,6 @@ async function openExplorer () {
 			// not stop Explorer from opening at all.
 		}
 		return window.cwd || '/';
-	}
-
-	// Asked before the file is read, not after the write fails. BrowserFS reports every
-	// refusal from IndexedDB as a bare `EIO` with the real reason already discarded, so
-	// afterwards there is nothing left to explain with -- and a 150 MB file that cannot be
-	// stored should not be pulled into memory first to find that out.
-	async function refuseOversizedFile (file) {
-		var size = file && typeof file.size === 'number' ? file.size : 0;
-		if (!size) {
-			return false;
-		}
-		var limit = null;
-		try {
-			if (parent !== window && typeof parent.describeWriteLimit === 'function') {
-				limit = await parent.describeWriteLimit(size);
-			}
-		}
-		catch (crossOrigin) {
-			// Running standalone. The write will be attempted and will report whatever it
-			// reports, which is the behaviour there was before this check existed.
-		}
-		if (!limit) {
-			return false;
-		}
-		report(limit.title, (file.name ? file.name + '\n\n' : '') + limit.message);
-		return true;
-	}
-
-	// Per file, so one that cannot be stored does not abandon the rest of a drop, a paste
-	// or a selection -- and so the folder is still refreshed and the file input still
-	// cleared afterwards, which is what makes picking the same file twice work.
-	//
-	// All three callers are event listeners, and nothing awaits an event listener: a
-	// rejection escaping one is an unhandled rejection, caught by the window's own net two
-	// layers out and reported as *something* going wrong without ever naming the file.
-	async function addIncomingFile (file, filePath) {
-		try {
-			await onFileHandler(file, filePath);
-		}
-		catch (err) {
-			reportFailure('Could not add ' + ((file && file.name) || 'that file'), err);
-		}
-	}
-
-	async function onFileHandler (file, filePath) {
-		var target = filePath || file.name;
-		var destPath = path.join(state.cwd, target);
-
-		if (await refuseOversizedFile(file)) {
-			return;
-		}
-
-		// A dropped, pasted or uploaded file used to overwrite whatever already had that
-		// name -- silently, with no undo. It now asks the same question a paste does.
-		//
-		// Only for a loose file, though: a dropped *folder* arrives here one call per file
-		// with a relative path, and prompting once per file would be worse than the problem
-		// it solves. That case is in docs/backlog.md.
-		var ab = await fileToAB(file);
-		if (target.indexOf('/') === -1) {
-			await writeNewFile(state.cwd, target, Buffer.from(ab));
-			return;
-		}
-		await writeIncomingFile(destPath, Buffer.from(ab), false);
-	}
-
-	var FILES3_CONFIG_KEY = 'pixos_files3_config';
-
-	function loadFiles3Config () {
-		try {
-			var raw = localStorage.getItem(FILES3_CONFIG_KEY);
-			if (raw) {
-				return JSON.parse(raw);
-			}
-		} catch (e) { /* ignore */ }
-		return null;
-	}
-
-	function saveFiles3Config (cfg) {
-		localStorage.setItem(FILES3_CONFIG_KEY, JSON.stringify(cfg));
-	}
-
-	function defaultFiles3LocalStorageId (baseUrl) {
-		try {
-			var host = new URL(baseUrl).hostname.replace(/[^a-zA-Z0-9_\-]/g, '_');
-			return 'files3_token_' + (host || 'storage');
-		} catch (e) {
-			return 'files3_token_storage';
-		}
 	}
 
 	function hasInternalClipboard () {

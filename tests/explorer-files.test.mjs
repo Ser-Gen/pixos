@@ -5,27 +5,17 @@
 // overwrite silently, with no prompt and no undo — you pasted a screenshot and the
 // image.png already in the folder was gone.
 //
-// Extracted from apps/explorer/index.html rather than duplicated, so reorganising the
-// conflict logic fails these tests instead of escaping them.
+// Imported rather than scraped, since phase 21's eighth pass: all of this is
+// apps/explorer/js/file-ops.js now. It used to be cut out of index.html with indexOf and
+// rebuilt with `new Function`, which worked and was always one rename away from silently
+// testing a slice of the wrong code.
 
 import fs from 'fs';
 import {check, report} from './assert.mjs';
 import {createFormat} from '../apps/explorer/js/format.js';
+import {createFileOps} from '../apps/explorer/js/file-ops.js';
 
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
-
-function region (from, to) {
-	const start = source.indexOf(from);
-	const end = source.indexOf(to, start);
-	if (start === -1 || end === -1) {
-		console.error('explorer-files.test.mjs: could not find "' + from + '"');
-		process.exit(1);
-	}
-	return source.slice(start, end);
-}
-
-const code = region('async function resolveIncomingDestination', 'function getInitialCwd')
-	+ region('async function refuseOversizedFile', '\n\tvar FILES3_CONFIG_KEY');
 
 // --- a filesystem that remembers what happened -----------------------------------------
 
@@ -44,28 +34,26 @@ const pathStub = {
 
 const state = {cwd: '/home', dialog: null};
 
-const api = new Function(
-	'path', 'state', 'stat', 'unlink', 'unlinkFile', 'fsRename', 'writeFile', 'fileToAB', 'Buffer',
-	'openDialog', 'renderOverlays', 'parent', 'window', 'report', 'reportFailure',
-	'splitNameAndExtension',
-	code + '\n; return {resolveIncomingDestination, resolvePasteDestination, writeNewFile, writeIncomingFile, onFileHandler, addIncomingFile};'
-)(
-	pathStub, state,
-	// stat
-	async p => tree[p] || null,
-	// unlink
-	async p => { unlinked.push(p); delete tree[p]; },
-	// unlinkFile — the raw one, which rejects when there is nothing there
-	async p => {
-		if (!tree[p]) { throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'}); }
-		unlinked.push(p);
-		delete tree[p];
-	},
-	// fsRename
-	async (from, to) => { renamed.push([from, to]); tree[to] = tree[from]; delete tree[from]; },
-	// writeFile — `fails` is the path a write is told to refuse, which is how a 150 MB
-	// drop is reproduced without a 150 MB file.
-	async (p, contents) => {
+const api = createFileOps({
+	path: pathStub,
+	state: state,
+	Buffer: {from: x => x},
+	// shell and win: the shell, and this frame. Different objects, so the size check takes
+	// the branch it takes in an iframe.
+	shell: {describeWriteLimit: async bytes => (bytes > limit ? {
+		title: 'That file is too large to store',
+		message: 'Nothing was written.'
+	} : null)},
+	win: {},
+	// Phase 21 moved these into apps/explorer/js/format.js, so they are the real ones, given
+	// the same path stub the code under test is given.
+	normalizePath: p => String(p).replace(/\/+/g, '/'),
+	splitNameAndExtension: createFormat(pathStub).splitNameAndExtension,
+	stat: async p => tree[p] || null,
+	readFile: async p => (tree[p] && tree[p].body) || '',
+	// `fails` is the path a write is told to refuse, which is how a 150 MB drop is
+	// reproduced without a 150 MB file.
+	writeFile: async (p, contents) => {
 		writes.push({path: p, contents: contents});
 		// The inode first, the data second — which is the order BrowserFS commits them in,
 		// and the whole reason a refused write leaves a 0-byte file sitting there.
@@ -74,25 +62,24 @@ const api = new Function(
 			throw Object.assign(new Error('EIO: Input/output error.'), {code: 'EIO'});
 		}
 	},
-	async file => file.body,
-	{from: x => x},
+	readdir: async () => [],
+	ensureDir: async () => {},
+	fsRename: async (from, to) => { renamed.push([from, to]); tree[to] = tree[from]; delete tree[from]; },
+	unlink: async p => { unlinked.push(p); delete tree[p]; },
+	// unlinkFile — the raw one, which rejects when there is nothing there
+	unlinkFile: async p => {
+		if (!tree[p]) { throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'}); }
+		unlinked.push(p);
+		delete tree[p];
+	},
+	fileToAB: async file => file.body,
+	report: (title, message) => { reported.push([title, message]); },
+	reportFailure: (label, err) => { reported.push([label, String(err && err.message)]); },
 	// askPasteConflict wraps openDialog in a promise; this stands in for the person.
-	dialog => { prompts.push(dialog.message); dialog.onSubmit(answer); },
-	() => {},
-	// parent and window: the shell, and this frame. Different objects, so the size check
-	// takes the branch it takes in an iframe.
-	{describeWriteLimit: async bytes => (bytes > limit ? {
-		title: 'That file is too large to store',
-		message: 'Nothing was written.'
-	} : null)},
-	{},
-	// report / reportFailure
-	(title, message) => { reported.push([title, message]); },
-	(label, err) => { reported.push([label, String(err && err.message)]); },
-	// Phase 21 moved this into apps/explorer/js/format.js, so it is the real one, given
-	// the same path stub the code under test is given.
-	createFormat(pathStub).splitNameAndExtension
-);
+	openDialog: dialog => { prompts.push(dialog.message); dialog.onSubmit(answer); },
+	renderOverlays: () => {},
+	refreshCurrentDir: async () => {}
+});
 
 function reset (existing) {
 	tree = {};
@@ -160,20 +147,31 @@ reset([]);
 tree['/home/stuff'] = {isDirectory: () => true};
 answer = 'cancel';
 let asked = null;
-const withDialog = new Function(
-	'path', 'state', 'stat', 'unlink', 'writeFile', 'fileToAB', 'Buffer',
-	'openDialog', 'renderOverlays',
-	code + '\n; return {onFileHandler};'
-)(
-	pathStub, state,
-	async p => tree[p] || null,
-	async () => {},
-	async () => {},
-	async f => f.body,
-	{from: x => x},
-	dialog => { asked = dialog; dialog.onSubmit('cancel'); },
-	() => {}
-);
+// A second instance, built the same way, whose only difference is a dialog stand-in that
+// keeps what it was asked rather than only the message.
+const withDialog = createFileOps({
+	path: pathStub,
+	state: state,
+	Buffer: {from: x => x},
+	shell: {},
+	win: {},
+	normalizePath: p => String(p).replace(/\/+/g, '/'),
+	splitNameAndExtension: createFormat(pathStub).splitNameAndExtension,
+	stat: async p => tree[p] || null,
+	readFile: async () => '',
+	writeFile: async () => {},
+	readdir: async () => [],
+	ensureDir: async () => {},
+	fsRename: async () => {},
+	unlink: async () => {},
+	unlinkFile: async () => {},
+	fileToAB: async f => f.body,
+	report: () => {},
+	reportFailure: () => {},
+	openDialog: dialog => { asked = dialog; dialog.onSubmit('cancel'); },
+	renderOverlays: () => {},
+	refreshCurrentDir: async () => {}
+});
 await withDialog.onFileHandler(file('stuff'));
 check('a folder in the way cannot be replaced', asked.canReplace, false);
 
@@ -254,9 +252,17 @@ const producers = [
 	['ffmpeg convert', 'window.ffmpeg.exec']
 ];
 
+// Phase 21 moved compress and extract into apps/explorer/js/archive-ui.js. The rule is about
+// every route in Explorer, not about one file, so the search spans both — and a needle that
+// is not found is a failure rather than a pass. It had been passing on a `slice(-1)` of one
+// character, which is what a scraping test does when the code it scrapes moves house.
+const archiveSource = fs.readFileSync(new URL('../apps/explorer/js/archive-ui.js', import.meta.url), 'utf8');
+const producerSource = source + '\n/* --- */\n' + archiveSource;
+
 producers.forEach(function (entry) {
-	const at = source.indexOf(entry[1]);
-	const chunk = source.slice(at, at + 1600);
+	const at = producerSource.indexOf(entry[1]);
+	check(entry[0] + ' is still somewhere to be found', at !== -1, true);
+	const chunk = producerSource.slice(at, at + 1600);
 	check(entry[0] + ' writes through writeNewFile', chunk.includes('writeNewFile('), true);
 	check(entry[0] + ' does not writeFile into the cwd directly',
 		/await writeFile\(path\.join\(state\.cwd/.test(chunk), false);
@@ -265,7 +271,9 @@ producers.forEach(function (entry) {
 // Extraction is no longer on that list because it no longer produces a file in the current
 // folder at all: it makes a folder of its own, and the name is one nothing else is using.
 // Same rule, one level up — and the folder is what phase 12 replaced a stray `.zip` with.
-const extraction = source.slice(source.indexOf('async function writeExtracted'));
+const extractionAt = producerSource.indexOf('async function writeExtracted');
+check('writeExtracted is still somewhere to be found', extractionAt !== -1, true);
+const extraction = producerSource.slice(extractionAt);
 check('extraction picks a folder name that is free',
 	extraction.slice(0, 1200).includes('destinationFor('), true);
 check('and writes underneath that folder, never into the current one',
@@ -288,8 +296,10 @@ check('no writeFile into the cwd is left anywhere in the app',
 // wireSimpleDialog latches on submit so a click and an Enter cannot both fire. A handler
 // that returns false has not submitted, so the latch has to release or the dialog is dead.
 
-const wiring = source.slice(source.indexOf('function wireSimpleDialog'),
-	source.indexOf('function focusDialogInput'));
+const dialogSource = fs.readFileSync(new URL('../apps/explorer/js/dialogs.js', import.meta.url), 'utf8');
+const wiringAt = dialogSource.indexOf('function wireSimpleDialog');
+check('wireSimpleDialog is still somewhere to be found', wiringAt !== -1, true);
+const wiring = dialogSource.slice(wiringAt, dialogSource.indexOf('function focusDialogInput'));
 check('the submit latch releases when a handler declines',
 	wiring.includes('if (onSubmit() === false)'), true);
 
@@ -297,8 +307,9 @@ check('the submit latch releases when a handler declines',
 	['newFile', "dialog.type === 'newFile'"],
 	['newFolder', "dialog.type === 'newFolder'"],
 	['onlineFile', "dialog.type === 'onlineFile'"]].forEach(function (entry) {
-	const at = source.indexOf(entry[1]);
-	const chunk = source.slice(at, at + 1400);
+	const at = dialogSource.indexOf(entry[1]);
+	check(entry[0] + ' is still a dialog that exists', at !== -1, true);
+	const chunk = dialogSource.slice(at, at + 1400);
 	check(entry[0] + ' declines an empty value instead of closing', chunk.includes('return false;'), true);
 });
 
@@ -313,8 +324,12 @@ check('the submit latch releases when a handler declines',
 	check(site + ' does not Promise.all over onFileHandler',
 		/Promise\.all\([\s\S]{0,200}onFileHandler/.test(chunk), false);
 });
+// The recorder is js/recording.js since phase 21, but it lands on the same funnel and the
+// same rule: its onstop awaits the write, because stopScreenRecording re-renders the
+// overlays and would tear down a prompt that had not been answered yet.
+const recordingSource = fs.readFileSync(new URL('../apps/explorer/js/recording.js', import.meta.url), 'utf8');
 check('and the screen recorder awaits its write',
-	/await onFileHandler\(blobToFile\(blob, name\)\)/.test(source), true);
+	/await onFileHandler\(blobToFile\(blob, name\)\)/.test(recordingSource), true);
 
 // --- a file the browser will not store ------------------------------------------------------
 //

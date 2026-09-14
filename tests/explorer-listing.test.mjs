@@ -15,9 +15,17 @@ import {check, report} from './assert.mjs';
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
 
 const start = source.indexOf('async function refreshCurrentDir');
-const end = source.indexOf('\n\tfunction sortItems', start);
-if (start === -1 || end === -1) {
+// The end marker has left this file twice already -- it was `sortItems`, which phase 21 moved
+// into js/view.js -- and a scrape whose end has gone is a slice of the wrong length rather
+// than an error. So the two ends are reported separately, and by name.
+const end = source.indexOf('\n\tfunction renderOverlays', start);
+if (start === -1) {
 	console.error('explorer-listing.test.mjs: could not find refreshCurrentDir');
+	process.exit(1);
+}
+if (end === -1) {
+	console.error('explorer-listing.test.mjs: could not find the end "renderOverlays" -- it has '
+		+ 'probably moved into a module, and this scrape needs repointing');
 	process.exit(1);
 }
 const code = source.slice(start, end);

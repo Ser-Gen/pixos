@@ -14,13 +14,20 @@ import fs from 'fs';
 import {check, report} from './assert.mjs';
 import {createFailure} from '../apps/explorer/js/failure.js';
 
-const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
+const indexSource = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
 const failureSource = fs.readFileSync(
 	new URL('../apps/explorer/js/failure.js', import.meta.url), 'utf8');
 
+// Phase 21 moved the dialog machinery into apps/explorer/js/dialogs.js. The rule being
+// checked is unchanged: every on*-shaped callback on a dialog is wrapped, because a submit
+// handler runs long after the action that opened it has returned.
+const dialogSource = fs.readFileSync(
+	new URL('../apps/explorer/js/dialogs.js', import.meta.url), 'utf8');
+
 // Pulls out `function name (...) { ... }` by matching braces, so the tests do not depend
 // on what happens to sit after it in the file.
-function fn (name) {
+function fn (name, where) {
+	const source = where || indexSource;
 	const start = source.indexOf('function ' + name + ' (');
 	if (start === -1) {
 		console.error('explorer-reporting.test.mjs: could not find function ' + name);
@@ -38,7 +45,7 @@ function fn (name) {
 	process.exit(1);
 }
 
-const code = [fn('isCallbackName'), fn('openDialog')].join('\n');
+const code = [fn('isCallbackName', dialogSource), fn('openDialog', dialogSource)].join('\n');
 
 const failures = [];
 const logged = [];
@@ -146,12 +153,21 @@ check('and an unnamed dialog still gets something readable',
 // shows a card. That is how a raw "ENOENT: No such file or directory." reached the screen,
 // and how an offline install reported itself as "TypeError: Failed to fetch".
 
-const handBuilt = source.split('\n')
-	.map((line, i) => ({line: line.trim(), number: i + 1}))
+// Every file Explorer is made of, not just index.html — phase 21 has been moving call sites
+// out of it, and a rule that only reads one file stops covering them the moment they leave.
+const explorerSources = [['index.html', indexSource]].concat(
+	fs.readdirSync(new URL('../apps/explorer/js/', import.meta.url))
+		.filter(name => name.endsWith('.js'))
+		.map(name => ['js/' + name, fs.readFileSync(
+			new URL('../apps/explorer/js/' + name, import.meta.url), 'utf8')]));
+
+const handBuilt = explorerSources.flatMap(([file, text]) => text.split('\n')
+	.map((line, i) => ({file: file, line: line.trim(), number: i + 1}))
 	.filter(entry => /openInfoDialog\(/.test(entry.line))
-	.filter(entry => /String\(err|String\(e\)|err\.message|e\.message|readErr\.message/.test(entry.line));
+	.filter(entry => /String\(err|String\(e\)|err\.message|e\.message|readErr\.message/.test(entry.line)));
 check('no call site turns a caught error into a dialog by hand',
-	handBuilt.map(entry => entry.number + ': ' + entry.line), []);
+	handBuilt.map(entry => entry.file + ':' + entry.number + ': ' + entry.line), []);
+check('and the sweep is actually reading the modules', explorerSources.length > 8, true);
 
 // Both listeners moved into js/failure.js with everything else that reports; they are
 // registered by the factory call rather than by reaching the middle of openExplorer, which

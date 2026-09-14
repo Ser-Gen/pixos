@@ -190,7 +190,9 @@ globalThis.GoldenLayout = class {
 
 globalThis.window = {addEventListener: () => {}};
 
-const WM = (await import('../js/shell/wm.js')).default;
+const wmModule = await import('../js/shell/wm.js');
+const WM = wmModule.default;
+const {makeTabTitlesSafe} = wmModule;
 
 const wm = new WM({root: '#root', windowsRoot: '#windows'});
 const events = [];
@@ -508,5 +510,73 @@ const spare = twoDesks.createWorkspace({name: 'Spare'});
 twoDesks.switchTo(spare.id);
 check('an empty desktop reports empty even when another has windows',
 	twoDesks.count(twoDesks.getActiveWorkspace()), 0);
+
+// --- a window title is a filename, and a filename is markup ---------------------------------
+//
+// Reported by somebody walking a checklist with a file called `<img src=x onerror=alert(1)>`
+// in it. Opening the file ran the script: GoldenLayout draws a tab title with jQuery's
+// `.html()`, and the tab is in the *shell's* window, where the filesystem is.
+//
+// The fix is a patch on GoldenLayout's own prototype rather than an escape at each of the
+// three places a title reaches it, so what is checked here is the patch: that it replaces the
+// method, that the replacement parses nothing, and that it is not applied twice.
+
+function fakeGoldenLayout () {
+	const drawn = {html: null, text: null, attr: null};
+	function Tab () {}
+	Tab.prototype.setTitle = function (title) {
+		this.element.attr('title', stripTags(title));
+		this.titleElement.html(title);
+	};
+	function stripTags (value) { return String(value).replace(/(<([^>]+)>)/gi, ''); }
+	const ctor = function () {};
+	ctor.__lm = {controls: {Tab: Tab}};
+	ctor.drawn = drawn;
+	ctor.newTab = function () {
+		const tab = new Tab();
+		tab.element = {attr: (name, value) => { drawn.attr = value; }};
+		tab.titleElement = {
+			html: value => { drawn.html = value; },
+			text: value => { drawn.text = value; }
+		};
+		return tab;
+	};
+	return ctor;
+}
+
+const nasty = '<img src=x onerror=alert(1)>';
+
+{
+	// What it did before the patch, so the check below is measuring something.
+	const gl = fakeGoldenLayout();
+	gl.newTab().setTitle(nasty);
+	check('unpatched, GoldenLayout hands the title to a parser', gl.drawn.html, nasty);
+	check('and the tooltip loses the half that looked like a tag', gl.drawn.attr, '');
+}
+
+{
+	const gl = fakeGoldenLayout();
+	check('the patch reports that it applied', makeTabTitlesSafe(gl), true);
+	gl.newTab().setTitle(nasty);
+	check('a tab title is now written as text', gl.drawn.text, nasty);
+	check('and never as markup', gl.drawn.html, null);
+	check('while the tooltip gets the filename whole', gl.drawn.attr, nasty);
+}
+
+{
+	const gl = fakeGoldenLayout();
+	makeTabTitlesSafe(gl);
+	check('patching twice is a no-op rather than a second wrapper',
+		makeTabTitlesSafe(gl), false);
+	gl.newTab().setTitle('notes.txt');
+	check('and the title still arrives', gl.drawn.text, 'notes.txt');
+}
+
+{
+	// The shell loads GoldenLayout from a script tag, so a boot that lost it must not take
+	// wm.js down with it -- the import runs this at module level.
+	check('no GoldenLayout at all is survivable', makeTabTitlesSafe(undefined), false);
+	check('and so is one with nothing recognisable in it', makeTabTitlesSafe({__lm: {}}), false);
+}
 
 process.exit(report('wm') ? 1 : 0);

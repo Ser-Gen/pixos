@@ -38,6 +38,23 @@ Explorer's own window catch the rest. All three route through one `report()` —
 that reaches for `openInfoDialog` directly gets a modal where the system gives a card, and
 skips the errno translation with it, which is how a raw `ENOENT` reached the screen twice.
 
+**Three layers of catching are worth nothing if the error was thrown away at the bottom.**
+Every wrapper in `apps/explorer/js/fs-helpers.js` turns one callback-style BrowserFS call into
+a promise, and the rule is that the error survives the translation. One of them did not:
+`mkdir` ignored the callback's error and resolved regardless, so **New Folder** with a name it
+could not create closed its dialog, made nothing, and said nothing — not a card, not a console
+line, nothing for the `actions` wrapper or `openDialog`'s wrapper or `unhandledrejection` to
+catch, because there was no longer an error anywhere. Three wrappers answer with a value
+rather than a rejection *on purpose* and must stay that way: `stat` answers `false` because it
+is asked as a "does this exist" question, and `readdir` and `listDirectory` answer with an
+empty folder. That last one is a real cost — an unreadable folder is drawn as an empty one —
+and is in `docs/backlog.md` rather than fixed here, because every listing path depends on the
+current shape. `ensureDir` is allowed to ignore exactly one errno, `EEXIST`, and only because
+it has just checked with `stat`: two writes into the same new folder race, and the loser
+finding it already made is the good outcome. Everything else it hits belongs to the caller —
+`ensureDir` runs in front of every write there is, so a swallow in it is a write that looks
+like it worked. `tests/explorer-fs-helpers.test.mjs` asks each wrapper both questions.
+
 **A question is a modal; a failure is a card — and one of them is not a failure at all.**
 Renaming a file onto a name that already exists looks like it should be an error, and is
 not: `fsRename` does not refuse an occupied name, it silently **replaces** what is there, so
@@ -53,6 +70,24 @@ same question through the same dialog, with `sourceIsDirectory` true, which is w
 *Replace* — replacing a folder would mean deleting whatever is inside it, and that is not a
 thing one click should do. The dialog names what is actually in the way, a folder or a file,
 because the commonest collision here is one folder with another.
+
+**Every dialog in Explorer opens through `openDialog`, and that is not a style preference.**
+It is `apps/explorer/js/dialogs.js`, and it wraps every `on*`-shaped key on the dialog in
+`guarded` on the way in. A submit handler runs long after the action that opened the dialog has
+returned, so the wrapper around `actions` is off the stack by the time it fires — a rename onto
+a file another window had just deleted reported itself as `Uncaught (in promise)` in a console
+nobody had open, and as nothing at all on screen. It wraps *whatever is on\*-shaped* rather
+than a list of the callbacks that exist today, because a list is a thing to forget to add to.
+Two smaller rules in the same file have each cost an afternoon. **The submit latch has to
+release when a handler returns `false`** — a click and an Enter can both arrive for one press,
+so the latch exists, but a handler that declined an empty filename has not submitted, and a
+latch that stays shut leaves the dialog alive and deaf with Cancel the only way out. And
+**the focus never lands on a checkbox**: the archive dialog is a list of them, and focusing the
+first buries the field the dialog is actually asking you to use; on a filename field the
+selection stops at the last dot, so typing straight over `report.final.pdf` keeps `.pdf`.
+`closeDialog` answers `'cancel'` for a `pasteConflict` and for nothing else — that is the one
+dialog with a caller awaiting an answer, and submitting any other on its way out would perform
+the operation the user just dismissed.
 
 **A long operation is a note that is not finished yet.** `notifications.progress({title,
 total, unit, source})` returns a *handle* — `update({value, total, message})`, `done()`,
@@ -220,6 +255,61 @@ Vendoring Monaco fixed something separate: its language services run in a worker
 `vs/base/worker/workerMain.js`, and from a CDN that is a cross-origin worker the browser
 refuses outright, so they had never actually run.
 
+**Explorer's half of 7-Zip is `apps/explorer/js/archive-ui.js`, and three of its rules are
+not the obvious ones.** **A wrong password is a question, not a failure**: the extract dialog
+stays open and asks again with what went wrong above the field, because closing it and raising
+a card would throw away the listing and make the user reopen the archive to try a second
+password. Only a `kind` that is not `password` closes it. **Extraction always makes a folder
+of its own, and never one whose name is taken** — extracting the same archive twice is
+ordinary, and merging into a folder somebody has since put their own files in cannot be
+undone; compressing is stricter still, because 7-Zip does not *replace* an archive it is given
+the name of, it tries to add to it and stops with "Is not archive". **A redraw is not a
+reopen**: `openDialog` wraps a dialog's callbacks so a throw inside one is reported, and it
+wraps again every time it is called, so a four-state dialog that re-opened itself on each
+redraw would end up several layers deep in its own error handling — `refreshArchiveDialog`
+calls `renderOverlays` for the live dialog and `openDialog` only for one that is not on screen.
+Two more things are easy to undo by accident: the engine promise is cached but a *rejection*
+is not, so a failed load does not poison the rest of the session; and an answer that arrives
+after the dialog has been closed is dropped rather than reopening it over whatever is on
+screen now.
+
+**A screen recording is written by the browser and then repaired.** Explorer's recorder is
+`apps/explorer/js/recording.js`, and five things in it are load-bearing. **A webm out of
+`MediaRecorder` carries no duration** — as far as the container is concerned it is still a
+live stream — so a player shows it as 0:00 and will not seek; `apps/fix-webm-duration.js`
+patches the header afterwards, and the length it needs comes from Explorer's own clock,
+because nothing in the file knows it. An mp4 does not need this and does not get it, and a
+patch that fails writes the original rather than nothing. **One recorder takes one stream**,
+so system audio and the microphone are summed through an `AudioContext` into a single track
+before it sees them — two audio tracks on one `MediaStream` is not a mix, it is two tracks,
+and what survives is whichever one the container decided to keep. **Stopping is two passes
+and has to stay two**: the first call only asks the recorder to stop, because the last chunk
+has not been handed over yet, and the recorder's own `onstop` calls back once the file is
+written to do the teardown — collapsing that into one pass loses the end of every recording.
+**Every track is stopped on every route out**, including the two failure paths that run
+*after* the permission prompt has been answered, or the browser's own capture indicator stays
+lit over a window that believes nothing is recording; and the browser's *Stop sharing* bar
+fires nothing of ours, so the video track is watched for `ended` — the same rule, for the
+same reason, as a peer call. **Muting is done on the track, not on the gain node**, so a
+muted microphone is muted for the browser too and its indicator goes out with it; a gain of
+zero is still a live microphone. And **there is no audio-only screen capture**:
+`getDisplayMedia({video: false})` is not a smaller ask, it is a rejected one — it throws
+`NotSupportedError`, which is how *record with the video off* came to answer *Could not start
+screen capture / Not supported* and record nothing at all. Turning the video off now means one
+of two different requests. With system audio wanted, the picker is still opened asking for
+video, because a tab's or a screen's sound only ever comes attached to a video track; the
+track is simply left out of what the recorder is handed, and deliberately **not** stopped —
+it is what the *Stop sharing* bar and the `ended` watch hang on, and stopping it takes the
+audio down with it. With system audio not wanted either, `getDisplayMedia` is not called at
+all, because nothing is being taken off the screen and nobody should be asked to choose one.
+The format follows: with no video track in the stream a video mime is not an over-ask but a
+wrong one — the recorder is being told to write a vp9 track it will never be given — so the
+container becomes `audio/webm` or `audio/mp4`, whichever this browser admits to supporting,
+and the file is named `.webm` or `.m4a` for what is actually in it rather than for what was
+picked in the dialog. None of this was reachable by a test until phase 21 made
+`getDisplayMedia`, `MediaRecorder`, `AudioContext` and the clock into parameters — the first
+of those cannot be reached at all without a person answering a prompt over a real screen.
+
 ## The desktop and its widgets
 
 **A peek ends the moment a window would be needed.** `desktop.js` drops the peek on the
@@ -279,6 +369,20 @@ respect: `syncGeometry` must skip windows on inactive desktops (a hidden layout 
 zero rect, and writing it would lose the size), and anything that destroys a layout has to
 set `wm.rebuilding` first — `destroy()` emits `itemDestroyed` for every pane, which is
 otherwise indistinguishable from the user closing them all.
+
+**A window title is a filename, and GoldenLayout drew it as markup.** `Tab.setTitle` hands
+the title to jQuery's `.html()`, so a file called `<img src=x onerror=alert(1)>` ran its script
+the moment somebody opened it — in the *shell's* window, which is where the filesystem, the
+session and every app's iframe live. Titles reach that call from three directions (a file
+opened from Explorer, an app calling `setTitle`, a session restored from disk), so it is fixed
+at the one place it is drawn: `makeTabTitlesSafe` in `js/shell/wm.js` replaces
+`Tab.prototype.setTitle` with the same method written through `.text()`, at import, before any
+layout exists. It is patched from our side rather than inside
+`js/goldenlayout/goldenlayout.min.js` because that is vendor code and an edit in there is an
+edit that disappears with the next bundle. The tooltip is better off for it too — the original
+ran the title through `stripTags`, which deleted whatever part of a filename looked like a tag.
+Everything else in the shell that draws a title (the taskbar, the overview, the palette) uses
+`textContent` already, and `tests/wm.test.mjs` is what keeps the patch honest.
 
 **Sessions persist ids, not just descriptors.** `session.js` saves each desktop's
 GoldenLayout `toConfig()` alongside every window's launch descriptor, and the config
@@ -521,9 +625,27 @@ larger, and PixOS keeps a file as exactly one) and `describeWriteLimit`, which i
 because a file that cannot be stored should not be read into memory to find that out. It
 is pure, so the `navigator.storage.estimate()` answer is passed in, not read, and a
 browser that will not estimate does not block the write. Explorer's `writeIncomingFile`
+(`apps/explorer/js/file-ops.js`, with the move and copy loops and the conflict question)
 removes what a failed write left behind, and **stages a replacement under
 `<name>.pixos-part` before touching the file it replaces** — the old order deleted first,
-so a write that failed took the original with it. Every route a file arrives by (drop,
+so a write that failed took the original with it. A file arriving by drop lands **where it was
+dropped** — `onFileHandler` takes the destination folder as an argument and only falls back to
+the folder being shown when it is not given one, because dropping a file onto a folder row
+plainly means putting it in that folder. The row's own drop handler cannot do it: only this side
+knows how to write a file, so that handler has to leave an event carrying nothing of ours
+*alone* rather than claiming it. It did not — `preventDefault` and `stopPropagation` ran before
+it worked out whether anything was being dragged — and a drop onto a folder did nothing
+whatsoever: no file, no error, no console line. **A dropped folder is resolved at its root,
+once.** It reaches `onFileHandler` one call per file, each carrying a path rooted at the drag
+rather than a name, so the question every other arrival asks would be asked once per file —
+a few hundred times for a folder worth dropping. It was therefore not asked anywhere, and a
+folder dropped onto one that already had its name merged into it silently, file by file,
+while dragging the same folder between two places *inside* PixOS asked first.
+`resolveIncomingRoots` asks it once per top-level folder in the drop, before anything is
+written; answering *keep both* resolves the root to a free name, which is also why nothing
+below it can then collide. `rerootIncomingPath` carries that one answer down — and strips the
+leading slash the drag adds, which is how a file dropped *beside* a folder came to look like
+folder contents and skip the question too. Every route a file arrives by (drop,
 paste, Upload) goes through `addIncomingFile`, which reports per file: all three are event
 listeners, and nothing awaits one of those, so a rejection escaping one is an unhandled
 rejection reported without ever naming the file.

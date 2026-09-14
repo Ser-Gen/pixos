@@ -165,12 +165,17 @@ check('a trailing dot selects up to it', basenameEnd('name.'), 4);
 // The document guard above already covers this, but the two are independent: one keeps the
 // keystroke out of the window behind, the other keeps the dialog from acting twice.
 
-const wiring = source.slice(source.indexOf('function wireSimpleDialog'));
+// The dialog machinery is apps/explorer/js/dialogs.js since phase 21.
+const dialogSource = fs.readFileSync(
+	new URL('../apps/explorer/js/dialogs.js', import.meta.url), 'utf8');
+const wiringAt = dialogSource.indexOf('function wireSimpleDialog');
+check('wireSimpleDialog is still somewhere to be found', wiringAt !== -1, true);
+const wiring = dialogSource.slice(wiringAt);
 const enterBranch = wiring.slice(wiring.indexOf("if (e.key === 'Enter'"), wiring.indexOf('submitOnce();'));
 check("the dialog's Enter stops propagating", enterBranch.includes('stopPropagation()'), true);
 check('and still prevents the default', enterBranch.includes('preventDefault()'), true);
 
 check('the rename field is marked as a filename',
-	source.includes('class="Dialog__input" data-select-basename'), true);
+	dialogSource.includes('class="Dialog__input" data-select-basename'), true);
 
 process.exit(report('explorer-keys') ? 1 : 0);

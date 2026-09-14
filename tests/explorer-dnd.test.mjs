@@ -234,13 +234,42 @@ const file = row('/home/a.txt', 'file');
 }
 
 {
+	// A file dragged in from the desktop and released on a folder row. Nothing of ours is on
+	// the transfer, so there is nothing to move — and the event must be left alone. Claiming
+	// it here is what stopped it reaching the handler on `body` that knows how to write a
+	// file, and a drop onto a folder did nothing whatsoever: no file, no error, no console
+	// line. Reported while walking the phase 21 checklist.
+	//
+	// The old version of this block checked only that nothing moved, which the bug satisfied
+	// perfectly. What it has to check is what the handler did to the event.
 	const w = world();
+	let claimed = [];
 	await w.dnd.handleItemDrop({
 		target: folder,
-		preventDefault () {}, stopPropagation () {},
+		preventDefault () { claimed.push('preventDefault'); },
+		stopPropagation () { claimed.push('stopPropagation'); },
 		dataTransfer: transfer({})
 	});
-	check('a drop carrying nothing at all moves nothing', w.moves, []);
+	check('a drop carrying nothing of ours moves nothing', w.moves, []);
+	check('and does not claim the event, so the file handler still gets it', claimed, []);
+	check('nor does it mark the drop as handled, which would cancel the idle commit too',
+		w.state.dragDropHandled, false);
+}
+
+{
+	// The same drop, with one of our own rows genuinely being dragged: now it is ours, and
+	// claiming the event is exactly right.
+	const w = world();
+	let claimed = [];
+	w.dnd.handleItemDragStart({target: file, dataTransfer: transfer()});
+	await w.dnd.handleItemDrop({
+		target: folder,
+		preventDefault () { claimed.push('preventDefault'); },
+		stopPropagation () { claimed.push('stopPropagation'); },
+		dataTransfer: transfer({'application/x-explorer-paths': '["/home/a.txt"]'})
+	});
+	check('a drop that is ours is claimed', claimed, ['preventDefault', 'stopPropagation']);
+	check('and moves the file', w.moves.length, 1);
 }
 
 // --- the three racers -------------------------------------------------------------------------------

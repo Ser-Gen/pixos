@@ -189,16 +189,21 @@ check('and says which two things it nearly always is',
 	true);
 
 // The path a 150 MB drop actually takes, which no unit test can drive: it is the order of
-// these three that matters, so it is checked in the source.
+// these three that matters, so it is checked in the source. All three moved into
+// apps/explorer/js/file-ops.js in phase 21, and the checks followed them there —
+// tests/explorer-file-ops.test.mjs now drives the same three against a fake filesystem, and
+// these stay because an order is a thing a rewrite can get wrong while every call still runs.
 const explorer = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
+const fileOps = fs.readFileSync(new URL('../apps/explorer/js/file-ops.js', import.meta.url), 'utf8');
+check('the file operations are in a module of their own', fileOps.length > 2000, true);
 check('a file is measured before it is read into memory',
-	/refuseOversizedFile\(file\)[\s\S]{0,120}return;[\s\S]{0,600}fileToAB\(file\)/.test(explorer), true);
+	/refuseOversizedFile\(file\)[\s\S]{0,120}return;[\s\S]{0,600}fileToAB\(file\)/.test(fileOps), true);
 check('a failed write leaves nothing behind',
-	/catch \(err\) \{\s*await unlinkQuietly\(destPath\);\s*throw err;/.test(explorer), true);
+	/catch \(err\) \{\s*await unlinkQuietly\(destPath\);\s*throw err;/.test(fileOps), true);
 // This one was the worse half: the old order deleted the file being replaced and then
 // wrote over the name, so a write that failed took the original with it.
 check('replacing a file writes somewhere else first',
-	/writeFile\(staging, contents\)[\s\S]{0,200}await unlink\(destPath\);\s*await fsRename\(staging, destPath\)/.test(explorer),
+	/writeFile\(staging, contents\)[\s\S]{0,200}await unlink\(destPath\);\s*await fsRename\(staging, destPath\)/.test(fileOps),
 	true);
 // `fileToAB` moved into apps/explorer/js/fs-helpers.js in phase 21. The check follows it
 // rather than being dropped: a reader with no onerror is a promise that never settles, and
