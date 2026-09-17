@@ -2,7 +2,7 @@
 //
 // Three of the four things in here are invisible until they are wrong in front of somebody.
 //
-//   * **`renderLayout` writes one template and then looks thirty nodes up in it by class.**
+//   * **`renderLayout` writes one template and then looks thirty-four nodes up in it by class.**
 //     Rename a class in the markup and the matching `ui.x` is quietly `null` — no error at
 //     render time, an "is not a function" the first time a button is pressed, and nothing at
 //     all for the ones that are only read. So the whole of `ui` is checked against the
@@ -127,14 +127,16 @@ function item (name, extra) {
 	}, extra || {});
 }
 
-// --- renderLayout, and the thirty lookups after it -------------------------------------------
+// --- renderLayout, and the thirty-four lookups after it --------------------------------------
 
 {
 	const h = harness();
 	const missing = Object.keys(h.ui).filter(key => !h.ui[key]);
 	check('every node renderLayout looks up is really in the markup it wrote', missing, []);
-	check('and there are the thirty of them the rest of the app reads',
-		Object.keys(h.ui).length, 30);
+	// Thirty until phase 23 made the sidebar a drawer: its toggle, the body whose class closes
+	// it, and the list and footer it is drawn into.
+	check('and there are the thirty-four of them the rest of the app reads',
+		Object.keys(h.ui).length, 34);
 
 	// The four the other modules reach for by name, spot-checked so that a rename of one of
 	// these has to come here and say so.

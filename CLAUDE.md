@@ -14,17 +14,22 @@ run in iframes. Pure static site — no build step, no backend.
   widget), `wallpaper.js` + `wallpaper-shader.js` background providers, `apps-model.js` +
   `start-menu.js` + `command-palette.js` launchers, `overview.js` the all-windows
   overlay, `file-search.js` the tree walk behind it, `open-with.js` the chooser for a
-  file with no default app, `bookmarks.js` the shell's half of `/settings/links.json`,
+  file with no default app, `bookmarks.js` the shell's half of `/settings/links.json` (every edit made to it from outside
+  the Bookmarks app, one at a time, on `window` as `addBookmark`, `listBookmarks`, `removeBookmark`,
+  `moveBookmark`, `renameBookmark` and `ensureBookmarkGroup`),
   `fs-events.js` the change signal every stale window
   needed (one wrap of the shared `fs`, coalesced),
-  `session.js` desktops/windows persistence, `tabs.js` (which tab may write the settings),
+  `session.js` desktops/windows persistence, `mount-table.js` (the mount table written to
+  `/settings/mounts.json` and brought back at boot, before the session), `tabs.js` (which tab
+  may write the settings),
   `peers.js` the connection to another PixOS + `peers-panel.js` where one is made +
   `call-bar.js` the one surface a call is drawn on + `peer-fs.js` a shared folder as a
   BrowserFS backend,
   `fullscreen.js`, `app-icons.js`, `context-menu.js`. `js/goldenlayout/` and `js/peerjs/`
   hold only vendor bundles.
-- `js/app-registry.js` — install / update / scan apps. `js/mount-manager.js` — zip, iso,
-  native-dir and files3 mounts.
+- `js/app-registry.js` — install / update / scan apps. `js/mount-manager.js` — zip, iso, native-dir and files3 mounts; an archive is mounted
+  by path (`mountZipFile`, `mountIsoFile`), because a mount made from bytes names no file to read
+  again after a reload and so cannot be written down.
 - `apps/7z/` — not an app: the archive engine Explorer uses. `js/parse.js` is pure (which
   files are archives, what 7-Zip's output means), `js/archive.js` runs it, `vendor/` holds
   JS7z with a `README.md` recording where it came from and why it is the single-threaded
@@ -62,10 +67,16 @@ run in iframes. Pure static site — no build step, no backend.
   draws one: four builders returning an array of entries, with everything the shell owns —
   peers, bookmarks, the wallpaper — offered only when there is a shell to own it)
   and `view.js` (everything Explorer draws of itself: the one template `renderLayout` writes and
-  the thirty nodes it then looks up in it by class, the order the rows go in, and the four
-  redraws that follow a change in `state`) and `sidebar.js` (`renderSidebar` alone — the only
+  the thirty-four nodes it then looks up in it by class, the order the rows go in, and the four
+  redraws that follow a change in `state`) and `sidebar.js` (`renderSidebar` — the only
   render that draws something Explorer does not own, and the only one whose output is
-  clickable) and `mounts.js` (the four mount actions and the one setting any of them remembers —
+  clickable — and the drawer it is drawn in: a column above 900px that starts the way it was last
+  left, an overlay at or below it that always starts closed, and at no width gone) and `places.js`
+  (the pinned places, which are the `Places` group of `/settings/links.json`, read and changed only
+  through the shell's `listBookmarks` and the edits beside it; Root and Apps are drawn as starters
+  until the first edit writes the group with that edit in it, **so opening Explorer never writes
+  the bookmarks file**) and `mounts.js` (the four mount actions, the two for a mount the shell could not bring back after a
+  reload — `reconnectMount`, `forgetMount` — and the one setting any of them remembers —
   `js/mount-manager.js` owns what a mount *is*, this owns what asking for one looks like: which
   dialog, what a refusal says, and the two steps every success takes **in that order**, draw the
   sidebar then go there) and `clipboard.js` (Explorer's two clipboards, which are not one: the
@@ -95,7 +106,8 @@ run in iframes. Pure static site — no build step, no backend.
   selection is built first and takes `renderStatus` and `renderToolbarState` late-bound.
   `mounts.js` and `sidebar.js` are the third pair, and the same shape: the sidebar draws the
   mounts and every mount action redraws the sidebar, so `mounts.js` — which `actions` is built
-  from, and `sidebar.js` reads `actions` — takes `renderSidebar` late-bound. `clipboard.js` and
+  from, and `sidebar.js` reads `actions` — takes `renderSidebar` late-bound, and `places.js` takes it
+  late for the same reason. `clipboard.js` and
   `view.js` are the fourth: the toolbar greys out *Paste* by asking the clipboard and every
   clipboard action redraws the toolbar, so the view takes `hasInternalClipboard` late-bound.
   **`renderOverlays` stayed in `index.html`** although it is a render: it is the junction where
@@ -115,9 +127,9 @@ run in iframes. Pure static site — no build step, no backend.
   every action lives in a module and is *named* in the table, which is kept because the guard loop
   wraps each entry once and menus, the sidebar and the keyboard all read the wrapped one; `menu-items.js` and `sidebar.js` are built *after* it, at the
   bottom of the block rather than the top, because a menu entry reads `actions.copySelected` when
-  the menu is built and every mount row carries an unmount button. The window's four boot lines —
-  `renderLayout`, `bindEvents`, `watchForChanges`, the first `refreshCurrentDir` — sit below them
-  for the same reason: **the window starts when every module exists**, and the first refresh draws
+  the menu is built and every mount row carries an unmount button. The window's boot lines —
+  `renderLayout`, `bindEvents`, `watchForChanges`, fitting the drawer, reading the places, the first
+  `refreshCurrentDir` — sit below them for the same reason: **the window starts when every module exists**, and the first refresh draws
   the sidebar.
   `apps/calendar` (read-only month/year view) and `apps/system-info` (what this browser
   will say about the machine) are the destinations the desktop widgets lead to, and each
@@ -135,7 +147,9 @@ run in iframes. Pure static site — no build step, no backend.
   delete it; `tests/precache.test.mjs` checks it is there.
 - `scripts/generate-apps-catalog.js` — writes every app manifest, `apps/registry.json`
   and `apps/app-catalog.js` (the fallback catalog) from one pass over `apps/`.
-- `tests/` — plain node, no framework, no dependencies. `npm test`.
+- `tests/` — plain node, no framework, no dependencies. `npm test`. `report()` in
+  `tests/assert.mjs` sets the exit code, which is all `tests/run.mjs` reads — five files once
+  ended without passing it on and could not fail.
 - `docs/*.ru.md` — architecture and how-to docs (Russian); the newer plans are `.md` English.
 - **`docs/not-so-simple.md` — how this system actually behaves**, in sixteen sections: the
   things you would not predict from the code, each written after somebody lost an afternoon
@@ -144,7 +158,7 @@ run in iframes. Pure static site — no build step, no backend.
   scheduled goes there, including things deliberately rejected and why. Read it before
   proposing work; move an item into a plan rather than copying it.
 - `docs/ux-improvements-plan.md` (phases 1–5, built), `docs/reliability-plan.md`
-  (phases 6–20, all built) and `docs/explorer-plan.md` (phases 21–24, planned) are the
+  (phases 6–20, all built) and `docs/explorer-plan.md` (phases 21–24: 21 built, 22 built, 23 under way) are the
   scheduled work, each phase with a browser checklist beside it
   (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
@@ -190,7 +204,8 @@ sections, and the kind of thing each one will catch:
   quiet-plus-maxWait coalescing, what a truncated batch is allowed to answer,
   `affects` versus `touches`, and why `watchFiles` takes the app's own window.
 - *Storage, and what the browser will not keep* — eviction, the 128 MiB ceiling on a file,
-  what a refused write does and does not tell you, and one spelling of a size.
+  what a refused write does and does not tell you, one spelling of a size, and which mounts
+  come back after a reload and which wait for a click.
 - *Manifests, boot, and what a fresh system is made of* — generated manifests, the two the
   generator skips in silence, `preinstall.json`, and what a boot says on screen when it
   cannot fetch what it is made of.
@@ -203,7 +218,8 @@ sections, and the kind of thing each one will catch:
   uninstalling is not install reversed, and how a renamed app keeps answering to its old
   name.
 - *Opening a file* — the chooser, defaults, and the self-opening extensions.
-- *The bookmarks document* — two writers, one owner, and a seeded starter.
+- *The bookmarks document* — two writers, one owner, a seeded starter, one queue for every
+  edit from outside the app, and Explorer's places as a group in it that looking never creates.
 - *Two smaller traps* — a clipboard that can refuse, and candidate-based extension matching.
 
 ## Boundaries

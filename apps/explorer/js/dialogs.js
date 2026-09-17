@@ -243,11 +243,11 @@ export function createDialogs (deps) {
 			panel.innerHTML = `
 				<div class="Modal__title">${escapeHtml(dialog.title)}</div>
 				<div class="Modal__list">${escapeHtml(dialog.message)}</div>
-				<div class="Modal__field"><input class="Dialog__input" value="${escapeAttr(dialog.defaultValue || '')}"></div>
+				<div class="Modal__field"><input class="Dialog__input" value="${escapeAttr(dialog.defaultValue || '')}"><div class="Modal__refusal" hidden></div></div>
 				<div class="Modal__buttons"><button class="Dialog__cancel">Cancel</button><button class="Dialog__submit">OK</button></div>
 			`;
 			wireSimpleDialog(panel, function () {
-				dialog.onSubmit(panel.querySelector('.Dialog__input').value.trim());
+				return submitPrompt(dialog, panel.querySelector('.Dialog__input'), panel.querySelector('.Modal__refusal'));
 			});
 		}
 		else if (dialog.type === 'info') {
@@ -351,6 +351,24 @@ export function createDialogs (deps) {
 		}
 
 		return modal;
+	}
+
+	// A prompt may carry `refuse(value)`, answering with the reason a value cannot be used or
+	// with nothing. A refused value keeps the dialog open with the reason under the field --
+	// closing on it would take away what was typed along with the chance to fix it. Named so
+	// that `openDialog` does not wrap it: it answers synchronously, and the wrapper answers a
+	// promise, which is never a string and so would refuse nothing.
+	function submitPrompt (dialog, input, refusal) {
+		var value = input.value.trim();
+		var reason = typeof dialog.refuse === 'function' ? dialog.refuse(value) : null;
+		if (reason) {
+			refusal.textContent = reason;
+			refusal.hidden = false;
+			input.focus();
+			return false;
+		}
+		refusal.hidden = true;
+		dialog.onSubmit(value);
 	}
 
 	function wireSimpleDialog (panel, onSubmit) {
@@ -521,6 +539,7 @@ export function createDialogs (deps) {
 	return {
 		buildDialogNode: buildDialogNode,
 		wireSimpleDialog: wireSimpleDialog,
+		submitPrompt: submitPrompt,
 		focusDialogInput: focusDialogInput,
 		isCallbackName: isCallbackName,
 		openDialog: openDialog,

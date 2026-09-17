@@ -123,20 +123,18 @@ function openTerminal () {
 			var filePath = path.resolve(currentPath, arg1);
 			var mp = arg2 || mountManager.suggestMountPoint(path.basename(filePath));
 			var ext = filePath.replace(/.*\./, '').toLowerCase();
+			// By path rather than by bytes, so the shell can mount it again after a reload.
 			return new Promise(function (resolve) {
-				fs.readFile(filePath, function (err, buf) {
-					if (err) return resolve('Error reading file: ' + err.message);
-					var cb = function (mountErr) {
-						resolve(mountErr ? 'Error: ' + mountErr.message : 'Mounted at ' + mp);
-					};
-					if (ext === 'zip') {
-						mountManager.mountZip(buf, mp, path.basename(filePath), cb);
-					} else if (ext === 'iso') {
-						mountManager.mountIso(buf, mp, path.basename(filePath), cb);
-					} else {
-						resolve('Unsupported format: ' + ext + '. Supported: zip, iso. Use --native for local folders.');
-					}
-				});
+				var cb = function (mountErr) {
+					resolve(mountErr ? 'Error: ' + mountErr.message : 'Mounted at ' + mp);
+				};
+				if (ext === 'zip') {
+					mountManager.mountZipFile(filePath, mp, path.basename(filePath), cb);
+				} else if (ext === 'iso') {
+					mountManager.mountIsoFile(filePath, mp, path.basename(filePath), cb);
+				} else {
+					resolve('Unsupported format: ' + ext + '. Supported: zip, iso. Use --native for local folders.');
+				}
 			});
 		},
 		umount: function (mountPoint) {

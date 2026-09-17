@@ -37,6 +37,7 @@
     {"path": "/apps/explorer/js/menu-items.js", "refresh": true},
     {"path": "/apps/explorer/js/view.js", "refresh": true},
     {"path": "/apps/explorer/js/sidebar.js", "refresh": true},
+    {"path": "/apps/explorer/js/places.js", "refresh": true},
     {"path": "/apps/explorer/js/mounts.js", "refresh": true},
     {"path": "/apps/explorer/js/clipboard.js", "refresh": true},
     {"path": "/apps/explorer/js/item-actions.js", "refresh": true},

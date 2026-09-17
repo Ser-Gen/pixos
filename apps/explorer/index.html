@@ -84,6 +84,7 @@ import { createFileOps } from "./js/file-ops.js";
 import { createMenuItems } from "./js/menu-items.js";
 import { createView } from "./js/view.js";
 import { createSidebar } from "./js/sidebar.js";
+import { createPlaces, FILE as LINKS_FILE } from "./js/places.js";
 import { createMounts } from "./js/mounts.js";
 import { createClipboard } from "./js/clipboard.js";
 import { createItemActions } from "./js/item-actions.js";
@@ -406,7 +407,7 @@ async function openExplorer () {
 	// below: `renderSidebar` is a `var` two hundred lines further down, and by the time anybody
 	// has a mount to unmount it holds a function.
 	var {
-		mountArchive, mountNativeDir, mountFiles3, umount
+		mountArchive, mountNativeDir, mountFiles3, umount, reconnectMount, forgetMount
 	} = createMounts({
 		state: state,
 		fs: window.fs,
@@ -415,7 +416,6 @@ async function openExplorer () {
 		win: window,
 		mountManager: window.mountManager,
 		normalizePath: normalizePath,
-		readFile: readFile,
 		getItemByPath: getItemByPath,
 		getNormalizedExtension: getNormalizedExtension,
 		openDialog: openDialog,
@@ -430,6 +430,19 @@ async function openExplorer () {
 		// native folder that will not answer is otherwise a ten-second test.
 		setTimer: function (fn, ms) { return setTimeout(fn, ms); },
 		clearTimer: function (handle) { return clearTimeout(handle); }
+	});
+
+	// The pinned places: the `Places` group of the bookmarks document, which the shell writes.
+	// Beside the mounts for the mounts' reason -- `actions` is built from what this returns and the
+	// sidebar that draws them is built from `actions` -- so `renderSidebar` goes in late-bound too.
+	var {
+		loadPlaces, pinFolder, unpinPlace, movePlace, renamePlace
+	} = createPlaces({
+		state: state,
+		shell: parent,
+		openDialog: openDialog,
+		renderOverlays: renderOverlays,
+		renderSidebar: function () { return renderSidebar(); }
 	});
 
 	// The internal clipboard, and Copy path onto the system one. Below file-ops, because a paste
@@ -534,6 +547,11 @@ async function openExplorer () {
 			if (mounted || change.affects(state.cwd)) {
 				refreshWhenIdle();
 			}
+			// The places are the bookmarks document, which the Bookmarks app, the shell and every
+			// other Explorer write. Only the sidebar changes, so only the places are read again.
+			if (change.touches(LINKS_FILE)) {
+				loadPlaces();
+			}
 		});
 	}
 
@@ -560,6 +578,7 @@ async function openExplorer () {
 			if (!state.historyBack.length) return;
 			state.historyForward.push(state.cwd);
 			state.cwd = state.historyBack.pop();
+			sidebarChosen();
 			refreshCurrentDir(false);
 		};
 
@@ -567,6 +586,7 @@ async function openExplorer () {
 			if (!state.historyForward.length) return;
 			state.historyBack.push(state.cwd);
 			state.cwd = state.historyForward.pop();
+			sidebarChosen();
 			refreshCurrentDir(false);
 		};
 
@@ -649,6 +669,10 @@ async function openExplorer () {
 
 		ui.refresh.onclick = function () {
 			refreshCurrentDir(false);
+		};
+
+		ui.sidebarToggle.onclick = function () {
+			toggleSidebar();
 		};
 
 		ui.breadcrumbs.onclick = function (e) {
@@ -904,7 +928,15 @@ async function openExplorer () {
 	}
 
 	function navigateTo (path, keepForwardHistory) {
-		if (!path || path === state.cwd) return;
+		if (!path) return;
+		// A narrow drawer lies over the listing, so once the window is going somewhere the
+		// drawer is in the way of seeing it arrive. Here rather than in each thing that sends
+		// the window somewhere: a place row did it and a mount row did it, while reconnecting a
+		// mount, mounting from the footer and ejecting the folder you stood in did not -- each
+		// is a separate route to this one call. A folder that is already the current one still
+		// counts as chosen.
+		sidebarChosen();
+		if (path === state.cwd) return;
 		state.historyBack.push(state.cwd);
 		if (!keepForwardHistory) {
 			state.historyForward = [];
@@ -968,6 +1000,12 @@ async function openExplorer () {
 			renderRows();
 			renderStatus();
 			renderToolbarState();
+			// So a reload brings this window back to the folder it is in, not the one it was
+			// opened in. After the walk up above, deliberately: a window that could not stay
+			// in a folder is standing somewhere else, and that is what it is left in.
+			if (typeof window.setWindowPath === 'function') {
+				window.setWindowPath(state.cwd);
+			}
 		}
 		catch (err) {
 			reportFailure('Could not open that folder', err);
@@ -1044,6 +1082,14 @@ async function openExplorer () {
 		mountNativeDir: mountNativeDir,
 		mountFiles3: mountFiles3,
 		umount: umount,
+		reconnectMount: reconnectMount,
+		forgetMount: forgetMount,
+
+		// js/places.js: the pinned places at the top of the sidebar.
+		pinFolder: pinFolder,
+		unpinPlace: unpinPlace,
+		movePlace: movePlace,
+		renamePlace: renamePlace,
 
 		// js/clipboard.js: the internal clipboard, and Copy path onto the system one.
 		copySelected: copySelected,
@@ -1102,18 +1148,21 @@ async function openExplorer () {
 		isImageExtension: isImageExtension
 	});
 
-	// The sidebar, built here for the same reason menu-items is: every mount row carries an
-	// unmount button and the two buttons under the list call `mountNativeDir` and
-	// `mountFiles3`, all three read off `actions` as the list is drawn.
-	var {renderSidebar} = createSidebar({
+	// The sidebar, built here for the same reason menu-items is: every place carries a menu of
+	// place actions, every mount row an unmount button, and the footer's two buttons call
+	// `mountNativeDir` and `mountFiles3` -- all of them read off `actions` as the list is drawn.
+	var {
+		renderSidebar, toggleSidebar, fitSidebar, sidebarChosen, watchSidebarWidth
+	} = createSidebar({
 		state: state,
 		ui: ui,
 		doc: document,
 		win: window,
 		mountManager: window.mountManager,
+		mountTable: (parent !== window && parent.mountTable) || null,
 		actions: actions,
 		navigateTo: navigateTo,
-		getParentPath: getParentPath
+		openContextMenu: openContextMenu
 	});
 
 	// Every module exists by this line, which is why the window starts on it rather than two
@@ -1128,6 +1177,13 @@ async function openExplorer () {
 	renderLayout();
 	bindEvents();
 	watchForChanges();
+	// The drawer is fitted to the window's width before anything is drawn in it, and the places
+	// are read before the first refresh, so that refresh draws them rather than the starters for
+	// the moment the read takes. `loadPlaces` catches its own failures: a bookmarks file that will
+	// not read costs the sidebar its editing, never the window.
+	fitSidebar();
+	watchSidebarWidth();
+	await loadPlaces();
 	await refreshCurrentDir(false);
 
 	async function onDrop (e) {

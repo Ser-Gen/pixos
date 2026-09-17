@@ -1,97 +1,101 @@
 {
-	"id": "explorer",
-	"name": "Explorer",
-	"version": "1.26.5",
-	"entryPath": "/apps/explorer/index.html",
-	"files": [
-		{
-			"path": "/apps/explorer/explorer.css",
-			"hash": "sha256:404055892eb930c727c6fd41e5c51dedc9c89a73aed43a669a3ed6087add84fc"
-		},
-		{
-			"path": "/apps/explorer/favicon.svg",
-			"hash": "sha256:7c2c881ed9bca57362d361225e0ca7eab227686528cad2de8771d5461d114fa3"
-		},
-		{
-			"path": "/apps/explorer/index.html",
-			"hash": "sha256:e031cc1e78d1d4cc24c5177571322d303787f0652014feebb772fee5f5d1313e"
-		},
-		{
-			"path": "/apps/explorer/js/archive-ui.js",
-			"hash": "sha256:e39fc1c2a8c900162cd731c53fb317283a4d01b5a31a027a5eac572462751478"
-		},
-		{
-			"path": "/apps/explorer/js/clipboard.js",
-			"hash": "sha256:57c967925202c34b3033dae5e60404164d99ed3597ca911154513ad0067e6dc5"
-		},
-		{
-			"path": "/apps/explorer/js/context-menu.js",
-			"hash": "sha256:9c66cd4fe4bf64f24a66b49f402f845d0c9255b33aa8205cc91f2d129e4949c2"
-		},
-		{
-			"path": "/apps/explorer/js/convert.js",
-			"hash": "sha256:eeb85d98f346e33f09382976e72d5c7085f8d6ee7afc72b087c6c69d909d7c9c"
-		},
-		{
-			"path": "/apps/explorer/js/dialogs.js",
-			"hash": "sha256:0e30aec31fb4212d91503853cb938f84f2117326487593ef1930ee6f9b15514e"
-		},
-		{
-			"path": "/apps/explorer/js/dnd.js",
-			"hash": "sha256:45b8d3ac19a8d8a9beb67f5795db8ac2d43712770b1ee058826bc3c6b893225e"
-		},
-		{
-			"path": "/apps/explorer/js/failure.js",
-			"hash": "sha256:f0e5643654498f61fcd17095d42aa9f244103886562f29f5149cf603f9974de4"
-		},
-		{
-			"path": "/apps/explorer/js/file-ops.js",
-			"hash": "sha256:0158a3dde718943e2f9a7cb93678b4ae8cc2198a14b186d0fec6b5472ce97b21"
-		},
-		{
-			"path": "/apps/explorer/js/format.js",
-			"hash": "sha256:188b4096737fc489f31569d3d59326d5ecaf2255761e5f32dec54aa44fe9cdf4"
-		},
-		{
-			"path": "/apps/explorer/js/fs-helpers.js",
-			"hash": "sha256:55b573b72bf73abe62a618a77b7c986a52e03c9741f653a4b0fa9daf5d6bfdd1"
-		},
-		{
-			"path": "/apps/explorer/js/item-actions.js",
-			"hash": "sha256:12b0f97210b925e3d7c640bfcc5a29a3edf8baf2dc9f381680831c00d663abec"
-		},
-		{
-			"path": "/apps/explorer/js/menu-items.js",
-			"hash": "sha256:ed9ec0067efc0c6bde534c13a0927bfc9873aa956b43ef177c3a4ebcf0a8260e"
-		},
-		{
-			"path": "/apps/explorer/js/mounts.js",
-			"hash": "sha256:8cf776eb9633b74836ceb743ef7feb0cc10702b89ce05188517d54b7f1229b85"
-		},
-		{
-			"path": "/apps/explorer/js/open-with.js",
-			"hash": "sha256:fc969db22e70d2cd5f80a26c68ae4d194f7c580e862055e04f78bbcb99d4429b"
-		},
-		{
-			"path": "/apps/explorer/js/recording.js",
-			"hash": "sha256:7f67880f5f4a9c80701791fc30f49d4151d8c105ec972d1cd4f251d5b8d8e55a"
-		},
-		{
-			"path": "/apps/explorer/js/selection.js",
-			"hash": "sha256:ae078b3747a31acb9ddd4ba891ae13ef0a0449c767357e7d71dfdf2c970353af"
-		},
-		{
-			"path": "/apps/explorer/js/shell-actions.js",
-			"hash": "sha256:f8057f1d7f640138c8d33e2352b8fb51c9ae401a71fec2e7806520cbbf967fd0"
-		},
-		{
-			"path": "/apps/explorer/js/sidebar.js",
-			"hash": "sha256:c068efd48bda080dec125c2d12b831ba459ed7c959ace747717a3290882408fa"
-		},
-		{
-			"path": "/apps/explorer/js/view.js",
-			"hash": "sha256:faf3cdc14c9048c5daf3d2a7c0859eb8a4d7e434957d58db04aad2d28e7f5ef1"
-		}
-	],
-	"icon": "/apps/explorer/favicon.svg"
+  "id": "explorer",
+  "name": "Explorer",
+  "version": "1.28.2",
+  "entryPath": "/apps/explorer/index.html",
+  "files": [
+    {
+      "path": "/apps/explorer/explorer.css",
+      "hash": "sha256:3c60625ba0cf2634acce5891dc3aa42fdef6f4c03b16297b29a97cb97c844c80"
+    },
+    {
+      "path": "/apps/explorer/favicon.svg",
+      "hash": "sha256:7c2c881ed9bca57362d361225e0ca7eab227686528cad2de8771d5461d114fa3"
+    },
+    {
+      "path": "/apps/explorer/index.html",
+      "hash": "sha256:521c623987d5b95f492f26a2592be4fbf518078634cc6ab6d3aa52fbf705c038"
+    },
+    {
+      "path": "/apps/explorer/js/archive-ui.js",
+      "hash": "sha256:e39fc1c2a8c900162cd731c53fb317283a4d01b5a31a027a5eac572462751478"
+    },
+    {
+      "path": "/apps/explorer/js/clipboard.js",
+      "hash": "sha256:57c967925202c34b3033dae5e60404164d99ed3597ca911154513ad0067e6dc5"
+    },
+    {
+      "path": "/apps/explorer/js/context-menu.js",
+      "hash": "sha256:9c66cd4fe4bf64f24a66b49f402f845d0c9255b33aa8205cc91f2d129e4949c2"
+    },
+    {
+      "path": "/apps/explorer/js/convert.js",
+      "hash": "sha256:eeb85d98f346e33f09382976e72d5c7085f8d6ee7afc72b087c6c69d909d7c9c"
+    },
+    {
+      "path": "/apps/explorer/js/dialogs.js",
+      "hash": "sha256:4c3a744d60b9351d01a5c93ee9cdd5ec232db36af806ee6f6197757d5b5888ff"
+    },
+    {
+      "path": "/apps/explorer/js/dnd.js",
+      "hash": "sha256:45b8d3ac19a8d8a9beb67f5795db8ac2d43712770b1ee058826bc3c6b893225e"
+    },
+    {
+      "path": "/apps/explorer/js/failure.js",
+      "hash": "sha256:f0e5643654498f61fcd17095d42aa9f244103886562f29f5149cf603f9974de4"
+    },
+    {
+      "path": "/apps/explorer/js/file-ops.js",
+      "hash": "sha256:0158a3dde718943e2f9a7cb93678b4ae8cc2198a14b186d0fec6b5472ce97b21"
+    },
+    {
+      "path": "/apps/explorer/js/format.js",
+      "hash": "sha256:188b4096737fc489f31569d3d59326d5ecaf2255761e5f32dec54aa44fe9cdf4"
+    },
+    {
+      "path": "/apps/explorer/js/fs-helpers.js",
+      "hash": "sha256:55b573b72bf73abe62a618a77b7c986a52e03c9741f653a4b0fa9daf5d6bfdd1"
+    },
+    {
+      "path": "/apps/explorer/js/item-actions.js",
+      "hash": "sha256:12b0f97210b925e3d7c640bfcc5a29a3edf8baf2dc9f381680831c00d663abec"
+    },
+    {
+      "path": "/apps/explorer/js/menu-items.js",
+      "hash": "sha256:ed9ec0067efc0c6bde534c13a0927bfc9873aa956b43ef177c3a4ebcf0a8260e"
+    },
+    {
+      "path": "/apps/explorer/js/mounts.js",
+      "hash": "sha256:4b573fbc88013607f0ce196c387d25c92683fca0827e3824c7bcd8e9badbe990"
+    },
+    {
+      "path": "/apps/explorer/js/open-with.js",
+      "hash": "sha256:fc969db22e70d2cd5f80a26c68ae4d194f7c580e862055e04f78bbcb99d4429b"
+    },
+    {
+      "path": "/apps/explorer/js/recording.js",
+      "hash": "sha256:7f67880f5f4a9c80701791fc30f49d4151d8c105ec972d1cd4f251d5b8d8e55a"
+    },
+    {
+      "path": "/apps/explorer/js/selection.js",
+      "hash": "sha256:ae078b3747a31acb9ddd4ba891ae13ef0a0449c767357e7d71dfdf2c970353af"
+    },
+    {
+      "path": "/apps/explorer/js/shell-actions.js",
+      "hash": "sha256:f8057f1d7f640138c8d33e2352b8fb51c9ae401a71fec2e7806520cbbf967fd0"
+    },
+    {
+      "path": "/apps/explorer/js/sidebar.js",
+      "hash": "sha256:2a1434acd1acdc96736f3c97ec831aa15674561f2d72001d72201dbf9e4d8394"
+    },
+    {
+      "path": "/apps/explorer/js/places.js",
+      "hash": "sha256:8cba1a259583f64ec30564b61f550db8dd96ad54243ec72bb1d3fe4d7e079843"
+    },
+    {
+      "path": "/apps/explorer/js/view.js",
+      "hash": "sha256:4562816c6dbc1104da26890f888aa270528269adfd4a5f46a89c1071f1b69a98"
+    }
+  ],
+  "icon": "/apps/explorer/favicon.svg"
 }

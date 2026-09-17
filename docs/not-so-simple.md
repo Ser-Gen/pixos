@@ -488,6 +488,17 @@ still runs standalone. That flag is the whole basis of the dot on the window tit
 taskbar button, of the palette's *Unsaved work*, and of whether `beforeunload` fires at all
 — an app that never calls it is a window the system will let you close without a word.
 
+`setWindowPath(path)` is injected beside it, bound the same way, and is **where a window now
+stands** for an app that moves around inside itself. A session saves each window's launch
+descriptor, and that descriptor was written once, when the window opened — so until Explorer
+reported its folder, every reload brought every Explorer back to the folder it had been *opened*
+in: the root for one opened from the menu, a mount point for one opened by mounting, never the
+folder it was left in. `wm.setPath` replaces the descriptor's first path and announces a change
+only when the path is a different one. Explorer calls it at the end of a successful listing,
+**after** the walk up from a folder that has gone, so a window is saved where it is drawn; a
+listing that failed reports nothing. A folder under a mount that has not come back yet — a local
+folder waiting for its click — is therefore saved as the folder the window walked up to.
+
 **Two ways an editor can be safe, and it must declare which.** `"autosave": true` in
 `pixos.app.json` means the app writes changes back on its own — `ace` and `monaco` do, and
 App Manager shows a *saves automatically* badge for them. `tinymce` does not and says so by
@@ -656,6 +667,30 @@ attaches listeners on import — so nothing pure could borrow it and `peers.js` 
 own, which rounded differently. `apps/system-info` has a fourth copy and always will: an
 app is installed *into* BrowserFS and cannot import a shell module, the same reason the
 frontmatter parser is written twice.
+
+**A mount is written down, and comes back only as far as the browser allows.**
+`js/shell/mount-table.js` keeps the table in `/settings/mounts.json` and restores it during boot,
+**before the session** — a window restored into `/mnt/work` has to find it mounted, or Explorer
+walks up out of an empty mount point and says the folder is gone. The four types cannot come back
+alike, and treating them alike breaks three of them. A zip or an iso is read again from the file
+it was mounted from, which is why archives are now mounted **by path** (`mountZipFile`,
+`mountIsoFile`): a mount made from bytes names no file, and is not kept. **Files3 mounts silently
+only while its token is still in `localStorage`** — `ensureToken()` with no token opens a popup,
+and a popup opened during boot has no click behind it and is blocked, so the restore asks
+*whether* there is a token rather than asking *for* one. A local folder is a
+`FileSystemDirectoryHandle`, which is structured-cloneable but not bytes, so it lives in an
+IndexedDB database of its own (`pixos-mount-handles`) rather than in the JSON; after a reload
+`queryPermission()` usually answers `prompt`, and `requestPermission()` answers only inside a
+click — so in `reconnect()` it is **the first call, before anything is awaited**. A peer is not
+kept at all (`docs/backlog.md`). Whatever cannot come back **waits** — in the table and as a row
+in Explorer's sidebar reading *click to reconnect*, *click to sign in* or *did not come back* —
+until it is clicked or forgotten; only a real failure raises a note, once per boot, because a
+folder waiting for a click is every local folder on every reload. Two rules keep the file honest.
+**Nothing is written until the table has been read**, or a mount made earlier in boot — a peer
+connecting — writes a table of one over the table about to be restored. And, as with the
+session, **only the tab that owns the settings writes** it; a follower restores and adds nothing.
+The handles, the document and the pruning of handles nobody uses are three separate steps, so a
+handle store that will not open costs the local folders their handle and not the zips their place.
 
 ## Manifests, boot, and what a fresh system is made of
 
@@ -952,11 +987,15 @@ route at all, because Explorer was never involved in opening it.
 ## The bookmarks document
 
 **The bookmarks document has two writers, and one owner.** `apps/bookmarks/js/links.js`
-owns `/settings/links.json`; `js/shell/bookmarks.js` is the shell's copy of only what
-appending one link needs, for `window.addBookmark({title, url})` — a second copy for the
-same reason the frontmatter parser is one, since an app is installed *into* BrowserFS and
-the shell cannot import from it. `npm test` checks the two answer identically for every
-URL shape rather than trusting them to. Two rules that are not obvious: it is deliberately
+owns `/settings/links.json`; `js/shell/bookmarks.js` is the shell's copy of what the edits
+made from outside the app need — adding a link, and since phase 23 listing a group, removing,
+moving inside its group, renaming, and creating a group — put on `window` as `addBookmark`,
+`listBookmarks`, `removeBookmark`, `moveBookmark`, `renameBookmark` and `ensureBookmarkGroup`.
+It is a second copy for the same reason the frontmatter parser is one, since an app is
+installed *into* BrowserFS and the shell cannot import from it. `npm test` checks the two
+answer identically — every URL shape, and every move from every position to every position —
+rather than trusting them to. `moveBookmark`'s index means what `moveLink`'s does: the position
+*before the link is lifted out*, so one place down is its index plus two. Two rules that are not obvious: it is deliberately
 **not** behind the tab-ownership gate (this is a document the user edits, not a record of
 how this tab is arranged, and the app writes it from any tab), and a file that will not
 parse is never written over — "no file yet" and "a file with something wrong in it" are
@@ -968,6 +1007,40 @@ the app's in `tests/shell-bookmarks.test.mjs` rather than trusted. Without it `a
 created the file first and the app's starter document was never written at all: one
 bookmark added from the desktop *was* the whole collection. A seed, not a refreshed file,
 so it is copied once and never reasserted over a collection somebody has built.
+
+**Every shell edit is a read, a change and a write, and they wait for each other.** *Move up*
+pressed twice used to be two reads of the same document and a second write putting back what
+the first had moved; the store in `js/shell/bookmarks.js` runs them one at a time, and a list
+asked for after an edit waits for it. That is one queue *per shell*: two PixOS tabs, or the
+Bookmarks app — which holds the document in memory and saves it whole — can still both write
+in the same moment, and the later one wins. A file that will not read is never written by any
+of the edits, not only by the add. And **a named group is searched for duplicates on its own**:
+with `group` given, a link already in some *other* group is added anyway, because pinning a
+folder to Explorer's places is not the same act as bookmarking it, and the whole-document search
+answered "Already bookmarked" to a pin. With no group named, the whole document is searched, as
+it always was.
+
+**Explorer's places are the `Places` group, and opening Explorer never creates it.** With no such
+group, Explorer draws Root and Apps as starters and writes nothing. The first edit — a pin, an
+unpin, a move or a rename — writes the starters with that edit already applied, as one
+`ensureBookmarkGroup` call, which **leaves a group that is already there exactly as it is**: if
+another window created `Places` in the meantime, this window's edit to its stale starters is
+dropped and the real group is drawn, rather than the starters being written over somebody's
+pins. A `Places` group with nothing in it is not a missing one — unpinning everything does not
+bring the starters back — but deleting the group in the Bookmarks app does. Only folders are
+drawn (an address ending in `/`); a file or a site put into `Places` stays in the document and
+still counts as a position when a move is written. A place is acted on by its id, never by the
+row it was drawn in, since a menu is pressed after the list may have been read again; a link
+with no id — a hand-written file the Bookmarks app has not saved yet — can be drawn but not
+edited until it has one.
+
+**Two places may not share a name, and only Explorer says so.** *Rename…* refuses a name another
+place already has, ignoring case, and keeps the dialog open with the reason under the field — the
+prompt dialog's `refuse(value)`, which answers synchronously and is deliberately not `on*`-shaped,
+because the guard `openDialog` wraps callbacks in returns a promise and a promise refuses nothing.
+The shell does not enforce it: `Places` is a group of links, and the Bookmarks app may title two
+links alike. A pin is not refused either — it is named after its folder, so `/home` and
+`/mnt/usb/home` can both be *home* until one is renamed.
 
 ## Two smaller traps
 

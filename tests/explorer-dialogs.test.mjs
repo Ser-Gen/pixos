@@ -238,6 +238,46 @@ function panelWith (options) {
 	return panel;
 }
 
+// --- a prompt that can say no ---------------------------------------------------------------
+
+{
+	const h = harness();
+	const submitted = [];
+	const input = el('input'); input.value = '  Docs ';
+	const refusal = el('div'); refusal.hidden = true;
+	const dialog = {type: 'prompt', onSubmit: function (value) { submitted.push(value); },
+		refuse: function (value) { return value === 'Docs' ? 'Taken.' : null; }};
+	h.dialogs.openDialog(dialog);
+
+	check('a refused value declines, so the latch lets go', h.dialogs.submitPrompt(dialog, input, refusal), false);
+	check('and nothing is submitted', submitted, []);
+	check('the reason is shown under the field', [refusal.textContent, refusal.hidden], ['Taken.', false]);
+	check('what was typed stays, with the focus on it', [input.value, input.focused], ['  Docs ', true]);
+
+	input.value = 'Papers';
+	h.dialogs.submitPrompt(dialog, input, refusal);
+	check('a value it takes is submitted trimmed', submitted, ['Papers']);
+	check('and the old reason is put away', refusal.hidden, true);
+	check('refuse is not wrapped, because a promise would refuse nothing', typeof dialog.refuse('Docs'), 'string');
+}
+
+{
+	const h = harness();
+	const submitted = [];
+	const input = el('input'); input.value = 'anything';
+	const dialog = {type: 'prompt', onSubmit: function (value) { submitted.push(value); }};
+	h.dialogs.submitPrompt(dialog, input, el('div'));
+	check('a prompt with no refuse takes whatever is typed', submitted, ['anything']);
+}
+
+{
+	const source = fs.readFileSync(new URL('../apps/explorer/js/dialogs.js', import.meta.url), 'utf8');
+	const prompt = source.slice(source.indexOf("dialog.type === 'prompt'"), source.indexOf("dialog.type === 'info'"));
+	check('the prompt draws a place for the reason, hidden', /class="Modal__refusal" hidden/.test(prompt), true);
+	check('and submits through submitPrompt, handing its answer to the latch',
+		/return submitPrompt\(dialog, panel\.querySelector\('\.Dialog__input'\), panel\.querySelector\('\.Modal__refusal'\)\)/.test(prompt), true);
+}
+
 {
 	const h = harness();
 	const panel = panelWith({});

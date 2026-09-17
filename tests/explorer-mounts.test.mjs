@@ -58,8 +58,8 @@ function harness (options) {
 
 	const mountManager = options.noMountManager ? null : {
 		suggestMountPoint: name => '/mnt/' + name,
-		mountZip: mountCall('zip'),
-		mountIso: mountCall('iso'),
+		mountZipFile: mountCall('zip'),
+		mountIsoFile: mountCall('iso'),
 		mountNativeDir: mountCall('native'),
 		mountFiles3: mountCall('files3'),
 		umount: mp => {
@@ -77,9 +77,10 @@ function harness (options) {
 			}
 		},
 		path: pathStub,
-		shell: options.shellPicker
-			? {pickNativeDirectory: () => options.shellPicker()}
-			: {},
+		shell: Object.assign(
+			options.shellPicker ? {pickNativeDirectory: () => options.shellPicker()} : {},
+			options.mountTable ? {mountTable: options.mountTable} : {}
+		),
 		win: {
 			showDirectoryPicker: options.winPicker || undefined,
 			localStorage: {
@@ -91,7 +92,6 @@ function harness (options) {
 		},
 		mountManager: mountManager,
 		normalizePath: p => String(p).replace(/\/+/g, '/'),
-		readFile: async p => 'BYTES:' + p,
 		getItemByPath: p => h.items.find(i => i.path === p) || null,
 		getNormalizedExtension: p => String(p).split('.').pop().toLowerCase(),
 		openDialog: dialog => { h.dialogs.push(dialog); },
@@ -143,8 +143,10 @@ const order = h => h.calls.map(c => c[0]);
 	check('with a suggestion already filled in', h.dialogs[0].defaultValue, '/mnt/disk.zip');
 
 	await h.dialogs[0].onSubmit('/mnt/disk');
-	check('a zip goes to mountZip with its bytes and its name',
-		h.calls.filter(c => c[0] === 'zip'), [['zip', 'BYTES:/home/disk.zip', '/mnt/disk', 'disk.zip']]);
+	// The path and not the bytes: a mount that knows which file it came from is one the shell
+	// can write down and mount again after a reload (js/shell/mount-table.js).
+	check('a zip goes to mountZipFile with its path and its name',
+		h.calls.filter(c => c[0] === 'zip'), [['zip', '/home/disk.zip', '/mnt/disk', 'disk.zip']]);
 	// The whole point of the pair: a navigate before the sidebar walks into a mount point the
 	// sidebar has not drawn.
 	check('and the sidebar is drawn before the window goes there',
@@ -156,7 +158,8 @@ const order = h => h.calls.map(c => c[0]);
 	const h = harness({items: [file('/home/disc.iso')]});
 	await h.mounts.mountArchive('/home/disc.iso');
 	await h.dialogs[0].onSubmit('/mnt/disc');
-	check('an iso goes to mountIso', h.calls.filter(c => c[0] === 'iso').length, 1);
+	check('an iso goes to mountIsoFile, by path too',
+		h.calls.filter(c => c[0] === 'iso'), [['iso', '/home/disc.iso', '/mnt/disc', 'disc.iso']]);
 }
 
 {
@@ -449,6 +452,69 @@ const order = h => h.calls.map(c => c[0]);
 	check('and both spell the default id the same way',
 		[boot.indexOf("'files3_token_storage'") > -1, module.indexOf("'files3_token_storage'") > -1],
 		[true, true]);
+}
+
+// --- a mount the shell could not bring back ----------------------------------------------------
+//
+// The table is the shell's (js/shell/mount-table.js). What this owns is the click: the table has
+// to be asked *inside* it, because a browser answers `requestPermission()` only there, and what
+// the table answers decides where the window goes.
+
+function fakeTable (answer) {
+	const t = {asked: [], forgotten: []};
+	t.reconnect = p => { t.asked.push(p); return Promise.resolve(answer); };
+	t.forget = p => { t.forgotten.push(p); return true; };
+	return t;
+}
+
+{
+	const table = fakeTable({mounted: true, status: null, error: null});
+	const h = harness({mountTable: table});
+	const running = h.mounts.reconnectMount('/mnt/work');
+	check('reconnecting asks the table before anything is awaited', table.asked, ['/mnt/work']);
+	await running;
+	check('and a folder that came back is drawn, then gone to', order(h), ['sidebar', 'navigate']);
+	check('at its own mount point', h.navigated, ['/mnt/work']);
+}
+
+{
+	const table = fakeTable({mounted: false, status: 'failed', error: new Error('ENOENT: /home/a.zip')});
+	const h = harness({mountTable: table});
+	await h.mounts.reconnectMount('/mnt/a');
+	check('one that still will not mount is reported by its mount point',
+		h.failures, [['Could not reconnect /mnt/a', 'ENOENT: /home/a.zip']]);
+	check('and the window stays, with the sidebar redrawn to show it waiting again',
+		[h.navigated, h.sidebarDraws], [[], 1]);
+}
+
+{
+	// Refusing the browser's question is an answer, not a failure.
+	const h = harness({mountTable: fakeTable({mounted: false, status: 'needs-permission', error: null})});
+	await h.mounts.reconnectMount('/mnt/work');
+	check('a refused permission reports nothing and goes nowhere',
+		[h.failures, h.navigated, h.sidebarDraws], [[], [], 1]);
+}
+
+{
+	const table = fakeTable(null);
+	const h = harness({mountTable: table});
+	h.mounts.forgetMount('/mnt/work');
+	check('forgetting one asks the table, and redraws the sidebar',
+		[table.forgotten, h.sidebarDraws], [['/mnt/work'], 1]);
+}
+
+{
+	const h = harness({});
+	let escaped = null;
+	try {
+		await h.mounts.reconnectMount('/mnt/work');
+		h.mounts.forgetMount('/mnt/work');
+	}
+	catch (err) {
+		escaped = err.message;
+	}
+	check('with no shell table, both do nothing and throw nothing',
+		[escaped, h.calls, h.sidebarDraws], [null, [], 0]);
 }
 
 report('explorer-mounts');

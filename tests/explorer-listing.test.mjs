@@ -32,7 +32,7 @@ const code = source.slice(start, end);
 
 // --- a filesystem that can lose a folder while you are in it ----------------------------
 
-let tree, notes, failures, rendered;
+let tree, notes, failures, rendered, located;
 
 const state = {cwd: '/home/docs', items: [], selectedPaths: new Set(),
 	lastSelectedPath: null, busy: false, pendingRefresh: null};
@@ -40,7 +40,7 @@ const state = {cwd: '/home/docs', items: [], selectedPaths: new Set(),
 const api = new Function(
 	'state', 'withFsTimeout', 'listDirectory', 'stat', 'normalizePath', 'getParentPath',
 	'sortItems', 'renderBreadcrumbs', 'renderSidebar', 'renderRows', 'renderStatus',
-	'renderToolbarState', 'report', 'reportFailure',
+	'renderToolbarState', 'report', 'reportFailure', 'window',
 	code + '\n; return {refreshCurrentDir, nearestExistingFolder};'
 )(
 	state,
@@ -57,7 +57,9 @@ const api = new Function(
 	p => (!p || p === '/' ? '/' : p.replace(/\/[^/]*$/, '') || '/'),
 	() => {}, () => { rendered++; }, () => {}, () => {}, () => {}, () => {},
 	(title, message, level) => { notes.push([title, message, level]); },
-	(label, err) => { failures.push([label, String(err && err.message)]); }
+	(label, err) => { failures.push([label, String(err && err.message)]); },
+	// The shell's per-window API: where this window stands, for the session to save.
+	{setWindowPath: p => { located.push(p); }}
 );
 
 function reset (paths, cwd) {
@@ -71,6 +73,7 @@ function reset (paths, cwd) {
 	notes = [];
 	failures = [];
 	rendered = 0;
+	located = [];
 }
 
 // --- an ordinary folder, and an ordinary empty one --------------------------------------
@@ -122,6 +125,49 @@ check('and says nothing', notes, []);
 reset(['/home'], '/home/docs');
 await api.refreshCurrentDir(false);
 check('the breadcrumbs are redrawn once the window has moved', rendered, 1);
+
+// --- and the shell is told where the window now stands ------------------------------------
+//
+// A session replays the descriptor a window was opened with. Until Explorer said where it had
+// gone, every reload brought it back to the folder it was opened in -- the root, mostly.
+
+reset(['/home', '/home/docs', '/home/docs/a.txt'], '/home/docs');
+await api.refreshCurrentDir(false);
+check('a listed folder is reported to the shell', located, ['/home/docs']);
+
+reset(['/home'], '/home/docs');
+await api.refreshCurrentDir(false);
+check('after a walk up, where it landed is reported, not where it was', located, ['/home']);
+
+reset(['/home'], '/home/docs');
+{
+	const listing = new Error('the listing timed out');
+	const failing = new Function(
+		'state', 'withFsTimeout', 'listDirectory', 'stat', 'normalizePath', 'getParentPath',
+		'sortItems', 'renderBreadcrumbs', 'renderSidebar', 'renderRows', 'renderStatus',
+		'renderToolbarState', 'report', 'reportFailure', 'window',
+		code + '\n; return {refreshCurrentDir};'
+	)(state, promise => promise, async () => { throw listing; }, async () => false, p => p, p => p,
+		() => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {},
+		(label, err) => { failures.push([label, String(err && err.message)]); },
+		{setWindowPath: p => { located.push(p); }});
+	await failing.refreshCurrentDir(false);
+	check('a folder that could not be listed is not reported as where the window is', located, []);
+}
+
+reset(['/home'], '/home');
+{
+	const standalone = new Function(
+		'state', 'withFsTimeout', 'listDirectory', 'stat', 'normalizePath', 'getParentPath',
+		'sortItems', 'renderBreadcrumbs', 'renderSidebar', 'renderRows', 'renderStatus',
+		'renderToolbarState', 'report', 'reportFailure', 'window',
+		code + '\n; return {refreshCurrentDir};'
+	)(state, promise => promise, async () => [], async () => true, p => p, p => p,
+		() => {}, () => {}, () => {}, () => {}, () => {}, () => {}, () => {},
+		(label, err) => { failures.push([label, String(err && err.message)]); }, {});
+	await standalone.refreshCurrentDir(false);
+	check('outside the shell there is nothing to tell, and nothing fails', failures, []);
+}
 
 // --- the ambiguity is only paid for when it exists ------------------------------------------
 

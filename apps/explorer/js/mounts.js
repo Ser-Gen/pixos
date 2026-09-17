@@ -1,5 +1,7 @@
-// Explorer's half of `js/mount-manager.js`: the four things a person can do to a mount, and
-// the one piece of configuration any of them remembers.
+// Explorer's half of `js/mount-manager.js`: the four things a person can do to a mount, the two
+// things they can do to one the shell could not bring back after a reload (`reconnectMount`,
+// `forgetMount` -- the table itself is `js/shell/mount-table.js`), and the one piece of
+// configuration any of them remembers.
 //
 // The mount manager owns what a mount *is*. This owns what asking for one looks like -- which
 // dialog, what a refusal says, and what happens to the window afterwards, which is always the
@@ -29,7 +31,6 @@ export function createMounts (deps) {
 	var win = deps.win;
 	var mountManager = deps.mountManager;
 	var normalizePath = deps.normalizePath;
-	var readFile = deps.readFile;
 	var getItemByPath = deps.getItemByPath;
 	var getNormalizedExtension = deps.getNormalizedExtension;
 	var openDialog = deps.openDialog;
@@ -62,7 +63,6 @@ export function createMounts (deps) {
 				renderOverlays();
 				if (!mountPoint) return;
 				try {
-					var buf = await readFile(item.path);
 					var cb = function (err) {
 						if (err) {
 							reportFailure('Could not mount ' + item.name, err);
@@ -71,10 +71,12 @@ export function createMounts (deps) {
 							navigateTo(mountPoint);
 						}
 					};
+					// By path, not by bytes: the mount manager reads the file itself and keeps the
+					// path, which is what lets the shell mount it again after a reload.
 					if (ext === 'zip') {
-						mountManager.mountZip(buf, mountPoint, path.basename(item.path), cb);
+						mountManager.mountZipFile(item.path, mountPoint, path.basename(item.path), cb);
 					} else if (ext === 'iso') {
-						mountManager.mountIso(buf, mountPoint, path.basename(item.path), cb);
+						mountManager.mountIsoFile(item.path, mountPoint, path.basename(item.path), cb);
 					} else {
 						openInfoDialog('Mount', 'Unsupported format: ' + ext);
 					}
@@ -242,6 +244,30 @@ export function createMounts (deps) {
 		}
 	}
 
+	// A mount the shell could not bring back after a reload, clicked in the sidebar. The shell's
+	// `mountTable.reconnect` asks the browser for permission *first*, before anything is awaited,
+	// and this click is the gesture that lets it -- which is why nothing here may come before the
+	// call. What it answers with is where the window goes.
+	function reconnectMount (mountPoint) {
+		var table = shell && shell.mountTable;
+		if (!table) return;
+		return Promise.resolve(table.reconnect(mountPoint)).then(function (result) {
+			renderSidebar();
+			if (result && result.mounted) {
+				navigateTo(mountPoint);
+			} else if (result && result.error) {
+				reportFailure('Could not reconnect ' + mountPoint, result.error);
+			}
+		});
+	}
+
+	function forgetMount (mountPoint) {
+		var table = shell && shell.mountTable;
+		if (!table) return;
+		table.forget(mountPoint);
+		renderSidebar();
+	}
+
 	// **Written twice on purpose, and the other copy is not in a module.** Files3 authorises in
 	// a popup that redirects back to this page with `?token=`, and the script that catches it has
 	// to run at parse time, before any module has loaded -- so the first `<script>` in
@@ -278,6 +304,8 @@ export function createMounts (deps) {
 		mountNativeDir: mountNativeDir,
 		mountFiles3: mountFiles3,
 		umount: umount,
+		reconnectMount: reconnectMount,
+		forgetMount: forgetMount,
 		loadFiles3Config: loadFiles3Config,
 		saveFiles3Config: saveFiles3Config,
 		defaultFiles3LocalStorageId: defaultFiles3LocalStorageId

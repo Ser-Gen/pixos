@@ -32,6 +32,7 @@
 				"/apps/explorer/js/menu-items.js",
 				"/apps/explorer/js/view.js",
 				"/apps/explorer/js/sidebar.js",
+				"/apps/explorer/js/places.js",
 				"/apps/explorer/js/mounts.js",
 				"/apps/explorer/js/clipboard.js",
 				"/apps/explorer/js/item-actions.js",
@@ -1579,7 +1580,7 @@
 		},
 		"terminal": {
 			"name": "terminal",
-			"version": "1.0.0",
+			"version": "1.1.0",
 			"entryPath": "/apps/terminal/index.html",
 			"files": [
 				{
@@ -1588,7 +1589,7 @@
 				},
 				{
 					"path": "/apps/terminal/index.html",
-					"hash": "sha256:879ae51c2310fad90f150e8005d0dd698081250aae6bf2a270ddd3706a3b5891"
+					"hash": "sha256:1de49d6174ffad07344beef11d232c94b92c887c80c4baad1bdcdea9d9ecea9f"
 				},
 				{
 					"path": "/apps/terminal/jquery.terminal.min.css",
@@ -1604,7 +1605,7 @@
 				},
 				{
 					"path": "/apps/terminal/pixos.app.json",
-					"hash": "sha256:9474ddcf375f040d0e730070a2f9baed0929f4e4279b438e41b182f548f22b9a"
+					"hash": "sha256:b5dc5d881d1fa4f85e6bb645c1934fbf238156f57e435b09da23eddb472a7616"
 				}
 			]
 		},

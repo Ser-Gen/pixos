@@ -1,9 +1,8 @@
 /* Explorer's stylesheet.
 
-   It lived in a `<style>` block inside `index.html` until phase 21, which is also where
-   eleven `style.cssText` assignments in the sidebar render still live -- those come out
-   in phase 23, when that render is rewritten anyway. Nothing here changed on the way
-   out: same rules, same order, same specificity. */
+   It lived in a `<style>` block inside `index.html` until phase 21, and nothing changed on
+   the way out: same rules, same order, same specificity. The inline styles the sidebar
+   render still set on its rows came here in phase 23, when that render became a drawer. */
 
 :root {
 	--bg: #101319;
@@ -142,16 +141,50 @@ button:disabled {
 }
 
 .Explorer__body {
+	position: relative;
 	display: grid;
 	grid-template-columns: 160px 1fr;
 	min-height: 0;
 }
 
+/* The drawer, closed. At any width: the toggle in the toolbar is how it comes back. */
+.Explorer__body--sidebarClosed {
+	grid-template-columns: 1fr;
+}
+
+.Explorer__body--sidebarClosed .Explorer__sidebar {
+	display: none;
+}
+
+.Explorer__sidebarToggle[aria-pressed="true"] {
+	background: var(--selected);
+}
+
+/* A column: the list scrolls, the footer holding the mount buttons stays at the bottom. */
 .Explorer__sidebar {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
 	border-right: 1px solid var(--line);
-	padding: 4px;
-	overflow: auto;
 	background: #16181c;
+}
+
+.Explorer__sidebarList {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow: auto;
+	padding: 4px;
+}
+
+.Explorer__sidebarFooter {
+	flex: none;
+	border-top: 1px solid var(--line);
+	padding: 4px;
+}
+
+.Explorer__sidebarFooter:empty {
+	display: none;
 }
 
 .Explorer__sidebarTitle {
@@ -178,6 +211,43 @@ button:disabled {
 
 .Explorer__sidebarItem--active {
 	background: #2f3339;
+}
+
+.Explorer__sidebarLabel {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The small buttons at the end of a row: eject, forget, and a place's menu. */
+.Explorer__sidebarButton {
+	flex: none;
+	height: auto;
+	padding: 2px 4px;
+	border: none;
+	background: none;
+	color: inherit;
+	font-size: 14px;
+	line-height: 1;
+}
+
+/* Rows that do something rather than go somewhere: pin this folder, mount a folder. */
+.Explorer__sidebarAction {
+	color: var(--muted);
+}
+
+.Explorer__sidebarNote {
+	padding: 2px 6px;
+	font-size: 11px;
+	color: var(--muted);
+}
+
+/* A mount the shell could not bring back after a reload: still listed, visibly not there. */
+.Explorer__sidebarItem--waiting {
+	color: var(--muted);
+	font-style: italic;
 }
 
 .Explorer__main {
@@ -484,6 +554,13 @@ button:disabled {
 	resize: vertical;
 }
 
+/* Why a prompt did not take what was typed. Under the field, not in a note: the dialog stays
+   open, and the reason belongs beside the thing to change. */
+.Modal__refusal {
+	font-size: 12px;
+	color: #ff9b8f;
+}
+
 .Modal__buttons {
 	display: flex;
 	justify-content: flex-end;
@@ -507,12 +584,20 @@ button:disabled {
 	display: none !important;
 }
 
+/* Narrow: the drawer lies over the listing instead of taking a column from it. It used to be
+   `display: none` here, and with it the only way to mount a folder. */
 @media (max-width: 900px) {
 	.Explorer__body {
 		grid-template-columns: 1fr;
 	}
 
 	.Explorer__sidebar {
-		display: none;
+		position: absolute;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		z-index: 30;
+		width: min(240px, 85%);
+		box-shadow: var(--shadow);
 	}
 }

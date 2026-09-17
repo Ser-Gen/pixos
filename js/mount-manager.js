@@ -4,8 +4,9 @@
  *
  * Usage:
  *   var mm = new MountManager(BrowserFS, fs);
- *   mm.mountZip(buffer, '/mnt/archive', 'myfile.zip', cb);
- *   mm.mountIso(buffer, '/mnt/disc', 'image.iso', cb);
+ *   mm.mountZipFile('/home/myfile.zip', '/mnt/archive', 'myfile.zip', cb);
+ *   mm.mountIsoFile('/home/image.iso', '/mnt/disc', 'image.iso', cb);
+ *   mm.mountZip(buffer, '/mnt/archive', 'myfile.zip', cb);   // not remembered: no source
  *   mm.mountNativeDir(handle, '/mnt/local', 'Projects', cb);
  *   mm.mountFiles3(config, '/mnt/files3', 'Storage', cb);
  *   mm.umount('/mnt/archive');
@@ -89,52 +90,53 @@
 	};
 
 	MountManager.prototype.mountZip = function (zipBuffer, mountPoint, name, cb) {
-		var self = this;
-		var beginErr = self._beginMount(mountPoint, cb);
-		if (beginErr !== null) return;
-		var BFS = self._BrowserFS;
-		self._ensureMntDir(mountPoint, function (dirErr) {
-			if (dirErr) {
-				self._finishMount(mountPoint);
-				return cb(dirErr);
-			}
-			BFS.FileSystem.ZipFS.Create({zipData: zipBuffer}, function (err, zipFs) {
-				if (err) {
-					self._finishMount(mountPoint);
-					return cb(err);
-				}
-				try {
-					self._getRootFS().mount(mountPoint, zipFs);
-					self._mounts[mountPoint] = {type: 'zip', name: name || 'zip', readOnly: true};
-					self._notifySW();
-					self._finishMount(mountPoint);
-					cb(null);
-				} catch (e) {
-					self._finishMount(mountPoint);
-					cb(e);
-				}
-			});
-		});
+		this._mountArchive('zip', zipBuffer, mountPoint, name, null, cb);
 	};
 
 	MountManager.prototype.mountIso = function (isoBuffer, mountPoint, name, cb) {
+		this._mountArchive('iso', isoBuffer, mountPoint, name, null, cb);
+	};
+
+	// The same two, given the file rather than its bytes -- which is what Explorer and the
+	// terminal both have, and the only form a mount can be written down in. A zip mounted from
+	// a buffer has nothing to be read again from after a reload, so its record carries no
+	// `source` and `js/shell/mount-table.js` does not keep it.
+	MountManager.prototype.mountZipFile = function (filePath, mountPoint, name, cb) {
+		this._mountArchiveFile('zip', filePath, mountPoint, name, cb);
+	};
+
+	MountManager.prototype.mountIsoFile = function (filePath, mountPoint, name, cb) {
+		this._mountArchiveFile('iso', filePath, mountPoint, name, cb);
+	};
+
+	MountManager.prototype._mountArchiveFile = function (type, filePath, mountPoint, name, cb) {
+		var self = this;
+		self._fs.readFile(filePath, function (err, data) {
+			if (err) return cb(err);
+			self._mountArchive(type, data, mountPoint, name, filePath, cb);
+		});
+	};
+
+	MountManager.prototype._mountArchive = function (type, data, mountPoint, name, source, cb) {
 		var self = this;
 		var beginErr = self._beginMount(mountPoint, cb);
 		if (beginErr !== null) return;
 		var BFS = self._BrowserFS;
+		var backend = type === 'zip' ? BFS.FileSystem.ZipFS : BFS.FileSystem.IsoFS;
+		var options = type === 'zip' ? {zipData: data} : {data: data};
 		self._ensureMntDir(mountPoint, function (dirErr) {
 			if (dirErr) {
 				self._finishMount(mountPoint);
 				return cb(dirErr);
 			}
-			BFS.FileSystem.IsoFS.Create({data: isoBuffer}, function (err, isoFs) {
+			backend.Create(options, function (err, archiveFs) {
 				if (err) {
 					self._finishMount(mountPoint);
 					return cb(err);
 				}
 				try {
-					self._getRootFS().mount(mountPoint, isoFs);
-					self._mounts[mountPoint] = {type: 'iso', name: name || 'iso', readOnly: true};
+					self._getRootFS().mount(mountPoint, archiveFs);
+					self._mounts[mountPoint] = {type: type, name: name || type, readOnly: true, source: source || null};
 					self._notifySW();
 					self._finishMount(mountPoint);
 					cb(null);
@@ -254,7 +256,10 @@
 				}
 				try {
 					self._getRootFS().mount(mountPoint, nativeFs);
-					self._mounts[mountPoint] = {type: 'native', name: name || 'local', readOnly: false};
+					// The handle is kept because it is the whole of what can be written down: it
+					// survives in IndexedDB, and a path to a folder on disk is not a thing a
+					// browser will ever give out.
+					self._mounts[mountPoint] = {type: 'native', name: name || 'local', readOnly: false, handle: handle};
 					self._notifySW();
 					self._finishMount(mountPoint);
 					cb(null);

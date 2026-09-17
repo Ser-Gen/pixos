@@ -8,6 +8,9 @@ import fs from 'fs';
 import {check, report} from './assert.mjs';
 // The real model, not a stub: the launchers and the menus are supposed to agree with it.
 import * as appsModel from '../js/shell/apps-model.js';
+// Real too: the region builds the bookmark store as it is evaluated, and a stub here would be a
+// second copy of a module that already has a test of its own.
+import * as bookmarks from '../js/shell/bookmarks.js';
 
 const MARKER = 'window.openPath = openPath;';
 const shell = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -19,7 +22,12 @@ if (start === -1) {
 const region = shell.slice(start, shell.indexOf('</script>', start));
 
 const opened = [];
+const frames = [];
+const moved = [];
 const winManager = {
+	setPath (id, path) {
+		moved.push([id, path]);
+	},
 	openWindow (cfg) {
 		opened.push(cfg);
 		return {id: opened.length - 1};
@@ -27,8 +35,9 @@ const winManager = {
 	getFrame () {
 		// Enough of an iframe for launch(): somewhere to hang onload, and a parent the
 		// web-view decorator can query without a DOM.
-		return {
-			set onload (fn) {},
+		const frame = {
+			contentWindow: {},
+			set onload (fn) { this.loaded = fn; },
 			parentElement: {
 				querySelector: function (selector) {
 					decorated.push(selector);
@@ -36,6 +45,8 @@ const winManager = {
 				}
 			}
 		};
+		frames.push(frame);
+		return frame;
 	}
 };
 var decorated = [];
@@ -148,9 +159,9 @@ globalThis.URL = class {
 	}
 };
 
-const api = new Function('window', 'winManager', 'desktop', 'appsModel', 'palette', 'openWith', 'notifications',
+const api = new Function('window', 'winManager', 'desktop', 'appsModel', 'palette', 'openWith', 'notifications', 'bookmarks',
 	region + '\n; return {launch, openApp, openFile, openFiles, openPath, openUrl, openRecentFile, buildDesktopMenu, listLaunchableApps, appNeedsNetwork};'
-)(win, winManager, desktop, appsModel, palette, openWith, notifications);
+)(win, winManager, desktop, appsModel, palette, openWith, notifications, bookmarks);
 
 appsModel.init({listApps: api.listLaunchableApps});
 await appsModel.load();
@@ -329,6 +340,16 @@ const beforeReopen = opened.length;
 await api.openRecentFile({path: '/home', dir: true});
 check('opening a recent folder opens Explorer on it', opened[beforeReopen].launch,
 	{appId: 'explorer', paths: ['/home'], url: null, title: null});
+
+// Explorer moves around inside its window, and the session saves the descriptor. So the window
+// is handed a way to say where it now stands, bound to its own id -- the app cannot know it.
+{
+	const frame = frames[frames.length - 1];
+	frame.loaded();
+	check('a loaded window can say which folder it is showing', typeof frame.contentWindow.setWindowPath, 'function');
+	frame.contentWindow.setWindowPath('/mnt/archive');
+	check('and it moves that window, and no other', moved, [[beforeReopen, '/mnt/archive']]);
+}
 
 // The stored flag is a hint that saves a stat in the menu; the stat at open time is the
 // truth, so an entry recorded wrong -- or a path that has changed kind -- still works.

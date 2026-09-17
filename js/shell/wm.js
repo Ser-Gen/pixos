@@ -749,6 +749,26 @@ export default class WM {
 		return true;
 	}
 
+	// Where a window now stands, for an app that moves around inside itself -- Explorer going
+	// into a folder. The launch descriptor is what a session replays, and it was written once,
+	// when the window opened, so a restore brought every Explorer back to the folder it was
+	// opened in rather than the one it was left in. Returns true when it actually changed:
+	// the session is saved on 'changed', and a navigation that lands where it was is not one.
+	setPath (id, path) {
+		var record = this.windows.get(id);
+		if (!record || typeof path !== 'string' || !path || record.path === path) {
+			return false;
+		}
+		record.path = path;
+		if (record.launch) {
+			var paths = Array.isArray(record.launch.paths) ? record.launch.paths.slice() : [];
+			paths[0] = path;
+			record.launch = Object.assign({}, record.launch, {paths: paths});
+		}
+		this.emit('changed');
+		return true;
+	}
+
 	getWindow (id) {
 		return this.describe(id);
 	}

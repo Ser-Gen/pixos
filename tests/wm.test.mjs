@@ -216,6 +216,35 @@ check('containers land in the windows root', windowsRoot.children.length, 2);
 wm.setTitle(0, 'renamed.txt');
 check('setTitle updates the record', wm.getWindow(0).title, 'renamed.txt');
 
+// --- where a window stands ----------------------------------------------------------------
+//
+// The launch descriptor is what a session replays. Explorer moves around inside its window,
+// and until it could say so every restored Explorer came back where it had been opened.
+
+{
+	const events = [];
+	const listen = () => events.push('changed');
+	wm.on('changed', listen);
+	check('a window moved into a folder says it changed', wm.setPath(0, '/mnt/archive'), true);
+	check('the change is announced, so the session is saved', events.length, 1);
+	check('the descriptor a restore replays now opens that folder', wm.getWindow(0).launch,
+		{appId: 'ace', paths: ['/mnt/archive']});
+	check('and the record carries it', wm.getWindow(0).path, '/mnt/archive');
+	check('standing where it already is changes nothing', wm.setPath(0, '/mnt/archive'), false);
+	check('and announces nothing', events.length, 1);
+	const before = wm.getWindow(0).launch;
+	wm.setPath(0, '/home');
+	check('the old descriptor is not edited in place', before.paths, ['/mnt/archive']);
+	check('a window with no descriptor still records where it is',
+		(wm.setPath(1, '/c.png'), [wm.getWindow(1).path, wm.getWindow(1).launch]), ['/c.png', null]);
+	check('an empty path is refused', wm.setPath(0, ''), false);
+	check('so is something that is not a path', wm.setPath(0, null), false);
+	check('an unknown window cannot be moved', wm.setPath(99, '/x'), false);
+	wm.off('changed', listen);
+	wm.setPath(0, '/a.txt');
+	wm.setPath(1, '/b.png');
+}
+
 // --- unsaved work ------------------------------------------------------------------------
 //
 // Reported by the app, never guessed at: the shell cannot see inside an editor, and a

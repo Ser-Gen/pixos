@@ -14,9 +14,17 @@ export function check (label, actual, expected) {
 		+ (ok ? '' : '\n         got  ' + JSON.stringify(actual) + '\n         want ' + JSON.stringify(expected)));
 }
 
+// Sets the exit code as well as returning the count. Most files end with
+// `process.exit(report(name) ? 1 : 0)`, but five ended with a bare `report(name)`, and a file
+// that does that exits 0 whatever failed -- `tests/run.mjs` goes by the exit status, so their
+// FAIL lines scrolled past a summary that said every file passed. Setting it here means
+// forgetting the `process.exit` can no longer hide a failure.
 export function report (name) {
 	console.log(failures
 		? '\n' + name + ': ' + failures + ' of ' + checks + ' failed'
 		: '\n' + name + ': ' + checks + ' passed');
+	if (failures) {
+		process.exitCode = 1;
+	}
 	return failures;
 }

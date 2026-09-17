@@ -43,6 +43,7 @@ export function createView (deps) {
 		<div class="Explorer">
 			<div class="Explorer__toolbar">
 				<div class="Explorer__toolbarGroup">
+					<button class="Explorer__sidebarToggle" title="Show the sidebar" aria-pressed="false">☰</button>
 					<button class="Explorer__back" title="Back">←</button>
 					<button class="Explorer__forward" title="Forward">→</button>
 					<button class="Explorer__up" title="Up">↑ Up</button>
@@ -83,7 +84,10 @@ export function createView (deps) {
 			</div>
 			<div class="Explorer__breadcrumbs"></div>
 			<div class="Explorer__body">
-				<aside class="Explorer__sidebar"></aside>
+				<aside class="Explorer__sidebar">
+					<div class="Explorer__sidebarList"></div>
+					<div class="Explorer__sidebarFooter"></div>
+				</aside>
 				<main class="Explorer__main">
 					<table class="Explorer__table">
 						<thead>
@@ -107,6 +111,7 @@ export function createView (deps) {
 		<div class="Explorer__overlays"></div>
 		`;
 
+		ui.sidebarToggle = rootElem.querySelector('.Explorer__sidebarToggle');
 		ui.back = rootElem.querySelector('.Explorer__back');
 		ui.forward = rootElem.querySelector('.Explorer__forward');
 		ui.up = rootElem.querySelector('.Explorer__up');
@@ -128,7 +133,10 @@ export function createView (deps) {
 		ui.recordingSysBtn = rootElem.querySelector('.Explorer__recordingSysBtn');
 		ui.recordingStop = rootElem.querySelector('.Explorer__recordingStop');
 		ui.breadcrumbs = rootElem.querySelector('.Explorer__breadcrumbs');
+		ui.body = rootElem.querySelector('.Explorer__body');
 		ui.sidebar = rootElem.querySelector('.Explorer__sidebar');
+		ui.sidebarList = rootElem.querySelector('.Explorer__sidebarList');
+		ui.sidebarFooter = rootElem.querySelector('.Explorer__sidebarFooter');
 		ui.main = rootElem.querySelector('.Explorer__main');
 		ui.rows = rootElem.querySelector('.Explorer__rows');
 		ui.grid = rootElem.querySelector('.Explorer__grid');

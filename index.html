@@ -237,6 +237,7 @@ import * as fileSearch from "./js/shell/file-search.js";
 import * as openWith from "./js/shell/open-with.js";
 import * as bookmarks from "./js/shell/bookmarks.js";
 import * as fsEvents from "./js/shell/fs-events.js";
+import {createMountTable, createHandleStore, FILE as MOUNT_TABLE_FILE} from "./js/shell/mount-table.js";
 
 var winManager = new WM({
 	root: '#root',
@@ -492,6 +493,35 @@ function fsOnInit () {
 
 	window.mountManager = new MountManager(BrowserFS, window.fs);
 
+	// The mount table, written down and brought back at boot -- see js/shell/mount-table.js.
+	// Here rather than in Explorer because the mounts are everybody's: the terminal mounts too.
+	// It writes nothing until `restore()` below has read what is already on disk.
+	window.mountTable = createMountTable({
+		mountManager: window.mountManager,
+		read: function () { return readJsonFile(MOUNT_TABLE_FILE, null); },
+		write: function (doc) {
+			return writeFilePromise(MOUNT_TABLE_FILE, Buffer.from(JSON.stringify(doc, null, 2)));
+		},
+		canWrite: function () { return tabs.isOwner(); },
+		handles: createHandleStore(window.indexedDB),
+		// Where Files3's own Auth keeps it. Asked rather than `ensureToken()`, which with no
+		// token opens a popup -- and one opened during boot is blocked.
+		hasToken: function (config) {
+			try {
+				return !!localStorage.getItem(config.localStorageId);
+			}
+			catch (e) {
+				return false;
+			}
+		},
+		notify: function (note) {
+			notifications.notify(Object.assign({source: 'PixOS'}, note));
+		},
+		// A waiting row changed state. Explorer redraws its sidebar on a mount record wherever
+		// it lands, which is exactly what this needs.
+		announce: function (point) { fsEvents.record('mount', point); }
+	});
+
 	// A mount is the one change to a listing that fs never sees: what /mnt contains, and
 	// what the mount point itself contains, both change without a write. MountManager
 	// reports the whole table rather than the difference -- it is called from six places
@@ -504,6 +534,8 @@ function fsOnInit () {
 		knownMounts.filter(function (point) { return now.indexOf(point) === -1; })
 			.forEach(function (point) { fsEvents.record('unmount', point); });
 		knownMounts = now.slice();
+		// And written down, from the same one place every change already passes through.
+		window.mountTable.changed();
 	};
 
 	// File System Access API must run in the same window as window.fs / MountManager.
@@ -589,6 +621,7 @@ function fsOnInit () {
 			{path: '/apps/explorer/js/menu-items.js', refresh: true},
 			{path: '/apps/explorer/js/view.js', refresh: true},
 			{path: '/apps/explorer/js/sidebar.js', refresh: true},
+			{path: '/apps/explorer/js/places.js', refresh: true},
 			{path: '/apps/explorer/js/mounts.js', refresh: true},
 			{path: '/apps/explorer/js/clipboard.js', refresh: true},
 			{path: '/apps/explorer/js/item-actions.js', refresh: true},
@@ -877,6 +910,14 @@ function fsOnInit () {
 			// it was, and the next boot repeats work rather than skipping it.
 			await writePreinstallState(preinstallState);
 			await seedDefaultApps(preinstall.defaultApps);
+			// Before the session: a window restored into /mnt/work has to find it mounted, or
+			// Explorer walks up out of an empty mount point and says the folder is gone.
+			try {
+				await window.mountTable.restore();
+			}
+			catch (err) {
+				console.error('Restoring mounts failed', err);
+			}
 			await initSession();
 		});
 
@@ -2564,84 +2605,31 @@ window.openWithChooser = openWithChooser;
 window.OPEN_WITH_BROWSER_TAB = openWith.BROWSER_TAB;
 window.OPEN_WITH_RAW_WINDOW = openWith.RAW_WINDOW;
 
-// Adding a bookmark from outside the Bookmarks app -- Explorer's context menu is the
-// first caller, and it works whether or not Bookmarks is installed or open.
+// Editing the bookmarks document from outside the Bookmarks app -- see js/shell/bookmarks.js.
+// Explorer's *Add to bookmarks* was the first caller and its pinned places are the second;
+// all of it works whether or not Bookmarks is installed or open.
 //
 // Deliberately *not* behind the tab-ownership gate, unlike session.json and the recents.
 // This is a document the user edits, not a record of how this tab is arranged, and the
 // Bookmarks app itself writes it from any tab. A follower keeps full access to files.
-window.addBookmark = async function (entry) {
-	var doc;
-	try {
-		doc = await readBookmarksDocument();
-	}
-	catch (err) {
-		// Never write over a file we could not read. A bookmarks document that fails to
-		// parse is a file with something in it, and replacing it with a fresh one holding
-		// a single link would be the worst possible response to a typo.
-		notifications.notify({
-			level: 'error',
-			title: 'Could not add the bookmark',
-			message: 'Your bookmarks file (/settings/links.json) could not be read, so '
-				+ 'nothing was changed. Open it in an editor to see what is wrong with it.',
-			source: 'PixOS'
-		});
-		return null;
-	}
-
-	var result = bookmarks.addTo(doc, entry);
-	if (!result.ok) {
-		notifications.notify({
-			level: 'warn',
-			title: 'That is not an address PixOS can bookmark',
-			message: 'A bookmark has to be a web address or a path inside PixOS.',
-			source: 'PixOS'
-		});
-		return null;
-	}
-	if (result.duplicate) {
-		notifications.notify({
-			level: 'info',
-			title: 'Already bookmarked',
-			message: '"' + result.link.title + '" is already in ' + (result.group.name || 'your bookmarks') + '.',
-			source: 'PixOS'
-		});
-		return result.link;
-	}
-
-	try {
-		// saveFileLocal rather than the shell's own writeFilePromise, which lives inside
-		// the boot closure and is not reachable from here -- and which resolves on
-		// failure, so a write that never landed would still have been announced as one
-		// that did.
-		await window.saveFileLocal('/settings/links.json', Buffer.from(bookmarks.serialize(result.doc)));
-	}
-	catch (err) {
-		var failed = window.describeError('Could not add the bookmark', err);
-		notifications.notify({
-			level: 'error',
-			title: failed.title,
-			message: failed.message,
-			source: 'PixOS'
-		});
-		return null;
-	}
-	notifications.notify({
-		level: 'info',
-		title: 'Added to bookmarks',
-		message: '"' + result.link.title + '" is in ' + result.group.name + '.',
-		actions: [{
-			label: 'Open Bookmarks',
-			// A Bookmarks window that is already open read the file when it opened and
-			// will not see this; opening one now is what shows the change.
-			run: function () {
-				openApp('bookmarks');
-			}
-		}],
-		source: 'PixOS'
-	});
-	return result.link;
-};
+var bookmarkStore = bookmarks.createBookmarks({
+	read: readBookmarksDocument,
+	// saveFileLocal rather than the shell's own writeFilePromise, which lives inside the boot
+	// closure and is not reachable from here -- and which resolves on failure, so a write that
+	// never landed would still have been announced as one that did.
+	write: function (text) {
+		return window.saveFileLocal('/settings/links.json', Buffer.from(text));
+	},
+	notify: function (note) { notifications.notify(note); },
+	describeError: function (title, err) { return window.describeError(title, err); },
+	openBookmarks: function () { openApp('bookmarks'); }
+});
+window.addBookmark = function (entry, options) { return bookmarkStore.add(entry, options); };
+window.listBookmarks = function (groupName) { return bookmarkStore.list(groupName); };
+window.removeBookmark = function (linkId) { return bookmarkStore.remove(linkId); };
+window.moveBookmark = function (linkId, toIndex) { return bookmarkStore.move(linkId, toIndex); };
+window.renameBookmark = function (linkId, title) { return bookmarkStore.rename(linkId, title); };
+window.ensureBookmarkGroup = function (name, entries) { return bookmarkStore.ensureGroup(name, entries); };
 
 // Missing is not a failure -- the first bookmark added from Explorer creates the file.
 // Anything else is, and is passed on rather than flattened into an empty document.
@@ -2928,6 +2916,12 @@ async function launch (descriptor, restore) {
 		try {
 			win.markDirty = function (dirty) {
 				winManager.setDirty(id, dirty !== false);
+			};
+			// The folder a window is showing, reported by the app because nothing else can
+			// see it -- a session saves the descriptor, and without this it is the one the
+			// window was opened with. See `setPath` in js/shell/wm.js.
+			win.setWindowPath = function (path) {
+				winManager.setPath(id, path);
 			};
 			win.pixosWindowId = id;
 		}
