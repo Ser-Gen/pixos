@@ -70,6 +70,19 @@ export function monogramFor (name, appId) {
 	return words[0].slice(0, 1) + words[1].slice(0, 1);
 }
 
+// What a window is called where there is room for one name: its taskbar button, its row in the
+// palette. A window showing a path is called by the last part of it. The root has no last part --
+// Explorer at `/` was a taskbar button with an icon and nothing beside it -- so there the window is
+// called by its app's name. A window with no path keeps its title.
+export function windowLabel (win, app) {
+	var path = (win && win.path) || '';
+	var parts = path.split('/').filter(Boolean);
+	if (parts.length) {
+		return parts[parts.length - 1];
+	}
+	return (path && app && app.name) || (win && win.title) || path;
+}
+
 // Two places an icon can live, tried in order: the installed copy in BrowserFS, then the
 // original on the server. The second matters more than it looks -- an app installed
 // before it gained an icon has no copy of the file until the user takes the update, and

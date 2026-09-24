@@ -167,8 +167,9 @@ run in iframes. Pure static site — no build step, no backend.
   scheduled goes there, including things deliberately rejected and why. Read it before
   proposing work; move an item into a plan rather than copying it.
 - `docs/ux-improvements-plan.md` (phases 1–5, built), `docs/reliability-plan.md`
-  (phases 6–20, all built), `docs/explorer-plan.md` (phases 21–24: 21–23 built, 24 under way) and
-  `docs/shortcuts-plan.md` (phase 25, keyboard shortcuts shown) are the
+  (phases 6–20, all built), `docs/explorer-plan.md` (phases 21–24, all built),
+  `docs/shortcuts-plan.md` (phase 25, keyboard shortcuts shown, built) and
+  `docs/screensavers-plan.md` (phase 26, animated backgrounds and screensavers, planned) are the
   scheduled work, each phase with a browser checklist beside it
   (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.

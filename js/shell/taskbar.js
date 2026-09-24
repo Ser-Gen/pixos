@@ -520,11 +520,12 @@ function renderWindows () {
 			+ (win.dirty ? ' PixTaskbar__window--dirty' : '');
 		button.title = (win.dirty ? 'Unsaved changes \u2014 ' : '') + (win.path || win.title);
 
-		// The window title is the full path for a file; the basename is what fits.
-		var text = win.path ? win.path.split('/').pop() : win.title;
+		var app = options.getApp ? options.getApp(win.appId) : null;
+		// The tooltip has the whole path; the button has room for one name.
+		var text = icons.windowLabel(win, app);
 		// A window opened straight onto a path has no app behind it, so the monogram
 		// comes from the filename rather than from a path full of separators.
-		var app = (options.getApp && options.getApp(win.appId)) || {id: win.appId || text, name: text};
+		app = app || {id: win.appId || text, name: text};
 
 		button.append(icons.render(app, 16));
 

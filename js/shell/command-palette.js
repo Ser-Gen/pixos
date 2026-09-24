@@ -431,7 +431,7 @@ function collectApps (query) {
 function collectWindows (query) {
 	return options.wm.listWindows()
 		.map(function (win) {
-			var title = win.path ? win.path.split('/').pop() : win.title;
+			var title = icons.windowLabel(win, options.getApp(win.appId));
 			return {win: win, title: title, score: appsModel.score(title + ' ' + (win.path || ''), query)};
 		})
 		.filter(function (entry) {
