@@ -2,7 +2,7 @@
 //
 // Three of the four things in here are invisible until they are wrong in front of somebody.
 //
-//   * **`renderLayout` writes one template and then looks thirty-four nodes up in it by class.**
+//   * **`renderLayout` writes one template and then looks forty-three nodes up in it by class.**
 //     Rename a class in the markup and the matching `ui.x` is quietly `null` — no error at
 //     render time, an "is not a function" the first time a button is pressed, and nothing at
 //     all for the ones that are only read. So the whole of `ui` is checked against the
@@ -56,12 +56,18 @@ function el (tag) {
 		draggable: false,
 		dataset: {},
 		style: {},
+		attributes: {},
 		children: [],
+		setAttribute (name, value) { this.attributes[name] = String(value); },
+		getAttribute (name) { return name in this.attributes ? this.attributes[name] : null; },
 		append (...nodes) { nodes.forEach(n => this.children.push(n)); }
 	};
 }
 
-const doc = {createElement: tag => el(tag)};
+const doc = {createElement: tag => el(tag), createTextNode: text => ({textContent: text, children: []})};
+
+// What a node reads as, children included -- the fake keeps `textContent` and `children` apart.
+const textOf = node => node.textContent + node.children.map(textOf).join('');
 
 // `rootElem` answers a selector only if the class is really in the markup `renderLayout` just
 // wrote. That is the whole point: a selector nobody updated returns null here exactly as it
@@ -108,6 +114,7 @@ function harness (options) {
 		formatSize: format.formatSize,
 		getExt: format.getExt,
 		getItemTitle: format.getItemTitle,
+		kindOf: format.kindOf,
 		hasInternalClipboard: () => h.clipboard,
 		getSelectedItems: () => h.state.items.filter(i => h.state.selectedPaths.has(i.path)),
 		syncSelectAllUI: () => { h.syncs++; }
@@ -127,16 +134,21 @@ function item (name, extra) {
 	}, extra || {});
 }
 
-// --- renderLayout, and the thirty-four lookups after it --------------------------------------
+// --- renderLayout, and the forty-three lookups after it ----------------------------------------
 
 {
 	const h = harness();
 	const missing = Object.keys(h.ui).filter(key => !h.ui[key]);
 	check('every node renderLayout looks up is really in the markup it wrote', missing, []);
 	// Thirty until phase 23 made the sidebar a drawer: its toggle, the body whose class closes
-	// it, and the list and footer it is drawn into.
-	check('and there are the thirty-four of them the rest of the app reads',
-		Object.keys(h.ui).length, 34);
+	// it, and the list and footer it is drawn into. Forty-two since phase 24 put the commands on a
+	// rail: two view buttons and a sort button where two selects were, *More* where *Default Apps*
+	// was, the selection line's box of actions with Compress and Delete in it, and the foot with
+	// its text and the three parts of the storage gauge.
+	check('and there are the forty-three of them the rest of the app reads',
+		Object.keys(h.ui).length, 43);
+	check('the two selects and the Default Apps button are gone, not left behind unread',
+		['viewMode', 'sortKey', 'defaults'].filter(key => key in h.ui), []);
 
 	// The four the other modules reach for by name, spot-checked so that a rename of one of
 	// these has to come here and say so.
@@ -145,7 +157,30 @@ function item (name, extra) {
 	});
 
 	check('the layout is written once, into the window root',
-		h.root.innerHTML.indexOf('Explorer__toolbar') > -1, true);
+		h.root.innerHTML.indexOf('Explorer__rail') > -1, true);
+	check('every rail button names itself twice, for the pointer and for a screen reader',
+		(h.root.innerHTML.match(/class="Explorer__railButton [^"]*" type="button" title="([^"]+)" aria-label="\1"/g) || []).length, 12);
+	check('and there is no emoji left in the chrome', /[\u{1F300}-\u{1FAFF}]/u.test(h.root.innerHTML), false);
+}
+
+{
+	// Phase 25: a command with a chord says it in its tooltip, written by the shell for the machine.
+	// The name a screen reader hears stays the name alone.
+	const h = harness();
+	const root = rootElem();
+	createView({
+		state: h.state, ui: {}, rootElem: root, doc: doc,
+		escapeAttr: format.escapeAttr, escapeHtml: format.escapeHtml, formatSize: format.formatSize,
+		getExt: format.getExt, getItemTitle: format.getItemTitle, kindOf: format.kindOf,
+		hasInternalClipboard: () => false, getSelectedItems: () => [], syncSelectAllUI () {},
+		keyHint: name => ({paste: '⌘V', copy: '⌘C', cut: '⌘X', delete: '⌘⌫'})[name] || ''
+	}).renderLayout();
+	const html = root.innerHTML;
+	check('the rail\'s Paste gives its chord in the tooltip', /class="Explorer__railButton Explorer__paste" type="button" title="Paste \(⌘V\)" aria-label="Paste"/.test(html), true);
+	check('the selection line\'s four do too',
+		['Copy (⌘C)', 'Cut (⌘X)', 'Delete (⌘⌫)', 'Paste (⌘V)'].every(t => html.indexOf('title="' + t + '"') > -1), true);
+	check('a button with no chord keeps its plain name', /title="Upload" aria-label="Upload"/.test(html), true);
+	check('with no shell to write chords, no tooltip carries one', /\(⌘/.test(h.root.innerHTML), false);
 }
 
 {
@@ -231,9 +266,15 @@ function item (name, extra) {
 	check('with no history, back and forward are dead',
 		[h.ui.back.disabled, h.ui.forward.disabled], [true, true]);
 	check('at the root, Up is dead too', h.ui.up.disabled, true);
-	check('with nothing selected, Copy and Cut are dead',
-		[h.ui.copy.disabled, h.ui.cut.disabled], [true, true]);
+	check('with nothing selected and nothing copied, the selection line has no actions on it', h.ui.acts.hidden, true);
 	check('with an empty clipboard, Paste is dead', h.ui.paste.disabled, true);
+	check('details is the view that is on', [h.ui.viewDetails.getAttribute('aria-pressed'), h.ui.viewGrid.getAttribute('aria-pressed')],
+		['true', 'false']);
+	check('the sort button says what the sort is', [h.ui.sort.title, h.ui.sort.getAttribute('aria-label')],
+		['Sort: Name, ascending', 'Sort: Name, ascending']);
+	check('and so does the foot', h.ui.footText.textContent, 'sorted by name, ascending  ·  details view');
+	check('the table carries the key and direction the stylesheet draws the arrow from',
+		[h.ui.table.dataset.sortKey, h.ui.table.dataset.sortDir], ['name', 'asc']);
 	check('and the selection checkbox is redrawn with the rest', h.syncs, 1);
 }
 
@@ -241,33 +282,65 @@ function item (name, extra) {
 	const h = harness({
 		cwd: '/home/docs', back: ['/home'], forward: ['/tmp'],
 		items: [item('a.txt')], selected: ['/home/a.txt'], clipboard: true,
-		sort: {key: 'size', dir: 'asc'}, viewMode: 'grid'
+		sort: {key: 'size', dir: 'desc'}, viewMode: 'grid'
 	});
 	h.view.renderToolbarState();
 	check('history enables the two arrows',
 		[h.ui.back.disabled, h.ui.forward.disabled], [false, false]);
 	check('below the root, Up is live', h.ui.up.disabled, false);
-	check('a selection enables Copy and Cut',
-		[h.ui.copy.disabled, h.ui.cut.disabled], [false, false]);
+	check('a selection puts its actions on the line under the path', h.ui.acts.hidden, false);
+	check('all four of them', [h.ui.copy, h.ui.cut, h.ui.compress, h.ui.delete].map(b => b.hidden), [false, false, false, false]);
 	check('a full clipboard enables Paste', h.ui.paste.disabled, false);
-	check('and the two selects show what state says they show',
-		[h.ui.sortKey.value, h.ui.viewMode.value], ['size', 'grid']);
+	check('and puts Paste on the line beside them', h.ui.pasteHere.hidden, false);
+	check('grid is the view that is on', [h.ui.viewDetails.getAttribute('aria-pressed'), h.ui.viewGrid.getAttribute('aria-pressed')],
+		['false', 'true']);
+	check('a reversed sort by size is named as one', h.ui.sort.title, 'Sort: Size, descending');
+	check('in the foot too', h.ui.footText.textContent, 'sorted by size, descending  ·  grid view');
+	check('and on the table', [h.ui.table.dataset.sortKey, h.ui.table.dataset.sortDir], ['size', 'desc']);
+}
+
+{
+	// Mockup B disabled Paste whenever nothing was selected. Pasting needs something copied and
+	// nothing selected, so that was wrong, and the check is here because the mockup is what the
+	// chrome was built from.
+	const h = harness({items: [item('a.txt')], selected: [], clipboard: true});
+	h.ui.acts.hidden = true;
+	h.view.renderToolbarState();
+	check('Paste follows the clipboard, not the selection', h.ui.paste.disabled, false);
+	// After the first walk: something copied, nothing selected, and the line under the path showed
+	// only a count -- Paste was a rail icon away.
+	check('something copied opens the line under the path with nothing selected', h.ui.acts.hidden, false);
+	check('with Paste on it', h.ui.pasteHere.hidden, false);
+	check('and not the four that need a selection', [h.ui.copy, h.ui.cut, h.ui.compress, h.ui.delete].map(b => b.hidden),
+		[true, true, true, true]);
+}
+
+{
+	const h = harness({items: [item('a.txt')], selected: ['/home/a.txt'], clipboard: false});
+	h.ui.pasteHere.hidden = false;
+	h.view.renderToolbarState();
+	check('a selection with nothing copied has no Paste on its line', [h.ui.acts.hidden, h.ui.pasteHere.hidden], [false, true]);
 }
 
 // --- renderBreadcrumbs ------------------------------------------------------------------------
 
+const crumbsOf = h => h.ui.breadcrumbs.children.filter(n => n.className.split(' ')[0] === 'Explorer__crumb');
+const separatorsOf = h => h.ui.breadcrumbs.children.filter(n => n.className === 'Explorer__crumbSep');
+
 {
 	const h = harness({cwd: '/home/docs/2026'});
 	h.view.renderBreadcrumbs();
-	const crumbs = h.ui.breadcrumbs.children.filter(n => n.className.indexOf('Explorer__crumb') === 0);
-	check('one crumb per segment, plus the root',
-		crumbs.map(n => n.textContent), ['rootfs', 'home', 'docs', '2026']);
+	const crumbs = crumbsOf(h);
+	check('one crumb per segment, plus the root, which is drawn as the root is written',
+		crumbs.map(n => n.textContent), ['/', 'home', 'docs', '2026']);
 	check('each carries the path it walks to',
 		crumbs.map(n => n.dataset.path), ['/', '/home', '/home/docs', '/home/docs/2026']);
 	check('only the last one is marked current',
 		crumbs.map(n => n.className.indexOf('--current') > -1), [false, false, false, true]);
-	check('with a separator between each pair',
-		h.ui.breadcrumbs.children.filter(n => n.textContent === '/').length, 3);
+	check('every other crumb is a button, so the keyboard can reach it, and the current one is text',
+		crumbs.map(n => [n.tag, n.type || null]), [['button', 'button'], ['button', 'button'], ['button', 'button'], ['span', null]]);
+	check('the whole title reads as the path', h.ui.breadcrumbs.children.map(n => n.textContent).join(''), '/home/docs/2026');
+	check('which means no separator after the root, one between each other pair', separatorsOf(h).length, 2);
 }
 
 {
@@ -307,8 +380,7 @@ function item (name, extra) {
 	check('every row can be dragged', h.ui.rows.children.every(n => n.draggable), true);
 	check('and so can every card', h.ui.grid.children.every(n => n.draggable), true);
 	check('the empty note is hidden while there are items', h.ui.empty.hidden, true);
-	check('the status line is redrawn with the rows',
-		h.ui.status.textContent, '3 items | selected: 0 | selected size: 0 B');
+	check('the status line is redrawn with the rows', textOf(h.ui.status), '3 items');
 	check('and the select-all checkbox with it', h.syncs, 1);
 }
 
@@ -372,6 +444,29 @@ function item (name, extra) {
 	check('a file shows its extension', cells[1][2], 'txt');
 	check('and its size, spelled the one way sizes are spelled', cells[2][4], '2.0 KB');
 	check('every row carries the hover title', h.ui.rows.children.every(n => !!n.title), true);
+	const date = h.ui.rows.children[0].children[3];
+	check('the modified column reads as the whole stamp', textOf(date), '2026-01-01 00:00:00');
+	check('with the time in a part of its own, which a narrow window drops',
+		[date.textContent, date.children.map(c => [c.className, c.textContent])], ['2026-01-01', [['Explorer__time', ' 00:00:00']]]);
+	check('each cell says which column it is, which is what a narrow window hides by',
+		h.ui.rows.children[0].children.map(c => c.className),
+		['Explorer__selectCol', 'Explorer__colName', 'Explorer__colType', 'Explorer__colModified', 'Explorer__colSize']);
+}
+
+{
+	// Phase 24 draws a kind instead of 📁 and 📄.
+	const h = harness({items: [
+		item('folder', {isDirectory: true}), item('photo.png'), item('site.zip'), item('notes.txt')
+	]});
+	h.view.renderRows();
+	const marks = html => (html.match(/Explorer__kind--(\w+)/) || [])[1];
+	check('each row is drawn with the mark of its kind', h.ui.rows.children.map(n => marks(n.children[1].innerHTML)),
+		['dir', 'img', 'bin', 'doc']);
+	check('and so is each card', h.ui.grid.children.map(n => marks(n.innerHTML)), ['dir', 'img', 'bin', 'doc']);
+	check('the mark is hidden from a screen reader, which has the Type column',
+		/class="Explorer__kind [^"]*" aria-hidden="true"/.test(h.ui.rows.children[0].children[1].innerHTML), true);
+	check('and no emoji is left in a row or a card',
+		/[\u{1F300}-\u{1FAFF}]/u.test(h.ui.rows.children.concat(h.ui.grid.children).map(n => n.innerHTML + n.children.map(c => c.innerHTML).join('')).join('')), false);
 }
 
 {
@@ -394,7 +489,9 @@ function item (name, extra) {
 	});
 	h.view.renderStatus();
 	check('the status line counts the folder and the selection',
-		h.ui.status.textContent, '3 items | selected: 2 | selected size: 300 B');
+		textOf(h.ui.status), '3 items  —  2 selected (300 B)');
+	check('with the selection set apart, which is what the stylesheet colours',
+		h.ui.status.children.filter(n => n.tag === 'b').map(n => n.textContent), ['2 selected']);
 }
 
 {
@@ -406,8 +503,37 @@ function item (name, extra) {
 		selected: ['/home/folder']
 	});
 	h.view.renderStatus();
-	check('a selected folder contributes nothing to the size',
-		h.ui.status.textContent, '1 items | selected: 1 | selected size: 0 B');
+	check('a selected folder contributes nothing to the size, and a size of nothing is not shown',
+		textOf(h.ui.status), '1 item  —  1 selected');
+}
+
+{
+	const h = harness({items: [item('a.txt')]});
+	h.view.renderStatus();
+	h.view.renderStatus();
+	check('the status is replaced, not added to', textOf(h.ui.status), '1 item');
+}
+
+// --- renderStorage ------------------------------------------------------------------------------
+//
+// The shell's figure, drawn in the foot. Hidden until there is one to draw.
+
+{
+	const h = harness();
+	// Hidden in the markup, as the template writes it; the fake starts every node visible.
+	h.ui.gauge.hidden = true;
+	h.view.renderStorage({supported: true, usage: 512, quota: 2048});
+	check('a figure is drawn as used of available', [h.ui.gauge.hidden, h.ui.gaugeText.textContent], [false, '512 B / 2.0 KB']);
+	check('with the bar filled by the share used', h.ui.gaugeFill.style.width, '25.0%');
+	check('and a tooltip that says what it is a figure of', h.ui.gauge.title, '512 B of 2.0 KB used by PixOS in this browser');
+
+	h.view.renderStorage({supported: true, usage: 9000, quota: 2048});
+	check('a usage past the quota fills the bar and no further', h.ui.gaugeFill.style.width, '100.0%');
+
+	[null, {supported: false}, {supported: true, usage: 5, quota: 0}].forEach((storage, i) => {
+		h.view.renderStorage(storage);
+		check('no figure, a browser that will not estimate, or no quota hides the gauge (' + i + ')', h.ui.gauge.hidden, true);
+	});
 }
 
 report('explorer-view');

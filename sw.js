@@ -170,7 +170,7 @@ function fetchAudioProxy(request) {
 // The version in the cache name is the whole risk: skipWaiting() + clients.claim() means a
 // new worker takes over immediately, and without a versioned name that would be a new
 // worker serving a previous worker's assets. `activate` deletes every cache but this one.
-var SHELL_CACHE = 'pixos-shell-v29';
+var SHELL_CACHE = 'pixos-shell-v32';
 
 // --- an app that dies before its own code runs ---------------------------------------------
 //
@@ -256,6 +256,7 @@ var PRECACHE = [
 	'./js/shell/open-with.js',
 	'./js/shell/overview.js',
 	'./js/shell/session.js',
+	'./js/shell/shortcuts.js',
 	'./js/shell/start-menu.js',
 	'./js/shell/system-stats.js',
 	'./js/shell/tabs.js',
@@ -279,6 +280,19 @@ var PRECACHE = [
 	'./templates/links.json',
 	'./apps/explorer/index.html',
 	'./apps/explorer/explorer.css',
+	'./apps/explorer/fonts/LICENSE-archivo.txt',
+	'./apps/explorer/fonts/LICENSE-dm-mono.txt',
+	'./apps/explorer/fonts/README.md',
+	'./apps/explorer/fonts/archivo-latin-400.woff2',
+	'./apps/explorer/fonts/archivo-latin-500.woff2',
+	'./apps/explorer/fonts/archivo-latin-600.woff2',
+	'./apps/explorer/fonts/archivo-latin-ext-400.woff2',
+	'./apps/explorer/fonts/archivo-latin-ext-500.woff2',
+	'./apps/explorer/fonts/archivo-latin-ext-600.woff2',
+	'./apps/explorer/fonts/dm-mono-latin-400.woff2',
+	'./apps/explorer/fonts/dm-mono-latin-500.woff2',
+	'./apps/explorer/fonts/dm-mono-latin-ext-400.woff2',
+	'./apps/explorer/fonts/dm-mono-latin-ext-500.woff2',
 	'./apps/explorer/js/format.js',
 	'./apps/explorer/js/fs-helpers.js',
 	'./apps/explorer/js/failure.js',
@@ -292,6 +306,8 @@ var PRECACHE = [
 	'./apps/explorer/js/file-ops.js',
 	'./apps/explorer/js/menu-items.js',
 	'./apps/explorer/js/view.js',
+	'./apps/explorer/js/icons.js',
+	'./apps/explorer/js/keys.js',
 	'./apps/explorer/js/sidebar.js',
 	'./apps/explorer/js/places.js',
 	'./apps/explorer/js/mounts.js',
@@ -711,6 +727,9 @@ self.addEventListener('fetch', function (event) {
                         'mhtml'  : 'message/rfc822',
                         'nws'    : 'message/rfc822',
                         'css'    : 'text/css',
+                        // Explorer bundles its fonts (apps/explorer/fonts/).
+                        'woff'   : 'font/woff',
+                        'woff2'  : 'font/woff2',
                         'csv'    : 'text/csv',
                         'html'   : 'text/html',
                         'htm'    : 'text/html',

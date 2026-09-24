@@ -6,6 +6,7 @@
 
 import fs from 'fs';
 import {check, report} from './assert.mjs';
+import * as shortcuts from '../js/shell/shortcuts.js';
 // The real model, not a stub: the launchers and the menus are supposed to agree with it.
 import * as appsModel from '../js/shell/apps-model.js';
 // Real too: the region builds the bookmark store as it is evaluated, and a stub here would be a
@@ -159,9 +160,9 @@ globalThis.URL = class {
 	}
 };
 
-const api = new Function('window', 'winManager', 'desktop', 'appsModel', 'palette', 'openWith', 'notifications', 'bookmarks',
+const api = new Function('window', 'winManager', 'desktop', 'appsModel', 'palette', 'openWith', 'notifications', 'bookmarks', 'shortcuts',
 	region + '\n; return {launch, openApp, openFile, openFiles, openPath, openUrl, openRecentFile, buildDesktopMenu, listLaunchableApps, appNeedsNetwork};'
-)(win, winManager, desktop, appsModel, palette, openWith, notifications, bookmarks);
+)(win, winManager, desktop, appsModel, palette, openWith, notifications, bookmarks, shortcuts);
 
 appsModel.init({listApps: api.listLaunchableApps});
 await appsModel.load();
@@ -222,6 +223,15 @@ check('search is one level up, not buried in a submenu',
 check('and so is the window overview',
 	menu.map(item => item.label).includes('All windows'), true);
 check('and it ends with wallpaper and peek', menu.slice(-2).map(item => item.label), ['Wallpaper...', 'Show desktop']);
+// Phase 25: a hint is the chord the handler answers to, spelled by js/shell/shortcuts.js for the
+// machine it runs on -- it used to be typed in here as `Ctrl+K`, which a Mac does not press. Node 21+
+// has a `navigator` that reports the host, so the expectation is written for whichever this is.
+{
+	const mac = shortcuts.isMacPlatform();
+	check('the menu hints are the handlers\' own chords, for this machine',
+		['Search...', 'All windows', 'Keyboard shortcuts', 'Show desktop'].map(label => menu.find(i => i.label === label).hint),
+		mac ? ['⌘K', '⇧⌘K', '⌘/', ''] : ['Ctrl+K', 'Ctrl+Shift+K', 'Ctrl+/', 'Ctrl+Alt+D']);
+}
 
 // Promoting must not duplicate or drop anything: the submenu is still every app once,
 // with a separator between the recent ones and the rest.

@@ -37,6 +37,8 @@ export function createMenuItems (deps) {
 	var getNameByPath = deps.getNameByPath;
 	var getNormalizedExtension = deps.getNormalizedExtension;
 	var isImageExtension = deps.isImageExtension;
+	// The chord printed beside a command that has one -- js/keys.js, written for this machine.
+	var keyHint = deps.keyHint || function () { return ''; };
 
 	// The shell owns the connection; this only asks who is on it. A submenu rather than a
 	// dialog because the answer is a short list of names, and disabled with the reason
@@ -85,18 +87,18 @@ export function createMenuItems (deps) {
 		if (item.isDirectory) {
 			var dirIsMountPoint = mountManager && mountManager.isMountPoint(item.path);
 			var dirMenuItems = [
-				{label: 'Open', action: function () { actions.open(item.path); }},
+				{label: 'Open', hint: keyHint('open'), action: function () { actions.open(item.path); }},
 				{label: 'Open in New Explorer', action: function () { actions.open(item.path, 'new explorer'); }},
 				{label: 'Open with...', action: function () { actions.openWith(item.path); }},
 				{separator: true},
-				{label: 'Copy', action: actions.copySelected},
-				{label: 'Cut', action: actions.cutSelected},
+				{label: 'Copy', hint: keyHint('copy'), action: actions.copySelected},
+				{label: 'Cut', hint: keyHint('cut'), action: actions.cutSelected},
 				{label: 'Copy path', action: function () { actions.copyPath(item.path); }},
 				{label: 'Compress…', action: function () { actions.compress(item.path); }},
 				{label: 'Paste into Folder', action: function () { actions.pasteClipboard(item.path); }, disabled: !hasInternalClipboard()},
 				{separator: true},
 				{label: 'Rename', action: function () { actions.rename(item.path); }},
-				{label: 'Delete', action: function () { actions.deleteSelected(); }},
+				{label: 'Delete', hint: keyHint('delete'), action: function () { actions.deleteSelected(); }},
 				{separator: true},
 				{label: 'New', submenu: [
 					{label: 'New File', action: actions.createFile},
@@ -131,11 +133,11 @@ export function createMenuItems (deps) {
 		var isMountPoint = mountManager && mountManager.isMountPoint(item.path);
 
 		var fileMenuItems = [
-			{label: 'Open', action: function () { actions.open(item.path); }},
+			{label: 'Open', hint: keyHint('open'), action: function () { actions.open(item.path); }},
 			{label: 'Open with...', action: function () { actions.openWith(item.path); }},
 			{separator: true},
-			{label: 'Copy', action: actions.copySelected},
-			{label: 'Cut', action: actions.cutSelected},
+			{label: 'Copy', hint: keyHint('copy'), action: actions.copySelected},
+			{label: 'Cut', hint: keyHint('cut'), action: actions.cutSelected},
 			{label: 'Copy path', action: function () { actions.copyPath(item.path); }},
 			// Top level rather than in Tools, unlike *Extract…*: compressing applies to
 			// anything, extracting only to an archive.
@@ -143,7 +145,7 @@ export function createMenuItems (deps) {
 			sendToPeerMenu(item.path),
 			{label: 'Rename', action: function () { actions.rename(item.path); }},
 			{label: 'Download', action: actions.downloadSelected},
-			{label: 'Delete', action: actions.deleteSelected},
+			{label: 'Delete', hint: keyHint('delete'), action: actions.deleteSelected},
 			{separator: true},
 			{label: 'Tools', submenu: [
 				{label: 'Get SHA1', action: actions.getHashSHA1},
@@ -196,12 +198,12 @@ export function createMenuItems (deps) {
 			);
 		}
 		items.push(
-			{label: 'Copy selected', action: actions.copySelected},
-			{label: 'Cut selected', action: actions.cutSelected},
+			{label: 'Copy selected', hint: keyHint('copy'), action: actions.copySelected},
+			{label: 'Cut selected', hint: keyHint('cut'), action: actions.cutSelected},
 			{label: 'Copy paths', action: function () { actions.copyPath(); }},
 			{label: 'Compress…', action: function () { actions.compress(); }},
 			{separator: true},
-			{label: 'Delete selected', action: actions.deleteSelected},
+			{label: 'Delete selected', hint: keyHint('delete'), action: actions.deleteSelected},
 			{label: 'Download selected', action: actions.downloadSelected},
 			{separator: true},
 			{label: 'Tools for selected', submenu: [
@@ -226,7 +228,7 @@ export function createMenuItems (deps) {
 			{label: 'Add Online File', action: actions.addOnlineFile},
 			{separator: true},
 			{label: 'Upload', action: function () { ui.fileInput.click(); }},
-			{label: 'Paste', action: actions.pasteClipboard, disabled: !hasInternalClipboard()},
+			{label: 'Paste', hint: keyHint('paste'), action: actions.pasteClipboard, disabled: !hasInternalClipboard()},
 			{label: 'Refresh', action: function () { refreshCurrentDir(false); }},
 			{separator: true},
 			// Tools was a submenu while it held Share as well. One entry behind a submenu

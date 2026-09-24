@@ -9,7 +9,7 @@
 // carries a button that calls into the table, so the table has to exist. js/menu-items.js is
 // there for the same reason.
 //
-// **It is a drawer at every width**, opened and closed by the toolbar's ☰. Above 900px it is a
+// **It is a drawer at every width**, opened and closed by the rail's first button. Above 900px it is a
 // column beside the listing and starts the way it was last left, open if it never was; at 900px
 // and below it lies over the listing, always starts closed, and closes again once something in
 // it is chosen. Only the wide choice is remembered -- a drawer remembered open would otherwise
@@ -18,6 +18,8 @@
 //
 // A window with no shell has no `mountManager`, and then there are no mounts and no way to
 // make one: the places are drawn and the rest of the function does not run.
+
+import { ICONS } from './icons.js';
 
 export var NARROW_QUERY = '(max-width: 900px)';
 export var STORAGE_KEY = 'pixos.explorer.sidebar';
@@ -48,7 +50,15 @@ export function createSidebar (deps) {
 	function renderPlaces () {
 		var places = state.places || {status: 'loading', places: []};
 		var editable = places.status === 'ready';
-		ui.sidebarList.append(heading('Places'));
+		var pinned = places.places.some(function (place) {
+			return place.path === state.cwd;
+		});
+		// Pinning lives in the heading, as mockup B has it: a row of its own under the places moved
+		// down every time one was added. Offered only for a folder that is not a place already, and
+		// only when places can be changed at all.
+		ui.sidebarList.append(heading('Places', editable && !pinned
+			? rowButton(ICONS.add, 'Pin this folder', function () { actions.pinFolder(state.cwd); }, 'Explorer__sidebarAdd')
+			: null));
 
 		places.places.forEach(function (place, at) {
 			var row = document.createElement('div');
@@ -56,14 +66,14 @@ export function createSidebar (deps) {
 			// Gone to by the one click handler on the whole sidebar, in index.html.
 			row.dataset.path = place.path;
 			row.title = place.path;
-			row.append(label((place.path === '/' ? '📁 ' : '📂 ') + place.title));
+			row.append(mark(place.path === '/' ? 'root' : 'place'), label(place.title));
 			if (editable) {
 				var openMenu = function (e) {
 					openContextMenu({x: e.clientX, y: e.clientY, items: placeMenu(place, at, places.places.length)});
 				};
 				// A button as well as the right-click, because a menu nobody can see is a menu
 				// nobody finds -- and "the sidebar is not editable" was the complaint.
-				row.append(rowButton('⋯', 'Rename, move or unpin', openMenu));
+				row.append(rowButton(ICONS.moreRow, 'Rename, move or unpin', openMenu));
 				row.oncontextmenu = function (e) {
 					e.preventDefault();
 					openMenu(e);
@@ -80,15 +90,6 @@ export function createSidebar (deps) {
 			note.textContent = 'Places cannot be changed: /settings/links.json did not read.';
 			note.title = places.error && places.error.message ? places.error.message : '';
 			ui.sidebarList.append(note);
-		}
-
-		var pinned = places.places.some(function (place) {
-			return place.path === state.cwd;
-		});
-		if (editable && !pinned) {
-			ui.sidebarList.append(actionRow('📌 Pin this folder', function () {
-				actions.pinFolder(state.cwd);
-			}));
 		}
 	}
 
@@ -112,27 +113,32 @@ export function createSidebar (deps) {
 		if (!mounts.length && !waiting.length) {
 			return;
 		}
-		ui.sidebarList.append(heading('Mounts'));
+		ui.sidebarList.append(heading('Mounts', null));
 
 		mounts.forEach(function (m) {
-			var roLabel = m.readOnly ? ' [ro]' : '';
-			var row = mountRow(m, typeIcon(m.type) + ' ' + m.name + ' (' + m.mountPoint + ')' + roLabel, function () {
+			var row = mountRow(m, 'mount', function () {
 				navigateTo(m.mountPoint);
 			});
-			row.append(rowButton('⏏', 'Unmount', function () { actions.umount(m.mountPoint); }));
+			row.title = m.mountPoint;
+			row.append(detail(TYPE_WORDS[m.type] ? TYPE_WORDS[m.type] + (m.readOnly ? ' · ro' : '') : (m.readOnly ? 'ro' : '')));
+			row.append(rowButton(ICONS.eject, 'Unmount', function () { actions.umount(m.mountPoint); }));
 			ui.sidebarList.append(row);
 		});
 
 		waiting.forEach(function (w) {
 			var restoring = w.status === 'restoring';
-			var row = mountRow(w, typeIcon(w.type) + ' ' + w.name + ' (' + w.mountPoint + ') — ' + WAITING_WORDS[w.status],
-				restoring ? null : function () { actions.reconnectMount(w.mountPoint); });
+			var row = mountRow(w, 'waiting', restoring ? null : function () { actions.reconnectMount(w.mountPoint); });
 			row.className += ' Explorer__sidebarItem--waiting';
-			row.title = w.reason || '';
+			// Amber is kept for the two states a click can end: the browser wants a gesture, or
+			// the storage wants a sign-in. A mount that did not come back, or is being tried, is
+			// only quiet.
+			row.dataset.status = w.status;
+			row.title = w.mountPoint + (w.reason ? '\n' + w.reason : '');
+			row.append(detail(WAITING_WORDS[w.status]));
 			// Not while it is being tried: forgetting a mount that is about to succeed
 			// would only have it written back the moment it did.
 			if (!restoring) {
-				row.append(rowButton('✕', 'Forget this mount', function () { actions.forgetMount(w.mountPoint); }));
+				row.append(rowButton(ICONS.close, 'Forget this mount', function () { actions.forgetMount(w.mountPoint); }));
 			}
 			ui.sidebarList.append(row);
 		});
@@ -142,9 +148,9 @@ export function createSidebar (deps) {
 	// and mounts are above them.
 	function renderMountButtons () {
 		if (typeof window.showDirectoryPicker === 'function') {
-			ui.sidebarFooter.append(actionRow('📂 Mount local folder...', function () { actions.mountNativeDir(); }));
+			ui.sidebarFooter.append(actionRow('Mount local folder...', ICONS.folder, function () { actions.mountNativeDir(); }));
 		}
-		ui.sidebarFooter.append(actionRow('☁️ Mount Files3 storage...', function () { actions.mountFiles3(); }));
+		ui.sidebarFooter.append(actionRow('Mount Files3 storage...', ICONS.cloud, function () { actions.mountFiles3(); }));
 	}
 
 	var WAITING_WORDS = {
@@ -154,14 +160,27 @@ export function createSidebar (deps) {
 		'failed': 'did not come back'
 	};
 
-	function typeIcon (type) {
-		return type === 'native' ? '💻' : (type === 'iso' ? '💿' : (type === 'files3' ? '☁️' : '📦'));
-	}
+	// What a mount is, in a word, at the end of its row. The mount point is the row's tooltip.
+	var TYPE_WORDS = {native: 'local', iso: 'iso', zip: 'zip', files3: 'files3'};
 
-	function heading (text) {
+	function heading (text, button) {
 		var node = document.createElement('div');
 		node.className = 'Explorer__sidebarTitle';
-		node.textContent = text;
+		var name = document.createElement('span');
+		name.textContent = text;
+		node.append(name);
+		if (button) {
+			node.append(button);
+		}
+		return node;
+	}
+
+	// The small square every row starts with: filled for the root, a ring for any other place,
+	// dashed for a mount that is waiting. Drawn by the stylesheet from its class.
+	function mark (kind) {
+		var node = document.createElement('span');
+		node.className = 'Explorer__sidebarMark Explorer__sidebarMark--' + kind;
+		node.setAttribute('aria-hidden', 'true');
 		return node;
 	}
 
@@ -172,29 +191,41 @@ export function createSidebar (deps) {
 		return node;
 	}
 
-	function actionRow (text, run) {
-		var node = document.createElement('div');
-		node.className = 'Explorer__sidebarItem Explorer__sidebarAction';
+	function detail (text) {
+		var node = document.createElement('span');
+		node.className = 'Explorer__sidebarDetail';
 		node.textContent = text;
+		return node;
+	}
+
+	function actionRow (text, icon, run) {
+		var node = document.createElement('button');
+		node.type = 'button';
+		node.className = 'Explorer__sidebarItem Explorer__sidebarAction';
+		node.innerHTML = icon;
+		node.append(label(text));
 		node.onclick = run;
 		return node;
 	}
 
-	function mountRow (m, text, onLabelClick) {
+	// A mount's label is what navigates, not the row: the row also holds a button that must not.
+	function mountRow (m, kind, onLabelClick) {
 		var row = document.createElement('div');
 		row.className = 'Explorer__sidebarItem' + (m.mountPoint === state.cwd ? ' Explorer__sidebarItem--active' : '');
-		var node = label(text);
+		var node = label(m.name);
 		node.dataset.path = m.mountPoint;
 		node.onclick = onLabelClick;
-		row.append(node);
+		row.append(mark(kind), node);
 		return row;
 	}
 
-	function rowButton (text, title, run) {
+	function rowButton (icon, title, run, extraClass) {
 		var button = document.createElement('button');
-		button.className = 'Explorer__sidebarButton';
-		button.textContent = text;
+		button.type = 'button';
+		button.className = 'Explorer__sidebarButton' + (extraClass ? ' ' + extraClass : '');
+		button.innerHTML = icon;
 		button.title = title;
+		button.setAttribute('aria-label', title);
 		button.onclick = function (e) {
 			// Without this the click reaches the row behind it too -- and the document, whose
 			// click handler closes the context menu this button may just have opened.

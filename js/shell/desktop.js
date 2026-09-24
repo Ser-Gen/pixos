@@ -7,6 +7,7 @@
 
 import * as wallpaper from './wallpaper.js';
 import * as menu from './context-menu.js';
+import {matchesAny, shellKeys} from './shortcuts.js';
 import * as widgets from './widgets.js';
 // Imported for its side effect: registering the 'shader' provider with wallpaper.js.
 import * as shader from './wallpaper-shader.js';
@@ -263,9 +264,9 @@ function onKeyDown (e) {
 		setPeek(false);
 		return;
 	}
-	// e.code, not e.key: on macOS Alt is a compose modifier, so Ctrl+Alt+D arrives with
-	// e.key === '∂' and matching on the letter silently never fires.
-	if ((e.ctrlKey || e.metaKey) && e.altKey && e.code === 'KeyD') {
+	// Matched by e.code inside matchesChord: on macOS Alt is a compose modifier, so Ctrl+Alt+D
+	// arrives with e.key === '∂' and matching on the letter silently never fires.
+	if (matchesAny(e, shellKeys('peek'))) {
 		e.preventDefault();
 		togglePeek();
 	}

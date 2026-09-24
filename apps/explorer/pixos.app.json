@@ -1,24 +1,76 @@
 {
   "id": "explorer",
   "name": "Explorer",
-  "version": "1.28.2",
+  "version": "1.30.0",
   "entryPath": "/apps/explorer/index.html",
   "files": [
     {
       "path": "/apps/explorer/explorer.css",
-      "hash": "sha256:3c60625ba0cf2634acce5891dc3aa42fdef6f4c03b16297b29a97cb97c844c80"
+      "hash": "sha256:e0b70843ceab2a438b06b5e0b3494925d9f52d6a6af04c72c442a867b367bc22"
     },
     {
       "path": "/apps/explorer/favicon.svg",
       "hash": "sha256:7c2c881ed9bca57362d361225e0ca7eab227686528cad2de8771d5461d114fa3"
     },
     {
+      "path": "/apps/explorer/fonts/LICENSE-archivo.txt",
+      "hash": "sha256:c3c8402eec0e31dc9a76851235b1c02a0bb821488b2db8e35bcc2ab60ca8fc2b"
+    },
+    {
+      "path": "/apps/explorer/fonts/LICENSE-dm-mono.txt",
+      "hash": "sha256:d2766c396a8534cba53340f8af2037749b6a0a1dd3587348c917a70e779d2e32"
+    },
+    {
+      "path": "/apps/explorer/fonts/README.md",
+      "hash": "sha256:36219282e217d168616535dee23cfa3536337d4feb3141e0db611555e21703fc"
+    },
+    {
+      "path": "/apps/explorer/fonts/archivo-latin-400.woff2",
+      "hash": "sha256:07f9160163da2ec0f6376ef9d27a2bb8163f98019ba798da4baafb154e30056e"
+    },
+    {
+      "path": "/apps/explorer/fonts/archivo-latin-500.woff2",
+      "hash": "sha256:ab74eca5ad115fe4cfec82ba641e5d37e4d92c58dfb1bfc1e464e9039c9d17cf"
+    },
+    {
+      "path": "/apps/explorer/fonts/archivo-latin-600.woff2",
+      "hash": "sha256:d9e8c29fdd348edde2a4f9aae438e569dd165bbbdebda78495824a2d9aaa67e8"
+    },
+    {
+      "path": "/apps/explorer/fonts/archivo-latin-ext-400.woff2",
+      "hash": "sha256:c7807623d82636e295e0f51ff6dc56e0caa58b9b12600956e90fd9767087ed1a"
+    },
+    {
+      "path": "/apps/explorer/fonts/archivo-latin-ext-500.woff2",
+      "hash": "sha256:28cec7e09bdc84d89729f161eadaead32eb25b7ce7de26117fb82d0834c432d9"
+    },
+    {
+      "path": "/apps/explorer/fonts/archivo-latin-ext-600.woff2",
+      "hash": "sha256:cd902f80bcf11cc6545648c156415deded5336611928c0fb6b02325ad3af13f0"
+    },
+    {
+      "path": "/apps/explorer/fonts/dm-mono-latin-400.woff2",
+      "hash": "sha256:e1896b13b2b1bb112fac2f9571bd6c40e118746e77a4511edbf43fbb41bf3e1e"
+    },
+    {
+      "path": "/apps/explorer/fonts/dm-mono-latin-500.woff2",
+      "hash": "sha256:9964608a849396bd00c4bfd7034afe03486469dcf20b4f6b8cbdfdd310369951"
+    },
+    {
+      "path": "/apps/explorer/fonts/dm-mono-latin-ext-400.woff2",
+      "hash": "sha256:a52e19ebe0398c9c0f8fa28a0c5e9a6bc324f35d9f0881c9aa407d10af447175"
+    },
+    {
+      "path": "/apps/explorer/fonts/dm-mono-latin-ext-500.woff2",
+      "hash": "sha256:8711f938c3f04f91e35ae64ebc7f2eecd800d2ae1c3542f6c837c758a50422f5"
+    },
+    {
       "path": "/apps/explorer/index.html",
-      "hash": "sha256:521c623987d5b95f492f26a2592be4fbf518078634cc6ab6d3aa52fbf705c038"
+      "hash": "sha256:f407f8f9bdf1edfcf5e7de5289f5d38c27b1dc05830e9812481d5c8567cbb0ec"
     },
     {
       "path": "/apps/explorer/js/archive-ui.js",
-      "hash": "sha256:e39fc1c2a8c900162cd731c53fb317283a4d01b5a31a027a5eac572462751478"
+      "hash": "sha256:4f15de699699f5f8766cbee169245d938770cbffd937beb8110ab49c83112a43"
     },
     {
       "path": "/apps/explorer/js/clipboard.js",
@@ -26,7 +78,7 @@
     },
     {
       "path": "/apps/explorer/js/context-menu.js",
-      "hash": "sha256:9c66cd4fe4bf64f24a66b49f402f845d0c9255b33aa8205cc91f2d129e4949c2"
+      "hash": "sha256:4161ef3e042afbeea22f60ec0f84c81cd14bd7de419076e4382595214c1639db"
     },
     {
       "path": "/apps/explorer/js/convert.js",
@@ -50,11 +102,19 @@
     },
     {
       "path": "/apps/explorer/js/format.js",
-      "hash": "sha256:188b4096737fc489f31569d3d59326d5ecaf2255761e5f32dec54aa44fe9cdf4"
+      "hash": "sha256:e320bccfab12420c29d0e9c4bb5eac9acc8ddace6532bdccbca2c5b708bb0071"
     },
     {
       "path": "/apps/explorer/js/fs-helpers.js",
       "hash": "sha256:55b573b72bf73abe62a618a77b7c986a52e03c9741f653a4b0fa9daf5d6bfdd1"
+    },
+    {
+      "path": "/apps/explorer/js/icons.js",
+      "hash": "sha256:e0636fb868d1098b765d8483cc7e1a51ae7c0285177c36424d902a9cea2c70ea"
+    },
+    {
+      "path": "/apps/explorer/js/keys.js",
+      "hash": "sha256:c2ed9ca143aa0794d0c4d6cb6dc2cd12a8af5cb40bf7ee19d6edccafc0f37ca0"
     },
     {
       "path": "/apps/explorer/js/item-actions.js",
@@ -62,7 +122,7 @@
     },
     {
       "path": "/apps/explorer/js/menu-items.js",
-      "hash": "sha256:ed9ec0067efc0c6bde534c13a0927bfc9873aa956b43ef177c3a4ebcf0a8260e"
+      "hash": "sha256:bef7f0506f1e761686a6817dd41216cb2162b45fa2c1f5741e6746f45d86cf70"
     },
     {
       "path": "/apps/explorer/js/mounts.js",
@@ -73,8 +133,12 @@
       "hash": "sha256:fc969db22e70d2cd5f80a26c68ae4d194f7c580e862055e04f78bbcb99d4429b"
     },
     {
+      "path": "/apps/explorer/js/places.js",
+      "hash": "sha256:8cba1a259583f64ec30564b61f550db8dd96ad54243ec72bb1d3fe4d7e079843"
+    },
+    {
       "path": "/apps/explorer/js/recording.js",
-      "hash": "sha256:7f67880f5f4a9c80701791fc30f49d4151d8c105ec972d1cd4f251d5b8d8e55a"
+      "hash": "sha256:7a911cc37630bcbc3fc743fff59d931b7b1b1b36771ef1e5a8665a3131cccf86"
     },
     {
       "path": "/apps/explorer/js/selection.js",
@@ -86,15 +150,11 @@
     },
     {
       "path": "/apps/explorer/js/sidebar.js",
-      "hash": "sha256:2a1434acd1acdc96736f3c97ec831aa15674561f2d72001d72201dbf9e4d8394"
-    },
-    {
-      "path": "/apps/explorer/js/places.js",
-      "hash": "sha256:8cba1a259583f64ec30564b61f550db8dd96ad54243ec72bb1d3fe4d7e079843"
+      "hash": "sha256:d539d709d31f6991518a6028e39794de71d38d7ee05acc3cf9431004c4fb9d06"
     },
     {
       "path": "/apps/explorer/js/view.js",
-      "hash": "sha256:4562816c6dbc1104da26890f888aa270528269adfd4a5f46a89c1071f1b69a98"
+      "hash": "sha256:9ebcfc95ad218335ea21cc799a4d46d2f7b73d6760b53e1078abbdc570a2c7c2"
     }
   ],
   "icon": "/apps/explorer/favicon.svg"

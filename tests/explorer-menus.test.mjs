@@ -115,7 +115,8 @@ function build (selected, shellApi, opts) {
 		report () {},
 		getNameByPath: p => String(p).split('/').pop(),
 		getNormalizedExtension: p => String(p).split('.').pop().toLowerCase(),
-		isImageExtension: p => /\.(png|jpg|jpeg|gif|webp)$/i.test(p)
+		isImageExtension: p => /\.(png|jpg|jpeg|gif|webp)$/i.test(p),
+		keyHint: opts.keyHint
 	});
 }
 
@@ -454,6 +455,26 @@ check('and outside the shell there is nobody to share with, so nothing is offere
 	const dirMenuAlone = build([DIR], null, {sameWindow: asOwnWindow}).getRowMenuItems('/home/docs');
 	check('and sharing a folder is not offered at all',
 		labels(dirMenuAlone).some(l => /shar/i.test(l)), false);
+}
+
+// --- the chord beside a command (phase 25) ------------------------------------------------------
+//
+// Printed from js/keys.js through the shell, so the test hands in a stand-in that names the command
+// and checks each entry asks for the right one: an entry printing Cut's chord beside Copy is the
+// mistake nothing else would catch.
+{
+	const hint = name => '<' + name + '>';
+	const hints = entries => entries.filter(e => !e.separator && e.hint).map(e => e.label + ' ' + e.hint);
+	check('a file\'s menu prints the chords of the five commands that have one',
+		hints(build([FILE], shell, {keyHint: hint}).getRowMenuItems('/home/notes.csv')),
+		['Open <open>', 'Copy <copy>', 'Cut <cut>', 'Delete <delete>']);
+	check('a folder\'s the same four', hints(build([DIR], shell, {keyHint: hint}).getRowMenuItems('/home/docs')),
+		['Open <open>', 'Copy <copy>', 'Cut <cut>', 'Delete <delete>']);
+	check('a selection\'s, its three', hints(build([FILE, IMAGE], shell, {keyHint: hint}).getMultiMenuItems()),
+		['Copy selected <copy>', 'Cut selected <cut>', 'Delete selected <delete>']);
+	check('empty space: Paste', hints(build([], shell, {keyHint: hint}).getEmptyAreaMenuItems()), ['Paste <paste>']);
+	check('with no shell to write them, no chord is printed',
+		hints(build([FILE], shell).getRowMenuItems('/home/notes.csv')), []);
 }
 
 process.exit(report('explorer-menus') ? 1 : 0);

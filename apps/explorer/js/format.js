@@ -7,6 +7,17 @@
 // BrowserFS's path module reached through `parent.path`, and in a test it is node's own
 // `path.posix`, which answers identically for every input the two callers here give it.
 
+import { isArchiveName } from '../../7z/js/parse.js';
+
+// What a row's mark is drawn as: one hairline square, varied five ways, instead of 📁 and 📄. A
+// hint read off the name, never a promise -- nothing opens or refuses a file because of it.
+var KIND_EXTENSIONS = {
+	img: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg', 'avif', 'tiff', 'tif'],
+	av: ['mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'm4a', 'aac', 'weba',
+		'mp4', 'm4v', 'webm', 'mkv', 'mov', 'avi', 'ogv'],
+	bin: ['exe', 'dll', 'so', 'dylib', 'wasm', 'bin', 'img', 'class', 'o']
+};
+
 export function createFormat (path) {
 
 	function normalizePath (p) {
@@ -84,9 +95,26 @@ export function createFormat (path) {
 	}
 
 	function isImageExtension (fileName) {
-		var imgExts = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg', 'avif', 'tiff', 'tif'];
 		var ext = (fileName.split('.').pop() || '').toLowerCase();
-		return imgExts.indexOf(ext) !== -1;
+		return KIND_EXTENSIONS.img.indexOf(ext) !== -1;
+	}
+
+	// 'dir', 'img', 'av', 'bin' (an archive, or something only a machine reads) or 'doc'.
+	function kindOf (item) {
+		if (item.isDirectory) {
+			return 'dir';
+		}
+		var ext = getExt(item.name);
+		if (KIND_EXTENSIONS.img.indexOf(ext) !== -1) {
+			return 'img';
+		}
+		if (KIND_EXTENSIONS.av.indexOf(ext) !== -1) {
+			return 'av';
+		}
+		if (KIND_EXTENSIONS.bin.indexOf(ext) !== -1 || isArchiveName(item.name)) {
+			return 'bin';
+		}
+		return 'doc';
 	}
 
 	return {
@@ -100,6 +128,7 @@ export function createFormat (path) {
 		getNameByPath: getNameByPath,
 		splitNameAndExtension: splitNameAndExtension,
 		basenameEnd: basenameEnd,
-		isImageExtension: isImageExtension
+		isImageExtension: isImageExtension,
+		kindOf: kindOf
 	};
 }

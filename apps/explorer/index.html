@@ -82,7 +82,7 @@ import { createArchiveUi } from "./js/archive-ui.js";
 import { createDialogs } from "./js/dialogs.js";
 import { createFileOps } from "./js/file-ops.js";
 import { createMenuItems } from "./js/menu-items.js";
-import { createView } from "./js/view.js";
+import { createView, SORT_LABELS } from "./js/view.js";
 import { createSidebar } from "./js/sidebar.js";
 import { createPlaces, FILE as LINKS_FILE } from "./js/places.js";
 import { createMounts } from "./js/mounts.js";
@@ -90,6 +90,7 @@ import { createClipboard } from "./js/clipboard.js";
 import { createItemActions } from "./js/item-actions.js";
 import { createShellActions } from "./js/shell-actions.js";
 import { createConvert } from "./js/convert.js";
+import { SHORTCUTS, chordFor } from "./js/keys.js";
 
 window.BrowserFS = parent.BrowserFS;
 
@@ -101,7 +102,7 @@ window.mountManager = parent.mountManager;
 const {
 	normalizePath, getParentPath, formatSize, getItemTitle,
 	escapeHtml, escapeAttr, getExt, getNameByPath,
-	splitNameAndExtension, basenameEnd, isImageExtension
+	splitNameAndExtension, basenameEnd, isImageExtension, kindOf
 } = createFormat(window.path);
 
 const {
@@ -247,7 +248,8 @@ async function openExplorer () {
 	// below reads a node off `ui` -- which is the call three blocks down, not this one.
 	// `renderOverlays` stayed behind in this file; js/view.js says why.
 	var {
-		renderLayout, sortItems, renderToolbarState, renderBreadcrumbs, renderRows, renderStatus
+		renderLayout, sortItems, renderToolbarState, renderBreadcrumbs, renderRows, renderStatus,
+		renderStorage
 	} = createView({
 		state: state,
 		ui: ui,
@@ -258,12 +260,14 @@ async function openExplorer () {
 		formatSize: formatSize,
 		getExt: getExt,
 		getItemTitle: getItemTitle,
+		kindOf: kindOf,
 		// Late-bound, the third time this shape comes up: the toolbar greys Paste out by asking
 		// the clipboard, every clipboard action redraws the toolbar, and js/clipboard.js is built
 		// after file-ops because a paste is a copy or a move.
 		hasInternalClipboard: function () { return hasInternalClipboard(); },
 		getSelectedItems: getSelectedItems,
-		syncSelectAllUI: syncSelectAllUI
+		syncSelectAllUI: syncSelectAllUI,
+		keyHint: keyHint
 	});
 
 	// The dialog machinery. It goes before the archive module because that one opens its
@@ -555,6 +559,25 @@ async function openExplorer () {
 		});
 	}
 
+	// The foot's gauge. The shell already measures storage for the taskbar and the widgets
+	// (js/shell/system-stats.js), so this asks it rather than calling `estimate()` on a timer of
+	// its own; the shell calls back only when the figure changes, and stops once this window's
+	// frame is gone. A window with no shell has no gauge.
+	// The chord for one of Explorer's commands, written the way the shell writes every chord on this
+	// machine (`⌘C` on a Mac, `Ctrl+C` elsewhere), or nothing with no shell -- a hint is a nicety,
+	// and a hint spelled differently from the shell's sheet would be worse than none.
+	function keyHint (name) {
+		if (parent === window || typeof parent.formatShortcut !== 'function') { return ''; }
+		var mac = typeof parent.isMacPlatform === 'function' && parent.isMacPlatform();
+		var chord = chordFor(name, mac);
+		return chord ? parent.formatShortcut(chord) : '';
+	}
+
+	function watchStorage () {
+		if (parent === window || typeof parent.watchStorage !== 'function') { return; }
+		parent.watchStorage(window, renderStorage);
+	}
+
 	// Re-rendering the rows out from under a pointer that is dragging one of them, or under
 	// a rubber-band selection being drawn over them, loses the gesture. Neither lasts long,
 	// so the refresh waits for it rather than being dropped -- dropping it is how a window
@@ -596,11 +619,7 @@ async function openExplorer () {
 
 		ui.newBtn.onclick = function (e) {
 			e.stopPropagation();
-			openContextMenu({
-				x: e.clientX,
-				y: e.clientY,
-				items: getEmptyAreaMenuItems()
-			});
+			openMenuBeside(ui.newBtn, getEmptyAreaMenuItems());
 		};
 
 		ui.upload.onclick = function () {
@@ -615,12 +634,43 @@ async function openExplorer () {
 			actions.cutSelected();
 		};
 
+		ui.compress.onclick = function () {
+			actions.compress();
+		};
+
+		ui.delete.onclick = function () {
+			actions.deleteSelected();
+		};
+
 		ui.paste.onclick = function () {
 			actions.pasteClipboard();
 		};
 
-		ui.defaults.onclick = function () {
-			actions.manageDefaultApps();
+		ui.pasteHere.onclick = function () {
+			actions.pasteClipboard();
+		};
+
+		// What the rail has no room for and the menus had nowhere else to put: *Default apps*,
+		// moved here from a toolbar button of its own. *Select all* was here too, and went after
+		// the first walk -- the *All* box, Ctrl/Cmd+A and the header box already do it.
+		ui.more.onclick = function (e) {
+			e.stopPropagation();
+			openMenuBeside(ui.more, [
+				{label: 'Default apps…', action: actions.manageDefaultApps}
+			]);
+		};
+
+		ui.sort.onclick = function (e) {
+			e.stopPropagation();
+			openMenuBeside(ui.sort, getSortMenuItems());
+		};
+
+		ui.viewDetails.onclick = function () {
+			setViewMode('details');
+		};
+
+		ui.viewGrid.onclick = function () {
+			setViewMode('grid');
 		};
 
 		ui.recordingStop.onclick = function () {
@@ -654,17 +704,6 @@ async function openExplorer () {
 			}
 			ui.fileInput.value = '';
 			await refreshCurrentDir(false);
-		};
-
-		ui.viewMode.onchange = function () {
-			state.viewMode = this.value;
-			renderRows();
-		};
-
-		ui.sortKey.onchange = function () {
-			state.sort.key = this.value;
-			sortItems();
-			renderRows();
 		};
 
 		ui.refresh.onclick = function () {
@@ -816,7 +855,9 @@ async function openExplorer () {
 				return;
 			}
 
-			if (e.key === 'Delete' && state.selectedPaths.size) {
+			// Cmd/Ctrl+Backspace as well as Delete: a Mac laptop has no forward-delete key. Every
+			// chord here is listed in js/keys.js, which the shell's shortcuts sheet reads.
+			if ((e.key === 'Delete' || ((e.ctrlKey || e.metaKey) && e.key === 'Backspace')) && state.selectedPaths.size) {
 				e.preventDefault();
 				actions.deleteSelected();
 			}
@@ -920,11 +961,48 @@ async function openExplorer () {
 					state.sort.key = key;
 					state.sort.dir = 'asc';
 				}
-				ui.sortKey.value = state.sort.key;
-				sortItems();
-				renderRows();
+				applySort();
 			};
 		});
+	}
+
+	// A rail button's menu opens beside the button, not at the pointer: the pointer is on the
+	// rail's narrow edge, and a keyboard press has no pointer at all -- its clientX is 0.
+	function openMenuBeside (button, items) {
+		var rect = button.getBoundingClientRect();
+		openContextMenu({x: rect.right + 4, y: rect.top, items: items});
+	}
+
+	// The key and the direction are two questions, so they are two groups in one menu, each with
+	// its current answer ticked. Choosing a key keeps the direction; clicking a column header is
+	// still the other way in, and still reverses on a second click.
+	function getSortMenuItems () {
+		var items = Object.keys(SORT_LABELS).map(function (key) {
+			return {label: SORT_LABELS[key], checked: state.sort.key === key, action: function () {
+				state.sort.key = key;
+				applySort();
+			}};
+		});
+		items.push({separator: true});
+		[['asc', 'Ascending'], ['desc', 'Descending']].forEach(function (pair) {
+			items.push({label: pair[1], checked: state.sort.dir === pair[0], action: function () {
+				state.sort.dir = pair[0];
+				applySort();
+			}});
+		});
+		return items;
+	}
+
+	function applySort () {
+		sortItems();
+		renderRows();
+		renderToolbarState();
+	}
+
+	function setViewMode (mode) {
+		state.viewMode = mode;
+		renderRows();
+		renderToolbarState();
 	}
 
 	function navigateTo (path, keepForwardHistory) {
@@ -1145,7 +1223,8 @@ async function openExplorer () {
 		report: report,
 		getNameByPath: getNameByPath,
 		getNormalizedExtension: getNormalizedExtension,
-		isImageExtension: isImageExtension
+		isImageExtension: isImageExtension,
+		keyHint: keyHint
 	});
 
 	// The sidebar, built here for the same reason menu-items is: every place carries a menu of
@@ -1183,6 +1262,9 @@ async function openExplorer () {
 	// not read costs the sidebar its editing, never the window.
 	fitSidebar();
 	watchSidebarWidth();
+	watchStorage();
+	// What the shell's shortcuts sheet lists for this window while it is in front -- js/keys.js.
+	window.pixosShortcuts = SHORTCUTS;
 	await loadPlaces();
 	await refreshCurrentDir(false);
 

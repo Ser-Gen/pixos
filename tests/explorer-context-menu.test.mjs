@@ -21,6 +21,8 @@ function element (tag) {
 		children: [],
 		offsetWidth: 120,
 		rect: {left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0},
+		attributes: {},
+		setAttribute (name, value) { el.attributes[name] = String(value); },
 		getBoundingClientRect () { return el.rect; },
 		append (...kids) { el.children.push(...kids); }
 	};
@@ -89,6 +91,38 @@ const labels = list => items(list).map(li => li.textContent);
 	// an empty clipboard is drawn disabled, and a click that still ran it would paste
 	// nothing and report a failure.
 	check('and has no click handler at all', items(list)[2].onclick, undefined);
+}
+
+{
+	// The sort menu (phase 24): one entry per key, the current one ticked.
+	const w = world();
+	const list = w.menu.buildContextMenuList([
+		{label: 'Name', checked: true, action () {}},
+		{label: 'Size', checked: false, action () {}},
+		{label: 'Refresh', action () {}}
+	]);
+	check('a checked entry says so in its class', items(list)[0].className, 'ContextMenu__item ContextMenu__item--checked');
+	check('and to a screen reader', [items(list)[0].attributes.role, items(list)[0].attributes['aria-checked']],
+		['menuitemradio', 'true']);
+	check('an unchecked choice is still a choice', [items(list)[1].className, items(list)[1].attributes['aria-checked']],
+		['ContextMenu__item', 'false']);
+	check('an entry that is not a choice is not announced as one', items(list)[2].attributes.role, undefined);
+	check('and the label is left as it was, with no tick typed in', labels(list)[0], 'Name');
+}
+
+{
+	// A chord beside a command (phase 25), already written for the machine by the time it is here.
+	const w = world();
+	const list = w.menu.buildContextMenuList([
+		{label: 'Copy', hint: '⌘C', action () {}},
+		{label: 'New', hint: '⌘N', submenu: [{label: 'New File', action () {}}]},
+		{label: 'Rename', hint: '', action () {}}
+	]);
+	check('an entry with a chord draws it after the label', [labels(list)[0], items(list)[0].children.map(c => [c.className, c.textContent])],
+		['Copy', [['ContextMenu__hint', '⌘C']]]);
+	check('a submenu keeps its arrow in that place, and no chord', items(list)[1].children.map(c => c.className || c.textContent),
+		['›', 'ContextMenu__submenu']);
+	check('an empty chord draws nothing', items(list)[2].children.length, 0);
 }
 
 {

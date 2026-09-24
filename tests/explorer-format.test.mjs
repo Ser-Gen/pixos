@@ -15,7 +15,7 @@ import {createFormat} from '../apps/explorer/js/format.js';
 const {
 	normalizePath, getParentPath, formatSize, getItemTitle,
 	escapeHtml, escapeAttr, getExt, getNameByPath,
-	splitNameAndExtension, basenameEnd, isImageExtension
+	splitNameAndExtension, basenameEnd, isImageExtension, kindOf
 } = createFormat(path.posix);
 
 // --- paths ------------------------------------------------------------------------------
@@ -115,5 +115,20 @@ check('svg counts, since the viewer can show one', isImageExtension('icon.svg'),
 check('a pdf does not', isImageExtension('report.pdf'), false);
 check('and a name with no extension does not',
 	isImageExtension('README'), false);
+
+// --- the mark a row is drawn with ------------------------------------------------------------
+//
+// Phase 24 draws kinds instead of 📁 and 📄. Five marks, decided by the name alone.
+
+const file = name => ({name: name, isDirectory: false});
+check('a folder is a folder, whatever it is called', kindOf({name: 'photos.zip', isDirectory: true}), 'dir');
+check('an image', kindOf(file('Holiday.JPG')), 'img');
+check('sound', kindOf(file('song.flac')), 'av');
+check('and video', kindOf(file('clip.webm')), 'av');
+check('an archive is drawn as binary, by the rule 7-Zip reads names with', kindOf(file('site.tar.gz')), 'bin');
+check('so is a program', kindOf(file('tool.wasm')), 'bin');
+check('everything else is a document', kindOf(file('notes.md')), 'doc');
+check('including a name with no extension', kindOf(file('README')), 'doc');
+check('and a dotfile, whose "extension" is its name', kindOf(file('.png')), 'doc');
 
 process.exit(report('explorer-format') ? 1 : 0);

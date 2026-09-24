@@ -107,12 +107,17 @@ function harness (options) {
 }
 
 const list = h => h.ui.sidebarList.children;
-const titles = h => list(h).filter(n => n.className === 'Explorer__sidebarTitle').map(n => n.textContent);
+const headings = h => list(h).filter(n => n.className === 'Explorer__sidebarTitle');
+const titles = h => headings(h).map(n => n.children[0].textContent);
 // A place row carries its path on the row, which is what the sidebar's one click handler reads.
 const placeRows = h => list(h).filter(n => n.dataset.path !== undefined);
-// A mount row carries it on its label, whose own click navigates.
-const mountRows = h => list(h).filter(n => n.children.length && n.children[0].dataset.path !== undefined);
+// A mount row carries it on its label, whose own click navigates. Every row starts with its mark.
+const mountRows = h => list(h).filter(n => n.children.length > 1 && n.children[1].dataset.path !== undefined);
 const actionRows = node => node.children.filter(n => n.className.indexOf('Explorer__sidebarAction') > -1);
+const labelOf = row => row.children.filter(n => n.className === 'Explorer__sidebarLabel').map(n => n.textContent)[0];
+const markOf = row => row.children[0].className.replace('Explorer__sidebarMark Explorer__sidebarMark--', '');
+// The pin, which lives in the Places heading since phase 24.
+const pinButtons = h => headings(h).length ? headings(h)[0].children.slice(1) : [];
 const menuLabels = menu => menu.items.map(item => item.separator ? '—' : item.label);
 const press = (node, event) => {
 	try {
@@ -131,8 +136,8 @@ const press = (node, event) => {
 	h.sidebar.renderSidebar();
 	check('the places come first, under their own heading', titles(h), ['Places']);
 	check('one row each, in the order they are in', placeRows(h).map(n => n.dataset.path), ['/', '/apps', '/home/work']);
-	check('named by their title, the root with its own icon',
-		placeRows(h).map(n => n.children[0].textContent), ['\u{1F4C1} Root', '\u{1F4C2} Apps', '\u{1F4C2} Work']);
+	check('named by their title alone', placeRows(h).map(labelOf), ['Root', 'Apps', 'Work']);
+	check('each with a mark, the root\'s its own', placeRows(h).map(markOf), ['root', 'place', 'place']);
 	check('and carrying the path where the pointer finds it', placeRows(h).map(n => n.title), ['/', '/apps', '/home/work']);
 	check('the folder being shown is marked active',
 		placeRows(h).map(n => n.className.indexOf('--active') > -1), [false, true, false]);
@@ -144,16 +149,18 @@ const press = (node, event) => {
 	h.sidebar.renderSidebar();
 	const rows = placeRows(h);
 	let stopped = 0;
-	const failed = press(rows[0].children[1], {clientX: 12, clientY: 34, stopPropagation: () => { stopped++; }});
+	const failed = press(rows[0].children[2], {clientX: 12, clientY: 34, stopPropagation: () => { stopped++; }});
 	check('each place has a button that opens its menu where it was pressed',
 		[failed, h.menus.map(m => [m.x, m.y])], [null, [[12, 34]]]);
 	check('without the click also reaching the row, or the document that would close the menu', stopped, 1);
-	check('titled for what is in it', rows[0].children[1] && rows[0].children[1].title, 'Rename, move or unpin');
+	check('titled for what is in it, for the pointer and for a screen reader',
+		rows[0].children[2] && [rows[0].children[2].title, rows[0].children[2].getAttribute('aria-label')],
+		['Rename, move or unpin', 'Rename, move or unpin']);
 	check('the menu: rename, up, down, and unpin set apart', h.menus[0] && menuLabels(h.menus[0]),
 		['Rename…', 'Move up', 'Move down', '—', 'Unpin']);
 	check('the first place cannot move up', h.menus[0] && h.menus[0].items.map(i => !!i.disabled), [false, true, false, false, false]);
 
-	press(rows[2].children[1]);
+	press(rows[2].children[2]);
 	check('and the last cannot move down', h.menus[1] && h.menus[1].items.map(i => !!i.disabled), [false, false, true, false, false]);
 
 	(h.menus[1] ? h.menus[1].items : []).filter(i => i.action).forEach(i => i.action());
@@ -170,30 +177,33 @@ const press = (node, event) => {
 {
 	const h = harness({cwd: '/home/docs', places: READY(STARTERS())});
 	h.sidebar.renderSidebar();
-	const pin = actionRows(h.ui.sidebarList);
-	check('a folder that is not pinned is offered a pin, under the places', pin.map(n => n.textContent), ['\u{1F4CC} Pin this folder']);
-	check('which comes after the last place', list(h).indexOf(pin[0]) > list(h).indexOf(placeRows(h)[1]), true);
-	press(pin[0]);
+	const pin = pinButtons(h);
+	check('a folder that is not pinned is offered a pin, in the Places heading',
+		pin.map(n => [n.title, n.getAttribute('aria-label')]), [['Pin this folder', 'Pin this folder']]);
+	check('and no row is added under the places for it', list(h).filter(n => /Pin/.test(n.textContent)).length, 0);
+	let stopped = 0;
+	press(pin[0], {stopPropagation: () => { stopped++; }});
 	check('and pins the folder being shown', h.called, [['pinFolder', '/home/docs']]);
+	check('without the click also reaching the sidebar behind it', stopped, 1);
 
 	h.state.cwd = '/apps';
 	h.sidebar.renderSidebar();
-	check('a folder that is pinned is not offered it again', actionRows(h.ui.sidebarList).length, 0);
+	check('a folder that is pinned is not offered it again', pinButtons(h).length, 0);
 }
 
 {
 	const h = harness({places: READY([])});
 	h.sidebar.renderSidebar();
-	check('a Places group with nothing in it is a heading and a pin, not the starters',
-		[titles(h), placeRows(h).length, actionRows(h.ui.sidebarList).length], [['Places'], 0, 1]);
+	check('a Places group with nothing in it is a heading with a pin, not the starters',
+		[titles(h), placeRows(h).length, pinButtons(h).length], [['Places'], 0, 1]);
 }
 
 ['loading', 'unavailable', 'unreadable'].forEach(status => {
 	const h = harness({places: {status: status, group: null, places: STARTERS(), error: new SyntaxError('Unexpected token')}});
 	h.sidebar.renderSidebar();
 	check('while ' + status + ': the starters are drawn and nothing offers to change them',
-		[placeRows(h).length, placeRows(h).map(n => [n.children.length, n.oncontextmenu === null]), actionRows(h.ui.sidebarList).length],
-		[2, [[1, true], [1, true]], 0]);
+		[placeRows(h).length, placeRows(h).map(n => [n.children.length, n.oncontextmenu === null]), pinButtons(h).length],
+		[2, [[2, true], [2, true]], 0]);
 });
 
 {
@@ -227,23 +237,24 @@ const press = (node, event) => {
 	]});
 	h.sidebar.renderSidebar();
 	check('mounts get a heading of their own, under the places', titles(h), ['Places', 'Mounts']);
-	check('each type has its own icon', mountRows(h).map(n => n.children[0].textContent), [
-		'\u{1F4E6} archive (/mnt/zip) [ro]',
-		'\u{1F4BF} disc (/mnt/iso) [ro]',
-		'\u{1F4BB} work (/mnt/work)',
-		'☁️ cloud (/mnt/s3)'
-	]);
+	check('each is named', mountRows(h).map(labelOf), ['archive', 'disc', 'work', 'cloud']);
+	check('with what it is, in a word, and whether it is read-only', mountRows(h).map(n => n.children[2].textContent),
+		['zip · ro', 'iso · ro', 'local', 'files3']);
+	check('and where it is mounted where the pointer finds it', mountRows(h).map(n => n.title),
+		['/mnt/zip', '/mnt/iso', '/mnt/work', '/mnt/s3']);
+	check('every mount row has the same mark', mountRows(h).map(markOf), ['mount', 'mount', 'mount', 'mount']);
 }
 
 {
 	const h = harness({mounts: [{name: 'work', mountPoint: '/mnt/work', type: 'native'}]});
 	h.sidebar.renderSidebar();
 	const row = mountRows(h)[0];
-	press(row.children[0]);
+	press(row.children[1]);
 	check('clicking a mount navigates into it', h.navigated, ['/mnt/work']);
 
 	let stopped = 0;
-	press(row.children[1], {stopPropagation: () => { stopped++; }});
+	press(row.children[3], {stopPropagation: () => { stopped++; }});
+	check('the eject button is named', [row.children[3].title, row.children[3].getAttribute('aria-label')], ['Unmount', 'Unmount']);
 	check('the eject button unmounts it', h.called, [['umount', '/mnt/work']]);
 	// Without this the click reaches the label behind it and navigates into the mount it has
 	// just been asked to remove.
@@ -278,21 +289,22 @@ const waitingRows = h => list(h).filter(n => n.className.indexOf('--waiting') > 
 	]});
 	h.sidebar.renderSidebar();
 	check('with nothing mounted, waiting mounts still get the heading', titles(h), ['Places', 'Mounts']);
-	check('each says what it is waiting for', waitingRows(h).map(n => n.children[0].textContent), [
-		'\u{1F4BB} work (/mnt/work) — click to reconnect',
-		'☁️ cloud (/mnt/s3) — click to sign in',
-		'\u{1F4E6} a.zip (/mnt/a) — did not come back',
-		'\u{1F4BF} disc (/mnt/disc) — reconnecting…'
-	]);
-	check('and one that failed carries the reason where the pointer finds it',
-		waitingRows(h).map(n => n.title), ['', '', 'ENOENT: /home/a.zip', '']);
+	check('each is named', waitingRows(h).map(labelOf), ['work', 'cloud', 'a.zip', 'disc']);
+	check('and says what it is waiting for', waitingRows(h).map(n => n.children[2].textContent),
+		['click to reconnect', 'click to sign in', 'did not come back', 'reconnecting…']);
+	check('where it would be mounted, and why one failed, are where the pointer finds them',
+		waitingRows(h).map(n => n.title), ['/mnt/work', '/mnt/s3', '/mnt/a\nENOENT: /home/a.zip', '/mnt/disc']);
+	// The stylesheet colours two of these amber and leaves the other two quiet, by this.
+	check('each carries its state for the stylesheet', waitingRows(h).map(n => n.dataset.status),
+		['needs-permission', 'needs-sign-in', 'failed', 'restoring']);
+	check('with the waiting mark', waitingRows(h).map(markOf), ['waiting', 'waiting', 'waiting', 'waiting']);
 
 	// Pressed inside a guard: with the rows missing, the checks below have to fail, not throw.
 	let stopped = 0;
 	let pressed = null;
 	try {
-		waitingRows(h)[0].children[0].onclick();
-		waitingRows(h)[2].children[1].onclick({stopPropagation: () => { stopped++; }});
+		waitingRows(h)[0].children[1].onclick();
+		waitingRows(h)[2].children[3].onclick({stopPropagation: () => { stopped++; }});
 	}
 	catch (err) {
 		pressed = err.message;
@@ -304,13 +316,13 @@ const waitingRows = h => list(h).filter(n => n.className.indexOf('--waiting') > 
 		[h.called.slice(1), stopped], [[['forgetMount', '/mnt/a']], 1]);
 
 	const failed = waitingRows(h)[2];
-	check('titled for what it does', failed ? failed.children[1].title : null, 'Forget this mount');
+	check('titled for what it does', failed ? failed.children[3].title : null, 'Forget this mount');
 
 	// `=== null` and `.length`, not the node itself: JSON.stringify writes a function as null,
 	// so comparing `onclick` by value could never tell a handler from none.
 	const trying = waitingRows(h)[3];
 	check('one being tried offers nothing to click: no reconnect, no forget',
-		trying ? [trying.children[0].onclick === null, trying.children.length] : null, [true, 1]);
+		trying ? [trying.children[1].onclick === null, trying.children.length] : null, [true, 3]);
 }
 
 {
@@ -320,7 +332,7 @@ const waitingRows = h => list(h).filter(n => n.className.indexOf('--waiting') > 
 	});
 	h.sidebar.renderSidebar();
 	check('under the live mounts, not instead of them, and under the one heading',
-		[mountRows(h).map(n => n.children[0].dataset.path), titles(h)], [['/mnt/zip', '/mnt/work'], ['Places', 'Mounts']]);
+		[mountRows(h).map(n => n.children[1].dataset.path), titles(h)], [['/mnt/zip', '/mnt/work'], ['Places', 'Mounts']]);
 	check('and only the waiting one is marked as waiting',
 		mountRows(h).map(n => n.className.indexOf('--waiting') > -1), [false, true]);
 }
@@ -331,9 +343,11 @@ const waitingRows = h => list(h).filter(n => n.className.indexOf('--waiting') > 
 	const h = harness();
 	h.sidebar.renderSidebar();
 	const buttons = actionRows(h.ui.sidebarFooter);
-	check('both ways of adding a mount are in the footer', buttons.map(n => n.textContent),
-		['\u{1F4C2} Mount local folder...', '☁️ Mount Files3 storage...']);
-	check('and not in the list above it', actionRows(h.ui.sidebarList).filter(n => /Mount/.test(n.textContent)).length, 0);
+	check('both ways of adding a mount are in the footer', buttons.map(labelOf),
+		['Mount local folder...', 'Mount Files3 storage...']);
+	check('each a real button, with its icon drawn rather than typed', buttons.map(n => [n.tag, n.type, /^<svg /.test(n.innerHTML)]),
+		[['button', 'button', true], ['button', 'button', true]]);
+	check('and not in the list above it', actionRows(h.ui.sidebarList).length, 0);
 	buttons.forEach(n => press(n));
 	check('and each calls its action', h.called, [['mountNativeDir'], ['mountFiles3']]);
 }
@@ -344,7 +358,7 @@ const waitingRows = h => list(h).filter(n => n.className.indexOf('--waiting') > 
 	const h = harness({noPicker: true});
 	h.sidebar.renderSidebar();
 	check('a browser with no directory picker is not offered one',
-		actionRows(h.ui.sidebarFooter).map(n => n.textContent), ['☁️ Mount Files3 storage...']);
+		actionRows(h.ui.sidebarFooter).map(labelOf), ['Mount Files3 storage...']);
 }
 
 {
@@ -411,7 +425,7 @@ const closed = h => h.ui.body.classList.contains('Explorer__body--sidebarClosed'
 	h.sidebar.fitSidebar();
 	h.sidebar.toggleSidebar();
 	h.sidebar.renderSidebar();
-	press(mountRows(h)[0].children[0]);
+	press(mountRows(h)[0].children[1]);
 	check('a mount row only navigates, and leaves the drawer to navigateTo', [h.navigated, h.state.sidebarOpen], [['/mnt/work'], true]);
 }
 

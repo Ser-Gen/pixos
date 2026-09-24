@@ -77,8 +77,25 @@ export function createContextMenu (deps) {
 			}
 
 			var li = doc.createElement('li');
-			li.className = 'ContextMenu__item' + (item.disabled ? ' ContextMenu__item--disabled' : '');
+			li.className = 'ContextMenu__item' + (item.disabled ? ' ContextMenu__item--disabled' : '')
+				+ (item.checked ? ' ContextMenu__item--checked' : '');
 			li.textContent = item.label;
+			// Which of a set of choices is the current one -- the sort key, the direction. Drawn by
+			// the stylesheet, and said to a screen reader, rather than typed into the label, where a
+			// tick would push the unticked labels out of line with it.
+			if (typeof item.checked === 'boolean') {
+				li.setAttribute('role', 'menuitemradio');
+				li.setAttribute('aria-checked', item.checked ? 'true' : 'false');
+			}
+
+			// The chord that does the same, already written for this machine (js/keys.js and the
+			// shell). A submenu's arrow takes that place, so an entry has one or the other.
+			if (item.hint && !(item.submenu && item.submenu.length)) {
+				var hint = doc.createElement('span');
+				hint.className = 'ContextMenu__hint';
+				hint.textContent = item.hint;
+				li.append(hint);
+			}
 
 			if (item.submenu && item.submenu.length) {
 				var marker = doc.createElement('span');

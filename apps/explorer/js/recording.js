@@ -1,6 +1,7 @@
 // Screen recording, lifted out of openExplorer by phase 21: the options a recording starts
 // with, the graph that mixes system audio and the microphone into one track, the timer in
-// the toolbar, and the four things the indicator's buttons do.
+// the foot (the toolbar until phase 24 moved the commands onto a rail too narrow for a clock),
+// and the four things the indicator's buttons do.
 //
 // Every platform object comes off `win` and `nav` rather than out of the ambient global --
 // `nav.mediaDevices`, `win.MediaRecorder`, `win.AudioContext`, `win.Blob`, `win.MediaStream`,

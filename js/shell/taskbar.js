@@ -6,6 +6,7 @@
 import * as icons from './app-icons.js';
 import * as stats from './system-stats.js';
 import * as widgets from './widgets.js';
+import {describeShortcut, isMacPlatform} from './shortcuts.js';
 
 var STYLE_ID = 'pixos-taskbar-style';
 
@@ -353,7 +354,7 @@ export function init (cfg) {
 	elements.overview = document.createElement('button');
 	elements.overview.className = 'PixTaskbar__overview';
 	elements.overview.textContent = '\u29c9';
-	elements.overview.title = 'All windows (Ctrl/Cmd+Shift+K)';
+	elements.overview.title = 'All windows (' + describeShortcut('overview', isMacPlatform()) + ')';
 	elements.overview.onclick = function () {
 		if (options.onOverview) {
 			options.onOverview();

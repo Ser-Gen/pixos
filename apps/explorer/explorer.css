@@ -1,21 +1,154 @@
 /* Explorer's stylesheet.
 
-   It lived in a `<style>` block inside `index.html` until phase 21, and nothing changed on
-   the way out: same rules, same order, same specificity. The inline styles the sidebar
-   render still set on its rows came here in phase 23, when that render became a drawer. */
+   It lived in a `<style>` block inside `index.html` until phase 21. Phase 23 moved the sidebar's
+   inline styles here, and phase 24 rewrote it from mockup B (docs/explorer-chrome-mockup-b.html):
+   a rail of commands down the left, the drawer, and the listing as a document whose title is the
+   path.
+
+   **One dark theme, on purpose.** Explorer lives inside the dark shell, and a light Explorer in a
+   dark desktop was the objection mockup B's own light version raised. These are B's tokens, not
+   the shell's -- decided 2026-09-17, see docs/explorer-plan.md.
+
+   **Magenta and amber never swap.** Magenta is the accent and means "selected" or "this one":
+   the ticked box, the selected row, the folder you are in, the view that is on. Amber is one
+   state only -- a mount waiting for a click the browser or the storage needs. Neither is used
+   for anything else, so neither can be misread.
+
+   **No colour on a bare element selector wins over a component.** `button` below is (0,0,1) and
+   every component class is (0,1,0). Mockup B once set `color` on `.app button`, at (0,1,1), and
+   every rail icon was painted in body ink on the near-black rail, invisible until hovered. */
+
+/* --- the two faces, bundled: apps/explorer/fonts/README.md ------------------------------------ */
+
+@font-face {
+	font-family: "Archivo";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("fonts/archivo-latin-400.woff2") format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: "Archivo";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("fonts/archivo-latin-ext-400.woff2") format("woff2");
+	unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: "Archivo";
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url("fonts/archivo-latin-500.woff2") format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: "Archivo";
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url("fonts/archivo-latin-ext-500.woff2") format("woff2");
+	unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: "Archivo";
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url("fonts/archivo-latin-600.woff2") format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: "Archivo";
+	font-style: normal;
+	font-weight: 600;
+	font-display: swap;
+	src: url("fonts/archivo-latin-ext-600.woff2") format("woff2");
+	unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: "DM Mono";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("fonts/dm-mono-latin-400.woff2") format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: "DM Mono";
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url("fonts/dm-mono-latin-ext-400.woff2") format("woff2");
+	unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+	font-family: "DM Mono";
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url("fonts/dm-mono-latin-500.woff2") format("woff2");
+	unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+	font-family: "DM Mono";
+	font-style: normal;
+	font-weight: 500;
+	font-display: swap;
+	src: url("fonts/dm-mono-latin-ext-500.woff2") format("woff2");
+	unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* --- tokens ------------------------------------------------------------------------------------ */
 
 :root {
-	--bg: #101319;
-	--panel: #1a1c1f;
-	--panel-2: #202327;
-	--line: #34383f;
-	--text: #e4e4e4;
-	--muted: #adadad;
-	--accent: #8d9664;
-	--danger: #f25f5c;
-	--hover: #2d3238;
-	--selected: #30353b;
-	--shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+	color-scheme: dark;
+
+	/* surfaces, darkest to lightest */
+	--desk: #0a0b0c;
+	--rail-bg: #0d0e10;
+	--sheet-bg: #121417;
+	--paper: #17191c;
+	--raised: #1d2023;
+	--hover: #212427;
+	--sel: rgba(238, 75, 152, 0.13);
+
+	/* ink */
+	--ink: #e6e7e4;
+	--ink-soft: #c3c6c3;
+	--quiet: #939996;
+	--faint: #787e7b;
+	--rail-ico: #8b918f;
+
+	/* rules */
+	--rule: #232629;
+	--rule-firm: #35393b;
+
+	/* the one accent, the one state colour, and the recording light */
+	--mark: #ee4b98;
+	--mark-bright: #ff6aac;
+	--amber: #d9a13a;
+	--live: #ff4d4d;
+	--refusal: #ff9b8f;
+
+	--ui: "Archivo", system-ui, "Segoe UI", "Noto Sans", sans-serif;
+	--data: "DM Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+	--rail-width: 46px;
+	--sheet-width: 210px;
+	--shadow: 14px 0 34px -14px rgba(0, 0, 0, 0.8);
+	--menu-shadow: 6px 6px 0 rgba(0, 0, 0, 0.45);
 }
 
 * {
@@ -29,9 +162,11 @@ body {
 
 body {
 	margin: 0;
-	background: radial-gradient(circle at 0% 0%, #242526 0%, #101319 38%);
-	color: var(--text);
-	font-family: "Segoe UI", "Noto Sans", sans-serif;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: var(--ui);
+	font-size: 13px;
+	line-height: 1.45;
 	overflow: hidden;
 }
 
@@ -39,148 +174,201 @@ body {
 	height: 100%;
 }
 
-.Explorer {
-	height: 100%;
-	display: grid;
-	grid-template-rows: auto auto 1fr auto;
-	background: rgba(16, 19, 25, 0.85);
-}
-
-.Explorer__toolbar {
-	display: flex;
-	gap: 4px;
-	align-items: center;
-	padding: 4px 6px;
-	border-bottom: 1px solid var(--line);
-	background: var(--panel);
-}
-
-.Explorer__toolbarGroup {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-}
-
-.Explorer__toolbarLabel {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	font-size: 12px;
-	color: var(--text);
-	user-select: none;
-}
-
-.Explorer__toolbarGroup--grow {
-	flex: 1;
-	min-width: 0;
-}
+/* --- form controls, as the dialogs use them ---------------------------------------------------- */
 
 button,
 select,
-input,
-textarea {
-	background: #24272c;
-	border: 1px solid #3e424a;
-	color: var(--text);
-	border-radius: 0;
+textarea,
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
 	font: inherit;
 	font-size: 12px;
+	color: var(--ink);
+	background: var(--raised);
+	border: 1px solid var(--rule-firm);
+	border-radius: 0;
 }
 
-button,
 select,
-input {
-	height: 24px;
-	padding: 0 6px;
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) {
+	height: 26px;
+	padding: 0 7px;
 }
 
 button {
+	height: 26px;
+	padding: 0 10px;
 	cursor: pointer;
+	color: var(--ink-soft);
+	background: transparent;
 }
 
 button:hover:not(:disabled) {
-	background: #2f3339;
+	background: var(--hover);
+	color: var(--ink);
+	border-color: var(--quiet);
 }
 
 button:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.Explorer__danger {
-	border-color: #6d3a3d;
-	background: #4d2a2c;
-}
-
-.Explorer__breadcrumbs {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	overflow: auto hidden;
-	white-space: nowrap;
-	padding: 4px 6px;
-	border-bottom: 1px solid var(--line);
-	background: var(--panel-2);
-}
-
-.Explorer__crumb {
-	padding: 2px 6px;
-	border-radius: 0;
-	cursor: pointer;
-	color: #d0d0d0;
-	font-size: 12px;
-}
-
-.Explorer__crumb:hover {
-	background: var(--hover);
-}
-
-.Explorer__crumb--current {
-	background: #2f333a;
+	opacity: 0.45;
 	cursor: default;
 }
 
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+	outline: 1px solid var(--mark);
+	outline-offset: -1px;
+}
+
+button:focus-visible {
+	outline: 2px solid var(--mark);
+	outline-offset: -2px;
+}
+
+.Explorer__danger:hover:not(:disabled) {
+	background: var(--mark);
+	border-color: var(--mark);
+	color: var(--desk);
+}
+
+/* --- the frame --------------------------------------------------------------------------------- */
+
+.Explorer {
+	height: 100%;
+	display: flex;
+	overflow: hidden;
+}
+
+/* --- the rail: commands on the axis that has room ------------------------------------------------ */
+
+.Explorer__rail {
+	flex: 0 0 var(--rail-width);
+	width: var(--rail-width);
+	background: var(--rail-bg);
+	border-right: 1px solid var(--rule);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+	padding: 7px 0;
+	/* A window short enough to need it scrolls the rail: the same failure as a cropped toolbar,
+	   moved to the axis that has slack. */
+	overflow-y: auto;
+	scrollbar-width: none;
+	z-index: 30;
+}
+
+.Explorer__rail::-webkit-scrollbar {
+	display: none;
+}
+
+.Explorer__railButton {
+	width: 32px;
+	height: 32px;
+	flex: 0 0 32px;
+	padding: 0;
+	border: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	position: relative;
+	color: var(--rail-ico);
+	background: transparent;
+}
+
+.Explorer__railButton svg {
+	width: 16px;
+	height: 16px;
+}
+
+.Explorer__railButton:hover:not(:disabled) {
+	color: var(--ink);
+	background: var(--hover);
+}
+
+.Explorer__railButton:disabled {
+	color: var(--faint);
+	opacity: 0.45;
+}
+
+.Explorer__railButton[aria-pressed="true"] {
+	color: var(--ink);
+	background: var(--hover);
+}
+
+.Explorer__railButton[aria-pressed="true"]::before {
+	content: "";
+	position: absolute;
+	left: -7px;
+	top: 6px;
+	bottom: 6px;
+	width: 2px;
+	background: var(--mark);
+}
+
+.Explorer__railButton--accent {
+	color: var(--mark);
+}
+
+.Explorer__railButton--accent:hover:not(:disabled) {
+	color: var(--mark-bright);
+}
+
+.Explorer__railRule {
+	width: 18px;
+	height: 1px;
+	flex: 0 0 1px;
+	margin: 5px 0;
+	background: var(--rule-firm);
+}
+
+.Explorer__railGap {
+	flex: 1 1 auto;
+	min-height: 8px;
+}
+
+/* --- the body: drawer and document ------------------------------------------------------------- */
+
 .Explorer__body {
 	position: relative;
+	flex: 1 1 auto;
+	min-width: 0;
 	display: grid;
-	grid-template-columns: 160px 1fr;
+	grid-template-columns: var(--sheet-width) minmax(0, 1fr);
 	min-height: 0;
 }
 
-/* The drawer, closed. At any width: the toggle in the toolbar is how it comes back. */
+/* The drawer, closed. At any width: the rail's first button is how it comes back. */
 .Explorer__body--sidebarClosed {
-	grid-template-columns: 1fr;
+	grid-template-columns: minmax(0, 1fr);
 }
 
 .Explorer__body--sidebarClosed .Explorer__sidebar {
 	display: none;
 }
 
-.Explorer__sidebarToggle[aria-pressed="true"] {
-	background: var(--selected);
-}
+/* --- the drawer ---------------------------------------------------------------------------------- */
 
-/* A column: the list scrolls, the footer holding the mount buttons stays at the bottom. */
 .Explorer__sidebar {
 	display: flex;
 	flex-direction: column;
 	min-width: 0;
 	min-height: 0;
-	border-right: 1px solid var(--line);
-	background: #16181c;
+	background: var(--sheet-bg);
+	border-right: 1px solid var(--rule);
 }
 
 .Explorer__sidebarList {
 	flex: 1 1 auto;
 	min-height: 0;
-	overflow: auto;
-	padding: 4px;
+	overflow-y: auto;
+	padding-bottom: 8px;
 }
 
 .Explorer__sidebarFooter {
-	flex: none;
-	border-top: 1px solid var(--line);
-	padding: 4px;
+	flex: 0 0 auto;
+	border-top: 1px solid var(--rule);
+	padding: 4px 0;
 }
 
 .Explorer__sidebarFooter:empty {
@@ -188,72 +376,388 @@ button:disabled {
 }
 
 .Explorer__sidebarTitle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 14px 8px 6px 12px;
+	font-family: var(--data);
 	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.16em;
 	text-transform: uppercase;
-	color: var(--muted);
-	margin: 4px;
+	color: var(--faint);
+}
+
+.Explorer__sidebarTitle span {
+	flex: 1 1 auto;
 }
 
 .Explorer__sidebarItem {
+	position: relative;
 	display: flex;
 	align-items: center;
-	gap: 4px;
-	padding: 4px 6px;
-	border-radius: 0;
+	gap: 8px;
+	min-height: 28px;
+	padding: 4px 6px 4px 12px;
 	cursor: pointer;
-	color: #d5d5d5;
-	font-size: 12px;
+	color: var(--ink-soft);
 }
 
 .Explorer__sidebarItem:hover {
 	background: var(--hover);
+	color: var(--ink);
 }
 
 .Explorer__sidebarItem--active {
-	background: #2f3339;
+	background: var(--hover);
+	color: var(--ink);
+}
+
+.Explorer__sidebarItem--active::before {
+	content: "";
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	width: 2px;
+	background: var(--mark);
+}
+
+.Explorer__sidebarMark {
+	flex: 0 0 auto;
+	width: 7px;
+	height: 7px;
+	border: 1px solid var(--quiet);
+}
+
+.Explorer__sidebarMark--root {
+	background: var(--quiet);
+}
+
+.Explorer__sidebarMark--place {
+	border-radius: 50%;
+}
+
+.Explorer__sidebarItem--active .Explorer__sidebarMark {
+	border-color: var(--ink);
+}
+
+.Explorer__sidebarItem--active .Explorer__sidebarMark--root {
+	background: var(--ink);
 }
 
 .Explorer__sidebarLabel {
-	flex: 1;
+	flex: 1 1 auto;
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	font-size: 12.5px;
 }
 
-/* The small buttons at the end of a row: eject, forget, and a place's menu. */
+.Explorer__sidebarDetail {
+	flex: 0 0 auto;
+	font-family: var(--data);
+	font-size: 10px;
+	color: var(--faint);
+	white-space: nowrap;
+}
+
+/* The small buttons at the end of a row: a place's menu, eject, forget -- and pin, in the heading. */
 .Explorer__sidebarButton {
-	flex: none;
-	height: auto;
-	padding: 2px 4px;
-	border: none;
-	background: none;
-	color: inherit;
-	font-size: 14px;
-	line-height: 1;
+	flex: 0 0 auto;
+	width: 20px;
+	height: 20px;
+	padding: 0;
+	border: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--quiet);
+	background: transparent;
 }
 
-/* Rows that do something rather than go somewhere: pin this folder, mount a folder. */
-.Explorer__sidebarAction {
-	color: var(--muted);
+.Explorer__sidebarButton svg {
+	width: 11px;
+	height: 11px;
+}
+
+.Explorer__sidebarButton:hover:not(:disabled) {
+	color: var(--mark);
+	background: transparent;
+}
+
+/* Hidden until the row is pointed at -- but only where there is a pointer that can point. On a
+   touch screen nothing hovers, and a button that only appears on hover is a button that is not
+   there. */
+@media (hover: hover) {
+	.Explorer__sidebarItem .Explorer__sidebarButton {
+		opacity: 0;
+	}
+
+	.Explorer__sidebarItem:hover .Explorer__sidebarButton,
+	.Explorer__sidebarItem:focus-within .Explorer__sidebarButton {
+		opacity: 1;
+	}
+}
+
+.Explorer__sidebarAdd svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* A mount that is waiting: still listed, visibly not there. What it waits for goes on a line of its
+   own under the name -- beside it, "click to reconnect" took the width and left "Pro…". */
+.Explorer__sidebarItem--waiting {
+	flex-wrap: wrap;
+	row-gap: 1px;
+	color: var(--quiet);
+}
+
+.Explorer__sidebarItem--waiting .Explorer__sidebarDetail {
+	order: 1;
+	flex-basis: 100%;
+	padding-left: 15px;
+}
+
+.Explorer__sidebarItem--waiting .Explorer__sidebarMark {
+	border-style: dashed;
+}
+
+.Explorer__sidebarItem--waiting[data-status="needs-permission"] .Explorer__sidebarMark,
+.Explorer__sidebarItem--waiting[data-status="needs-sign-in"] .Explorer__sidebarMark {
+	border-color: var(--amber);
+}
+
+.Explorer__sidebarItem--waiting[data-status="needs-permission"] .Explorer__sidebarDetail,
+.Explorer__sidebarItem--waiting[data-status="needs-sign-in"] .Explorer__sidebarDetail {
+	color: var(--amber);
+}
+
+.Explorer__sidebarItem--waiting[data-status="restoring"] {
+	cursor: default;
 }
 
 .Explorer__sidebarNote {
-	padding: 2px 6px;
+	padding: 2px 12px 6px;
 	font-size: 11px;
-	color: var(--muted);
+	color: var(--quiet);
 }
 
-/* A mount the shell could not bring back after a reload: still listed, visibly not there. */
-.Explorer__sidebarItem--waiting {
-	color: var(--muted);
-	font-style: italic;
+/* Rows that do something rather than go somewhere: the two ways to add a mount. */
+.Explorer__sidebarAction {
+	width: 100%;
+	height: auto;
+	border: 0;
+	text-align: left;
+	font-size: 12px;
+	color: var(--ink-soft);
+	background: transparent;
 }
+
+.Explorer__sidebarAction:hover:not(:disabled) {
+	background: var(--hover);
+	color: var(--ink);
+}
+
+.Explorer__sidebarAction svg {
+	flex: 0 0 auto;
+	width: 13px;
+	height: 13px;
+	color: var(--quiet);
+}
+
+.Explorer__sidebarAction:hover svg {
+	color: var(--mark);
+}
+
+/* --- the document ------------------------------------------------------------------------------ */
+
+.Explorer__doc {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	min-height: 0;
+	background: var(--paper);
+}
+
+.Explorer__head {
+	flex: 0 0 auto;
+	padding: 13px 18px 9px;
+	border-bottom: 1px solid var(--rule);
+}
+
+/* The path is the title: one element, two jobs, one fewer strip. */
+.Explorer__breadcrumbs {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	min-width: 0;
+	margin: 0 0 3px;
+	font-family: var(--data);
+	font-size: 19px;
+	font-weight: 400;
+	letter-spacing: -0.02em;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+
+.Explorer__crumb {
+	height: auto;
+	padding: 0 1px;
+	border: 0;
+	font: inherit;
+	letter-spacing: inherit;
+	color: var(--faint);
+	background: transparent;
+}
+
+/* Only the parts that go somewhere answer the pointer: the last one is where you are, and is a span. */
+button.Explorer__crumb:hover:not(:disabled) {
+	color: var(--ink);
+	background: transparent;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.Explorer__crumb--current {
+	color: var(--ink);
+	font-weight: 500;
+}
+
+.Explorer__crumbSep {
+	padding: 0 1px;
+	color: var(--rule-firm);
+}
+
+.Explorer__sub {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	min-height: 26px;
+}
+
+.Explorer__selectAllLabel {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-family: var(--data);
+	font-size: 10px;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--faint);
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+}
+
+.Explorer__selectAllLabel:hover {
+	color: var(--ink-soft);
+}
+
+.Explorer__status {
+	font-family: var(--data);
+	font-size: 11.5px;
+	color: var(--quiet);
+	font-variant-numeric: tabular-nums;
+	white-space: pre;
+}
+
+.Explorer__status b {
+	color: var(--mark);
+	font-weight: 500;
+}
+
+.Explorer__acts {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 2px;
+}
+
+.Explorer__act {
+	height: 22px;
+	padding: 0 9px;
+	font-size: 11.5px;
+	white-space: nowrap;
+}
+
+/* Set apart from the selection's four when they are there: it acts on the folder, not on what is
+   selected. */
+.Explorer__delete:not([hidden]) + .Explorer__pasteHere {
+	margin-left: 8px;
+}
+
+.Explorer__act--destructive:hover:not(:disabled) {
+	background: var(--mark);
+	border-color: var(--mark);
+	color: var(--desk);
+}
+
+/* --- the tick box: drawn from the same hairline square as the file kinds ------------------------ */
+
+.Explorer__check {
+	-webkit-appearance: none;
+	appearance: none;
+	position: relative;
+	flex: 0 0 auto;
+	width: 13px;
+	height: 13px;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--quiet);
+	background: transparent;
+	cursor: pointer;
+	vertical-align: middle;
+}
+
+.Explorer__check:hover {
+	border-color: var(--ink);
+}
+
+.Explorer__check:checked {
+	background: var(--mark);
+	border-color: var(--mark);
+}
+
+.Explorer__check:checked::after {
+	content: "";
+	position: absolute;
+	left: 3px;
+	top: 0;
+	width: 4px;
+	height: 7px;
+	border: solid var(--desk);
+	border-width: 0 2px 2px 0;
+	transform: rotate(42deg);
+}
+
+/* Some but not all: a bar, never a tick, so the two cannot be misread at a glance. */
+.Explorer__check:indeterminate {
+	border-color: var(--mark);
+}
+
+.Explorer__check:indeterminate::after {
+	content: "";
+	position: absolute;
+	inset: 4px 2px;
+	background: var(--mark);
+}
+
+.Explorer__check:focus-visible {
+	outline: 1px solid var(--mark);
+	outline-offset: 2px;
+}
+
+/* --- the listing ------------------------------------------------------------------------------- */
 
 .Explorer__main {
 	position: relative;
+	flex: 1 1 auto;
+	min-height: 0;
 	overflow: auto;
-	padding: 4px;
 }
 
 .Explorer__main--selecting {
@@ -263,113 +767,121 @@ button:disabled {
 .Explorer__table {
 	width: 100%;
 	border-collapse: collapse;
-}
-
-.Explorer__table thead {
-	position: sticky;
-	top: 0;
-	z-index: 1;
+	table-layout: auto;
 }
 
 .Explorer__table th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	padding: 8px 14px;
 	text-align: left;
-	background: #1f2228;
-	padding: 5px 6px;
-	font-size: 12px;
-	font-weight: 600;
-	border-bottom: 1px solid var(--line);
+	white-space: nowrap;
+	font-family: var(--data);
+	font-size: 10px;
+	font-weight: 500;
+	letter-spacing: 0.14em;
+	text-transform: uppercase;
+	color: var(--faint);
+	background: var(--paper);
+	border-bottom: 1px solid var(--rule-firm);
 	cursor: pointer;
 	user-select: none;
 }
 
-.Explorer__table td {
-	padding: 4px 6px;
-	border-bottom: 1px solid rgba(82, 87, 96, 0.35);
-	font-size: 12px;
+.Explorer__table th:hover {
+	color: var(--ink);
 }
 
-.Explorer__selectCol {
-	width: 32px;
-	text-align: center;
+/* The column being sorted by, and which way. `renderToolbarState` puts the key and the direction on
+   the table; the arrow is chosen by the direction and drawn only on the matching header. */
+.Explorer__table {
+	--sort-arrow: "\2191";
+}
+
+.Explorer__table[data-sort-dir="desc"] {
+	--sort-arrow: "\2193";
+}
+
+.Explorer__table[data-sort-key="name"] th[data-sort-key="name"],
+.Explorer__table[data-sort-key="type"] th[data-sort-key="type"],
+.Explorer__table[data-sort-key="mtime"] th[data-sort-key="mtime"],
+.Explorer__table[data-sort-key="size"] th[data-sort-key="size"] {
+	color: var(--ink);
+}
+
+.Explorer__table[data-sort-key="name"] th[data-sort-key="name"]::after,
+.Explorer__table[data-sort-key="type"] th[data-sort-key="type"]::after,
+.Explorer__table[data-sort-key="mtime"] th[data-sort-key="mtime"]::after,
+.Explorer__table[data-sort-key="size"] th[data-sort-key="size"]::after {
+	content: var(--sort-arrow);
+	margin-left: 5px;
+	color: var(--mark);
+	letter-spacing: 0;
+}
+
+.Explorer__table td {
+	padding: 6px 14px;
+	border-bottom: 1px solid var(--rule);
+	white-space: nowrap;
+	color: var(--ink-soft);
+}
+
+.Explorer__table .Explorer__selectCol {
+	width: 1px;
+	padding-right: 0;
+	cursor: default;
+}
+
+.Explorer__table th.Explorer__selectCol:hover {
+	color: var(--faint);
+}
+
+.Explorer__colName {
+	width: 100%;
+	max-width: 0;
+}
+
+.Explorer__table td.Explorer__colType,
+.Explorer__table td.Explorer__colModified,
+.Explorer__table td.Explorer__colSize {
+	font-family: var(--data);
+	font-size: 11.5px;
+	color: var(--quiet);
+	font-variant-numeric: tabular-nums;
+}
+
+.Explorer__colSize {
+	text-align: right;
+}
+
+.Explorer__table th.Explorer__colSize {
+	text-align: right;
 }
 
 .Explorer__row {
 	cursor: default;
 }
 
-.Explorer__row:hover {
-	background: rgba(52, 58, 66, 0.5);
+.Explorer__row:hover td {
+	background: var(--hover);
+	color: var(--ink);
 }
 
-.Explorer__row--selected {
-	background: var(--selected);
+.Explorer__row--selected td {
+	background: var(--sel);
+	color: var(--ink);
+}
+
+.Explorer__row--selected td:first-child {
+	box-shadow: inset 2px 0 0 var(--mark);
 }
 
 .Explorer__nameCell {
 	display: flex;
 	align-items: center;
-	gap: 4px;
+	gap: 9px;
 	min-width: 0;
-}
-
-.Explorer__check {
-	width: 14px;
-	height: 14px;
-	padding: 0;
-	margin: 0;
-	accent-color: var(--accent);
-	cursor: pointer;
-}
-
-.Explorer__grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-	gap: 8px;
-	padding-top: 4px;
-}
-
-.Explorer__card {
-	border: 1px solid transparent;
-	background: transparent;
-	padding: 8px 6px;
-	cursor: default;
-	display: grid;
-	justify-items: center;
-	gap: 6px;
-	min-height: 120px;
-	position: relative;
-}
-
-.Explorer__card:hover {
-	border-color: #4d525b;
-	background: rgba(52, 58, 66, 0.45);
-}
-
-.Explorer__card--selected {
-	background: var(--selected);
-}
-
-.Explorer__cardIcon {
-	font-size: 36px;
-	line-height: 1;
-}
-
-.Explorer__cardCheck {
-	position: absolute;
-	top: 6px;
-	left: 6px;
-	z-index: 1;
-}
-
-.Explorer__cardName {
-	font-size: 12px;
-	text-align: center;
-	word-break: break-word;
-}
-
-.Explorer__dropTarget {
-	outline: 1px solid var(--accent);
-	outline-offset: -1px;
 }
 
 .Explorer__nameText {
@@ -378,49 +890,204 @@ button:disabled {
 	white-space: nowrap;
 }
 
-.Explorer__muted {
-	color: var(--muted);
+/* File kinds, drawn from one square rather than borrowed from the emoji table, so they sit on the
+   baseline and take the ink colour. `kindOf` in js/format.js decides which. */
+.Explorer__kind {
+	position: relative;
+	flex: 0 0 auto;
+	display: inline-block;
+	width: 9px;
+	height: 11px;
+	border: 1px solid var(--quiet);
+}
+
+.Explorer__kind--dir {
+	width: 11px;
+	height: 9px;
+	border-top-width: 3px;
+}
+
+.Explorer__kind--bin {
+	background: var(--quiet);
+}
+
+.Explorer__kind--img {
+	background: linear-gradient(135deg, transparent 45%, var(--quiet) 45%);
+}
+
+.Explorer__kind--av::after {
+	content: "";
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	border-left: 4px solid var(--quiet);
+	border-top: 3px solid transparent;
+	border-bottom: 3px solid transparent;
+}
+
+.Explorer__row:hover .Explorer__kind,
+.Explorer__row--selected .Explorer__kind,
+.Explorer__card:hover .Explorer__kind,
+.Explorer__card--selected .Explorer__kind {
+	border-color: var(--ink);
+}
+
+.Explorer__row:hover .Explorer__kind--bin,
+.Explorer__row--selected .Explorer__kind--bin,
+.Explorer__card:hover .Explorer__kind--bin,
+.Explorer__card--selected .Explorer__kind--bin {
+	background: var(--ink);
+}
+
+/* --- grid -------------------------------------------------------------------------------------- */
+
+.Explorer__grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+	gap: 1px;
+	padding: 14px;
+}
+
+.Explorer__card {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 10px;
+	padding: 22px 6px 12px;
+	text-align: center;
+	color: var(--ink-soft);
+	cursor: default;
+}
+
+.Explorer__card:hover {
+	background: var(--hover);
+	color: var(--ink);
+}
+
+.Explorer__card--selected {
+	background: var(--sel);
+	color: var(--ink);
+	box-shadow: inset 0 -2px 0 var(--mark);
+}
+
+.Explorer__cardIcon {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 28px;
+}
+
+.Explorer__cardIcon .Explorer__kind {
+	transform: scale(2.1);
+}
+
+.Explorer__cardCheck {
+	position: absolute;
+	top: 7px;
+	left: 7px;
+	z-index: 1;
+}
+
+.Explorer__cardName {
+	width: 100%;
+	font-size: 11.5px;
+	overflow-wrap: anywhere;
+}
+
+/* --- what the listing does while something is dragged, drawn or empty -------------------------- */
+
+.Explorer__dropTarget,
+.Explorer__row.Explorer__dropTarget td {
+	outline: 1px solid var(--mark);
+	outline-offset: -1px;
+}
+
+/* A file from the desktop is over the window. The class has been set since the upload by drop was
+   written, and until phase 24 nothing drew it. */
+.Page--onDragOver .Explorer__main {
+	outline: 1px dashed var(--mark);
+	outline-offset: -6px;
 }
 
 .Explorer__empty {
-	padding: 10px;
-	color: var(--muted);
-	font-size: 12px;
+	padding: 24px 18px;
+	font-family: var(--data);
+	font-size: 11.5px;
+	color: var(--faint);
 }
 
 .Explorer__selectionBox {
 	position: absolute;
 	display: none;
-	border: 1px solid rgba(141, 150, 100, 0.95);
-	background: rgba(141, 150, 100, 0.18);
+	border: 1px solid var(--mark);
+	background: rgba(238, 75, 152, 0.1);
 	pointer-events: none;
 	z-index: 20;
 }
 
-.Explorer__status {
-	border-top: 1px solid var(--line);
-	background: var(--panel);
-	padding: 4px 6px;
-	font-size: 12px;
-	color: #d2d2d2;
+/* --- the foot: what is true whatever is selected ----------------------------------------------- */
+
+.Explorer__foot {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	min-width: 0;
+	height: 28px;
+	padding: 0 14px;
+	border-top: 1px solid var(--rule-firm);
+	font-family: var(--data);
+	font-size: 11px;
+	color: var(--faint);
+	font-variant-numeric: tabular-nums;
+}
+
+.Explorer__footText {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: pre;
+}
+
+.Explorer__gauge {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	white-space: nowrap;
+}
+
+.Explorer__gaugeBar {
+	display: block;
+	width: 54px;
+	height: 3px;
+	background: var(--rule-firm);
+}
+
+.Explorer__gaugeFill {
+	display: block;
+	height: 100%;
+	width: 0;
+	background: var(--quiet);
 }
 
 .Explorer__recordingIndicator {
+	flex: 0 0 auto;
 	display: inline-flex;
 	align-items: center;
-	gap: 6px;
-	margin-left: 6px;
-	color: #ff4d4d;
-	font-size: 13px;
+	gap: 4px;
+	color: var(--live);
 }
 
 .Explorer__recordingDot {
-	width: 10px;
-	height: 10px;
+	flex: 0 0 auto;
+	width: 8px;
+	height: 8px;
 	border-radius: 50%;
-	background: #ff4d4d;
+	background: var(--live);
 	animation: Explorer__recordingPulse 1s infinite;
-	flex-shrink: 0;
 }
 
 @keyframes Explorer__recordingPulse {
@@ -428,36 +1095,47 @@ button:disabled {
 	50% { opacity: 0.3; }
 }
 
-.Explorer__recordingBtn {
-	background: none;
-	border: none;
-	cursor: pointer;
-	color: #ff4d4d;
-	padding: 2px 4px;
-	border-radius: 3px;
-	line-height: 1;
-	display: inline-flex;
-	align-items: center;
-	transition: color 0.15s, background 0.15s;
+.Explorer__recordingTime {
+	margin-right: 2px;
 }
 
-.Explorer__recordingBtn:hover {
-	background: rgba(255, 255, 255, 0.1);
+.Explorer__recordingBtn {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border: 0;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--live);
+	background: transparent;
+}
+
+.Explorer__recordingBtn svg {
+	width: 13px;
+	height: 13px;
+}
+
+.Explorer__recordingBtn:hover:not(:disabled) {
+	color: var(--ink);
+	background: var(--hover);
 }
 
 .Explorer__recordingBtn--muted {
-	color: #666;
+	color: var(--faint);
 }
+
+/* --- menus ------------------------------------------------------------------------------------- */
 
 .ContextMenu {
 	position: fixed;
 	z-index: 1000;
-	min-width: 220px;
-	background: #23262b;
-	border: 1px solid #434850;
-	border-radius: 0;
-	box-shadow: var(--shadow);
-	padding: 6px;
+	min-width: 200px;
+	padding: 3px;
+	background: var(--sheet-bg);
+	border: 1px solid var(--rule-firm);
+	box-shadow: var(--menu-shadow);
+	font-size: 12.5px;
 }
 
 .ContextMenu__list {
@@ -471,71 +1149,101 @@ button:disabled {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 5px 8px;
-	border-radius: 0;
-	font-size: 12px;
+	gap: 10px;
+	padding: 6px 9px;
+	white-space: nowrap;
 	cursor: pointer;
-	color: #e4e4e4;
+	color: var(--ink-soft);
+}
+
+.ContextMenu__hint {
+	font-family: var(--data);
+	font-size: 10.5px;
+	color: var(--faint);
+	letter-spacing: 0.02em;
 }
 
 .ContextMenu__item:hover {
-	background: #333840;
+	background: var(--hover);
+	color: var(--ink);
 }
 
 .ContextMenu__item--disabled,
 .ContextMenu__item--disabled:hover {
 	opacity: 0.45;
-	cursor: not-allowed;
+	cursor: default;
 	background: transparent;
+	color: var(--ink-soft);
+}
+
+/* One of a set of choices, and the current one. Room is kept for the mark on every choice, so the
+   labels stay in line whichever is ticked. */
+.ContextMenu__item[role="menuitemradio"] {
+	padding-left: 24px;
+}
+
+.ContextMenu__item--checked::before {
+	content: "";
+	position: absolute;
+	left: 10px;
+	top: 50%;
+	width: 5px;
+	height: 5px;
+	margin-top: -3px;
+	background: var(--mark);
 }
 
 .ContextMenu__separator {
 	height: 1px;
-	background: #424750;
-	margin: 6px 4px;
+	margin: 3px 2px;
+	background: var(--rule);
 }
 
 .ContextMenu__submenu {
 	display: none;
 	position: absolute;
-	left: calc(100% - 6px);
-	top: -6px;
-	min-width: 220px;
-	background: #23262b;
-	border: 1px solid #434850;
-	border-radius: 0;
-	box-shadow: var(--shadow);
-	padding: 6px;
+	left: calc(100% - 3px);
+	top: -4px;
+	min-width: 200px;
+	padding: 3px;
+	background: var(--sheet-bg);
+	border: 1px solid var(--rule-firm);
+	box-shadow: var(--menu-shadow);
 }
 
 .ContextMenu__item:hover > .ContextMenu__submenu {
 	display: block;
 }
 
+/* --- dialogs ----------------------------------------------------------------------------------- */
+
 .Modal {
 	position: fixed;
 	inset: 0;
-	background: rgba(2, 6, 12, 0.64);
+	z-index: 1200;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	z-index: 1200;
+	background: rgba(0, 0, 0, 0.6);
 }
 
 .Modal__panel {
 	width: min(560px, calc(100vw - 24px));
-	background: #23262c;
-	border: 1px solid #484d55;
-	border-radius: 0;
-	box-shadow: var(--shadow);
+	max-height: calc(100vh - 24px);
+	overflow: auto;
 	display: grid;
-	gap: 8px;
-	padding: 10px;
+	gap: 10px;
+	padding: 16px 18px;
+	background: var(--sheet-bg);
+	border: 1px solid var(--rule-firm);
+	box-shadow: var(--menu-shadow);
 }
 
 .Modal__title {
-	font-size: 14px;
+	font-size: 15px;
 	font-weight: 600;
+	letter-spacing: -0.01em;
+	text-wrap: balance;
 }
 
 .Modal__field {
@@ -544,13 +1252,16 @@ button:disabled {
 }
 
 .Modal__field label {
-	font-size: 11px;
-	color: #bdbdbd;
+	font-family: var(--data);
+	font-size: 10px;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--faint);
 }
 
 .Modal textarea {
 	min-height: 120px;
-	padding: 4px 6px;
+	padding: 6px 7px;
 	resize: vertical;
 }
 
@@ -558,37 +1269,79 @@ button:disabled {
    open, and the reason belongs beside the thing to change. */
 .Modal__refusal {
 	font-size: 12px;
-	color: #ff9b8f;
+	color: var(--refusal);
 }
 
 .Modal__buttons {
 	display: flex;
 	justify-content: flex-end;
+	flex-wrap: wrap;
 	gap: 4px;
+}
+
+/* The button a dialog exists for: ink on dark, the one filled button in the window. */
+.Dialog__submit,
+.Dialog__extract {
+	color: var(--desk);
+	background: var(--ink);
+	border-color: var(--ink);
+}
+
+.Dialog__submit:hover:not(:disabled),
+.Dialog__extract:hover:not(:disabled) {
+	color: var(--desk);
+	background: #ffffff;
+	border-color: #ffffff;
 }
 
 .Modal__list {
 	max-height: 200px;
 	overflow: auto;
-	padding: 4px 6px;
-	border: 1px solid #444a53;
-	border-radius: 0;
-	background: #1a1d22;
+	padding: 6px 8px;
 	font-size: 12px;
+	color: var(--ink-soft);
+	background: var(--paper);
+	border: 1px solid var(--rule);
 }
+
+.Modal__list--tall {
+	max-height: 260px;
+}
+
+.Modal__hint {
+	font-size: 12px;
+	color: var(--quiet);
+}
+
+.Modal__hint--nowrap {
+	white-space: nowrap;
+}
+
+.Modal__hint--tucked {
+	margin-top: -4px;
+}
+
+/* --- hidden means hidden, whatever display a rule above gave it -------------------------------- */
 
 .Explorer__table[hidden],
 .Explorer__grid[hidden],
 .Explorer__empty[hidden],
-.Explorer__recordingIndicator[hidden] {
+.Explorer__acts[hidden],
+.Explorer__act[hidden],
+.Explorer__gauge[hidden],
+.Explorer__recordingIndicator[hidden],
+.Explorer__recordingBtn[hidden],
+.Modal__refusal[hidden] {
 	display: none !important;
 }
 
-/* Narrow: the drawer lies over the listing instead of taking a column from it. It used to be
+/* --- narrow ------------------------------------------------------------------------------------ */
+
+/* The drawer lies over the document instead of taking a column from it. Until phase 23 it was
    `display: none` here, and with it the only way to mount a folder. */
 @media (max-width: 900px) {
 	.Explorer__body {
-		grid-template-columns: 1fr;
+		grid-template-columns: minmax(0, 1fr);
 	}
 
 	.Explorer__sidebar {
@@ -596,8 +1349,54 @@ button:disabled {
 		top: 0;
 		bottom: 0;
 		left: 0;
-		z-index: 30;
-		width: min(240px, 85%);
+		z-index: 25;
+		width: min(var(--sheet-width), 85%);
 		box-shadow: var(--shadow);
+	}
+}
+
+/* Narrower still, the columns give up room before they give up anything they say: tighter cells,
+   and the day without the time (the row's title has the whole stamp). Type goes only at 460px, the
+   column saying least -- the mark and the name say most of it -- and Modified at 380px. Name and
+   Size stay at every width. */
+@media (max-width: 620px) {
+	.Explorer__table th,
+	.Explorer__table td {
+		padding-left: 8px;
+		padding-right: 8px;
+	}
+
+	.Explorer__time {
+		display: none;
+	}
+
+	.Explorer__head {
+		padding: 10px 12px 7px;
+	}
+
+	.Explorer__breadcrumbs {
+		font-size: 16px;
+	}
+
+	.Explorer__gaugeText {
+		display: none;
+	}
+}
+
+@media (max-width: 460px) {
+	.Explorer__colType {
+		display: none;
+	}
+}
+
+@media (max-width: 380px) {
+	.Explorer__colModified {
+		display: none;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.Explorer__recordingDot {
+		animation: none;
 	}
 }

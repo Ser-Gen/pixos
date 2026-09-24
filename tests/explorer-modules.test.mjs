@@ -64,8 +64,11 @@ const precache = (read('sw.js').match(/var PRECACHE = \[([\s\S]*?)\n\];/) || [, 
 	.sort();
 
 const shell = read('index.html');
-const fallbackBlock = shell.slice(shell.indexOf('FALLBACK_PREINSTALL'));
-const fallback = [...fallbackBlock.slice(0, 2000).matchAll(/path: '(\/apps\/explorer\/[^']+)'/g)]
+// The whole object literal, to where it closes. This read a fixed 2000 characters until phase 24's
+// thirteen font files pushed the last Explorer entries past them.
+const fallbackStart = shell.indexOf('var FALLBACK_PREINSTALL = {');
+const fallbackBlock = shell.slice(fallbackStart, shell.indexOf('\n\t};', fallbackStart));
+const fallback = [...fallbackBlock.matchAll(/path: '(\/apps\/explorer\/[^']+)'/g)]
 	.map(m => m[1])
 	.sort();
 

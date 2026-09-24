@@ -144,6 +144,75 @@ check('and no branch repeats isEditableTarget after it',
 	check(action + ' is behind the guard', at > guard, true);
 });
 
+// --- Cmd/Ctrl+Backspace, the delete key a Mac laptop has (phase 25) ---------------------------
+
+state.selectedPaths = new Set(['/home/report.pdf']);
+check('Cmd+Backspace deletes, as in Finder', press('Backspace', GRID, {metaKey: true}), ['delete']);
+check('so does Ctrl+Backspace', press('Backspace', GRID, {ctrlKey: true}), ['delete']);
+check('Backspace alone does not -- it is how you go back a letter', press('Backspace'), []);
+check('Cmd+Backspace in a field deletes the word, not the file', press('Backspace', FIELD, {metaKey: true}), []);
+
+// --- what the shortcuts sheet lists is what the handler answers to (phase 25) ----------------
+//
+// js/keys.js is the list the shell's sheet shows for Explorer and the menus print beside their
+// commands. Every keyboard chord on it is pressed here against the handler above; a chord the
+// handler lost, or one added to the list and never to the handler, fails here.
+
+const {KEYS, SHORTCUTS, chordFor} = await import('../apps/explorer/js/keys.js');
+
+// A keydown for a chord in the shell's spelling, pressed with Cmd (a Mac) or Ctrl.
+function eventFor (spec, withMeta) {
+	const parts = spec.split('+');
+	const key = parts.pop();
+	const extra = {};
+	parts.forEach(mod => {
+		if (mod === 'Mod') { extra[withMeta ? 'metaKey' : 'ctrlKey'] = true; }
+		if (mod === 'Ctrl') { extra.ctrlKey = true; }
+		if (mod === 'Shift') { extra.shiftKey = true; }
+		if (mod === 'Alt') { extra.altKey = true; }
+	});
+	return [/^[A-Z]$/.test(key) ? key.toLowerCase() : key, extra];
+}
+
+const EXPECTED = {
+	open: ['open:/home/report.pdf'],
+	delete: ['delete'],
+	selectAll: ['selectAll'],
+	copy: ['copy'],
+	cut: ['cut'],
+	paste: ['paste'],
+	close: ['closeDialog', 'closeContextMenu', 'renderOverlays']
+};
+check('every command in the key list has an expected action here', Object.keys(KEYS).sort(), Object.keys(EXPECTED).sort());
+
+[true, false].forEach(withMeta => {
+	const missed = [];
+	Object.keys(KEYS).forEach(name => {
+		KEYS[name].keys.forEach(spec => {
+			state.selectedPaths = new Set(['/home/report.pdf']);
+			const [key, extra] = eventFor(spec, withMeta);
+			const got = press(key, GRID, extra);
+			if (JSON.stringify(got) !== JSON.stringify(EXPECTED[name])) {
+				missed.push(spec + ' -> ' + JSON.stringify(got));
+			}
+		});
+	});
+	check('every listed chord does what it is listed for, pressed with ' + (withMeta ? 'Cmd' : 'Ctrl'), missed, []);
+});
+
+check('the sheet lists every command in the key list, with its every chord',
+	Object.keys(KEYS).every(name => SHORTCUTS.some(entry => entry.keys === KEYS[name].keys)), true);
+check('and nothing else but the two pointer gestures',
+	SHORTCUTS.filter(entry => !Object.keys(KEYS).some(name => entry.keys === KEYS[name].keys)).map(entry => entry.keys),
+	[['Shift+Click'], ['Mod+Click']]);
+
+check('a menu prints Delete on a PC', chordFor('delete', false), 'Delete');
+check('and Cmd+Backspace on a Mac, which has no Delete key to press', chordFor('delete', true), 'Mod+Backspace');
+check('a command with one chord prints it everywhere', [chordFor('copy', false), chordFor('copy', true)], ['Mod+C', 'Mod+C']);
+check('a name the list does not know prints nothing', chordFor('rename', true), null);
+
+state.selectedPaths = new Set();
+
 // --- renaming selects the name, not the extension ---------------------------------------
 
 // Imported rather than scraped out of the HTML: phase 21 moved it into a module, which

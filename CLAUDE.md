@@ -25,7 +25,9 @@ run in iframes. Pure static site — no build step, no backend.
   `peers.js` the connection to another PixOS + `peers-panel.js` where one is made +
   `call-bar.js` the one surface a call is drawn on + `peer-fs.js` a shared folder as a
   BrowserFS backend,
-  `fullscreen.js`, `app-icons.js`, `context-menu.js`. `js/goldenlayout/` and `js/peerjs/`
+  `fullscreen.js`, `app-icons.js`, `context-menu.js`, `shortcuts.js` (every shell chord spelled
+  once, read both by the hotkey handler and by the *Keyboard shortcuts* sheet it draws, and written
+  for the machine — `⌘K` on a Mac, `Ctrl+K` elsewhere). `js/goldenlayout/` and `js/peerjs/`
   hold only vendor bundles.
 - `js/app-registry.js` — install / update / scan apps. `js/mount-manager.js` — zip, iso, native-dir and files3 mounts; an archive is mounted
   by path (`mountZipFile`, `mountIsoFile`), because a mount made from bytes names no file to read
@@ -38,7 +40,8 @@ run in iframes. Pure static site — no build step, no backend.
   have a `vendor/` holding a whole library plus a `README.md` recording its provenance.
   `apps/explorer`, `apps/app-manager` are system apps; `apps/registry.json` and
   `apps/app-catalog.js` are both generated. Explorer is being taken apart by phase 21: its
-  stylesheet is `apps/explorer/explorer.css`, and `apps/explorer/js/` holds the modules
+  stylesheet is `apps/explorer/explorer.css`, `apps/explorer/fonts/` bundles its two faces (a
+  `README.md` says where they came from, and that neither has Cyrillic), and `apps/explorer/js/` holds the modules
   lifted out of `openExplorer` so far — `format.js` (pure: names, paths, sizes, escaping),
   `fs-helpers.js` (every promise wrapper around BrowserFS), `failure.js` (`report`,
   `guarded`, the errno translation and the two last-resort listeners), `open-with.js`
@@ -66,9 +69,15 @@ run in iframes. Pure static site — no build step, no backend.
   and `menu-items.js` (what is *in* a context menu, as opposed to `context-menu.js`, which
   draws one: four builders returning an array of entries, with everything the shell owns —
   peers, bookmarks, the wallpaper — offered only when there is a shell to own it)
-  and `view.js` (everything Explorer draws of itself: the one template `renderLayout` writes and
-  the thirty-four nodes it then looks up in it by class, the order the rows go in, and the four
-  redraws that follow a change in `state`) and `sidebar.js` (`renderSidebar` — the only
+  and `view.js` (everything Explorer draws of itself, as mockup B since phase 24 — a rail of
+  commands, the path as the title, a selection line, a foot with the storage gauge: the one
+  template `renderLayout` writes and the forty-three nodes it then looks up in it by class, the order
+  the rows go in, and the redraws that follow a change in `state`; every control it had before and
+  where each went is `docs/explorer-controls.md`) and `icons.js` (every icon as SVG markup, shared
+  by the view and the sidebar, and no emoji anywhere in the chrome) and `keys.js` (every key Explorer
+  answers to, written once: the keydown handler answers to it, the shell's shortcuts sheet lists it
+  as `window.pixosShortcuts`, and the menus print it beside their commands —
+  `tests/explorer-keys.test.mjs` presses every chord on it against the handler) and `sidebar.js` (`renderSidebar` — the only
   render that draws something Explorer does not own, and the only one whose output is
   clickable — and the drawer it is drawn in: a column above 900px that starts the way it was last
   left, an overlay at or below it that always starts closed, and at no width gone) and `places.js`
@@ -128,7 +137,7 @@ run in iframes. Pure static site — no build step, no backend.
   wraps each entry once and menus, the sidebar and the keyboard all read the wrapped one; `menu-items.js` and `sidebar.js` are built *after* it, at the
   bottom of the block rather than the top, because a menu entry reads `actions.copySelected` when
   the menu is built and every mount row carries an unmount button. The window's boot lines —
-  `renderLayout`, `bindEvents`, `watchForChanges`, fitting the drawer, reading the places, the first
+  `renderLayout`, `bindEvents`, `watchForChanges`, fitting the drawer, asking for the storage figure, reading the places, the first
   `refreshCurrentDir` — sit below them for the same reason: **the window starts when every module exists**, and the first refresh draws
   the sidebar.
   `apps/calendar` (read-only month/year view) and `apps/system-info` (what this browser
@@ -158,7 +167,8 @@ run in iframes. Pure static site — no build step, no backend.
   scheduled goes there, including things deliberately rejected and why. Read it before
   proposing work; move an item into a plan rather than copying it.
 - `docs/ux-improvements-plan.md` (phases 1–5, built), `docs/reliability-plan.md`
-  (phases 6–20, all built) and `docs/explorer-plan.md` (phases 21–24: 21 built, 22 built, 23 under way) are the
+  (phases 6–20, all built), `docs/explorer-plan.md` (phases 21–24: 21–23 built, 24 under way) and
+  `docs/shortcuts-plan.md` (phase 25, keyboard shortcuts shown) are the
   scheduled work, each phase with a browser checklist beside it
   (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
@@ -196,9 +206,13 @@ sections, and the kind of thing each one will catch:
 - *Windows, desktops and sessions* — the five layers, why an iframe is never reparented,
   one windows container for every desktop, and what a session actually persists.
 - *Getting around* — one model behind three launchers, keystroke bridging into iframes, the
-  overview, and the file-search deadline.
+  overview, the file-search deadline, and the shortcuts sheet (one spelling for handler and sheet,
+  `Ctrl/Cmd+/` left to a text field, the chords a Mac is not shown).
 - *Launching, and the app contract* — `launch(descriptor)`, `openFile`/`markDirty`/
-  `saveFileLocal`, `autosave`, one tab owning the session, and `Ctrl/Cmd+W`.
+  `saveFileLocal`, `setWindowPath` (where a window that moves inside itself now stands),
+  `watchStorage` (the storage figure, passed on only when it changes), `window.pixosShortcuts` (an
+  app's keys, read by the shell when its sheet opens), `autosave`, one tab owning
+  the session, and `Ctrl/Cmd+W`.
 - *When a file changes underneath a window* — why no writer is asked to announce a
   write, the one `fs` that is wrapped instead and the one writer that cannot be,
   quiet-plus-maxWait coalescing, what a truncated batch is allowed to answer,
@@ -207,7 +221,8 @@ sections, and the kind of thing each one will catch:
   what a refused write does and does not tell you, one spelling of a size, and which mounts
   come back after a reload and which wait for a click.
 - *Manifests, boot, and what a fresh system is made of* — generated manifests, the two the
-  generator skips in silence, `preinstall.json`, and what a boot says on screen when it
+  generator skips in silence, the four lists a file added to Explorer goes in (fonts included),
+  `preinstall.json`, and what a boot says on screen when it
   cannot fetch what it is made of.
 - *Frames that are not apps* — `launch({url})` and why every cross-origin iframe needs
   `credentialless`.

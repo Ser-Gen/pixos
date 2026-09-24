@@ -229,6 +229,7 @@ import * as stats from "./js/shell/system-stats.js";
 import * as tabs from "./js/shell/tabs.js";
 import * as fullscreen from "./js/shell/fullscreen.js";
 import * as overview from "./js/shell/overview.js";
+import * as shortcuts from "./js/shell/shortcuts.js";
 import * as peers from "./js/shell/peers.js";
 import * as peersPanel from "./js/shell/peers-panel.js";
 import * as peerFs from "./js/shell/peer-fs.js";
@@ -476,6 +477,43 @@ function fsOnInit () {
 		return stop;
 	};
 
+	// A chord written for this machine -- `Mod+C` is `⌘C` on a Mac and `Ctrl+C` elsewhere -- for an
+	// app that prints its own keys beside its commands, so every window writes them one way.
+	window.formatShortcut = function (spec) {
+		return shortcuts.formatChord(spec, shortcuts.isMacPlatform());
+	};
+	window.isMacPlatform = function () {
+		return shortcuts.isMacPlatform();
+	};
+
+	// The storage figure the taskbar and the desktop widgets draw, for an app that wants to draw
+	// it too -- Explorer's foot, since phase 24. `system-stats.js` emits every second for the
+	// clock, so the handler is called only when the storage part actually changed, and once
+	// straight away with whatever is known. Tied to the app's own window like `watchFiles`, and
+	// dropped the first time that window's frame is found gone.
+	window.watchStorage = function (win, handler) {
+		if (typeof win === 'function') { handler = win; win = null; }
+		if (typeof handler !== 'function') { return function () {}; }
+		var last;
+		var gone = false;
+		// `subscribe` calls back once before it has returned, so `stop` is not assigned yet on
+		// that first call.
+		var stop = stats.subscribe(function (state) {
+			if (gone || (win && !frameIsAlive(win))) {
+				gone = true;
+				if (stop) { stop(); }
+				return;
+			}
+			var storage = state.storage ? Object.assign({}, state.storage) : null;
+			var key = JSON.stringify(storage);
+			if (key === last) { return; }
+			last = key;
+			handler(storage);
+		});
+		if (gone) { stop(); }
+		return stop;
+	};
+
 	function frameIsAlive (win) {
 		try {
 			return !!(win && win.frameElement && win.frameElement.isConnected);
@@ -607,6 +645,19 @@ function fsOnInit () {
 		files: [
 			{path: '/apps/explorer/index.html', refresh: true},
 			{path: '/apps/explorer/explorer.css', refresh: true},
+			{path: '/apps/explorer/fonts/LICENSE-archivo.txt', refresh: true},
+			{path: '/apps/explorer/fonts/LICENSE-dm-mono.txt', refresh: true},
+			{path: '/apps/explorer/fonts/README.md', refresh: true},
+			{path: '/apps/explorer/fonts/archivo-latin-400.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/archivo-latin-500.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/archivo-latin-600.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/archivo-latin-ext-400.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/archivo-latin-ext-500.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/archivo-latin-ext-600.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/dm-mono-latin-400.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/dm-mono-latin-500.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/dm-mono-latin-ext-400.woff2', refresh: true},
+			{path: '/apps/explorer/fonts/dm-mono-latin-ext-500.woff2', refresh: true},
 			{path: '/apps/explorer/js/format.js', refresh: true},
 			{path: '/apps/explorer/js/fs-helpers.js', refresh: true},
 			{path: '/apps/explorer/js/failure.js', refresh: true},
@@ -620,6 +671,8 @@ function fsOnInit () {
 			{path: '/apps/explorer/js/file-ops.js', refresh: true},
 			{path: '/apps/explorer/js/menu-items.js', refresh: true},
 			{path: '/apps/explorer/js/view.js', refresh: true},
+			{path: '/apps/explorer/js/icons.js', refresh: true},
+			{path: '/apps/explorer/js/keys.js', refresh: true},
 			{path: '/apps/explorer/js/sidebar.js', refresh: true},
 			{path: '/apps/explorer/js/places.js', refresh: true},
 			{path: '/apps/explorer/js/mounts.js', refresh: true},
@@ -1491,7 +1544,8 @@ function fsOnInit () {
 				{label: 'App Manager', run: function () { openApp('app-manager'); }},
 				{label: 'Wallpaper...', run: function () { desktop.openWallpaperPicker(); }},
 				{label: 'Show desktop', run: function () { desktop.togglePeek(); }},
-				{label: 'Fullscreen', run: function () { toggleFullscreen(); }}
+				{label: 'Fullscreen', run: function () { toggleFullscreen(); }},
+				{label: 'Keyboard shortcuts', run: function () { shortcuts.open(); }}
 			],
 			onClose: function () {
 				taskbar.setStartOpen(false);
@@ -1807,6 +1861,11 @@ function fsOnInit () {
 		});
 
 
+		shortcuts.init({
+			host: document.getElementById('overlays'),
+			getApp: frontAppShortcuts
+		});
+
 		overview.init({
 			host: document.getElementById('overlays'),
 			wm: winManager,
@@ -2045,14 +2104,24 @@ function fsOnInit () {
 	}
 
 	function buildShellCommands () {
+		var mac = shortcuts.isMacPlatform();
 		var commands = winManager.listWorkspaces()
-			.filter(function (workspace) {
-				return !workspace.active;
+			.map(function (workspace, index) {
+				return {
+					workspace: workspace,
+					// Ctrl+Shift+1..9 counts every desktop, the current one included.
+					keys: index < 9 ? shortcuts.formatChord('Ctrl+Shift+' + (index + 1), mac) : ''
+				};
 			})
-			.map(function (workspace) {
+			.filter(function (entry) {
+				return !entry.workspace.active;
+			})
+			.map(function (entry) {
+				var workspace = entry.workspace;
 				return {
 					title: 'Desktop: ' + workspace.name,
 					subtitle: workspace.windowCount + (workspace.windowCount === 1 ? ' window' : ' windows'),
+					keys: entry.keys,
 					run: function () { winManager.switchTo(workspace.id); }
 				};
 			});
@@ -2060,8 +2129,15 @@ function fsOnInit () {
 		return commands.concat([
 			{
 				title: 'All windows',
-				subtitle: 'Every window on every desktop, with a number to press. Ctrl/Cmd+Shift+K',
+				subtitle: 'Every window on every desktop, with a number to press',
+				keys: shortcuts.describeShortcut('overview', mac),
 				run: function () { overview.open(); }
+			},
+			{
+				title: 'Keyboard shortcuts',
+				subtitle: 'Every key PixOS answers to, and the ones of the window in front',
+				keys: shortcuts.describeShortcut('shortcuts', mac),
+				run: function () { shortcuts.open(); }
 			},
 			{
 				title: 'Peers',
@@ -2165,7 +2241,7 @@ function fsOnInit () {
 				subtitle: 'Forget the saved desktops and windows, then reload. No files are touched',
 				run: function () { window.startCleanSession(); }
 			},
-			{title: 'Show desktop', subtitle: 'Hide every window without closing it', run: function () { desktop.togglePeek(); }},
+			{title: 'Show desktop', subtitle: 'Hide every window without closing it', keys: shortcuts.describeShortcut('peek', mac), run: function () { desktop.togglePeek(); }},
 			{title: 'Wallpaper...', subtitle: 'Change the desktop background', run: function () { desktop.openWallpaperPicker(); }},
 			{title: 'New Explorer', subtitle: 'Open a file manager window', run: function () { openApp('explorer'); }},
 			{title: 'App Manager', subtitle: 'Install and update applications', run: function () { openApp('app-manager'); }},
@@ -2181,15 +2257,15 @@ function fsOnInit () {
 		]);
 	}
 
+	// Every chord here is spelled once, in js/shell/shortcuts.js, and the sheet that lists them
+	// reads the same spelling -- so a chord changed here is a chord changed on the sheet.
+	//
 	// Cmd/Ctrl+K is the web's command-palette idiom and is unclaimed in Chrome; Ctrl+Space
-	// is the second binding for anyone who prefers it, though macOS may take it for
-	// switching input sources. The palette is reachable without either: the start menu's
-	// search field and the desktop menu both lead to the same list.
+	// is the second binding for anyone who prefers it, though macOS takes it for switching
+	// input sources. The palette is reachable without either: the start menu's search field
+	// and the desktop menu both lead to the same list.
 	function isPaletteChord (e) {
-		if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.code === 'KeyK') {
-			return true;
-		}
-		return e.ctrlKey && !e.metaKey && !e.altKey && e.code === 'Space';
+		return shortcuts.matchesAny(e, shortcuts.shellKeys('palette'));
 	}
 
 	// The overview's chord. Two of them, for the same reason the palette has two: a chord
@@ -2197,10 +2273,55 @@ function fsOnInit () {
 	// happened twice already in this project. Neither is the only route -- the taskbar
 	// button and the palette command both open it.
 	function isOverviewChord (e) {
-		if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyK') {
+		return shortcuts.matchesAny(e, shortcuts.shellKeys('overview'));
+	}
+
+	// Ctrl/Cmd+/ opens the list of shortcuts -- except while typing, where it belongs to what is
+	// being typed in: it is *toggle comment* in both code editors, and they take their keys
+	// through a hidden textarea, which is what this sees.
+	function isShortcutsChord (e) {
+		return shortcuts.matchesAny(e, shortcuts.shellKeys('shortcuts')) && !isTypingTarget(e.target);
+	}
+
+	function isTypingTarget (target) {
+		if (!target) {
+			return false;
+		}
+		if (target.isContentEditable) {
 			return true;
 		}
-		return e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.code === 'Backquote';
+		var tag = String(target.tagName || '').toUpperCase();
+		if (tag === 'TEXTAREA' || tag === 'SELECT') {
+			return true;
+		}
+		if (tag !== 'INPUT') {
+			return false;
+		}
+		var type = String(target.type || 'text').toLowerCase();
+		return ['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'range', 'color', 'image'].indexOf(type) === -1;
+	}
+
+	// The keys of the window in front, for the sheet: whatever its app put in
+	// `window.pixosShortcuts`, read when the sheet opens. A cross-origin frame answers nothing.
+	function frontAppShortcuts () {
+		var front = winManager.getActiveWindow();
+		if (!front) {
+			return null;
+		}
+		var frame = winManager.getFrame(front.id);
+		var declared = null;
+		try {
+			declared = frame && frame.contentWindow ? frame.contentWindow.pixosShortcuts : null;
+		}
+		catch (err) {
+			declared = null;
+		}
+		var items = shortcuts.readAppShortcuts(declared);
+		if (!items.length) {
+			return null;
+		}
+		var app = getLaunchableApp(front.appId);
+		return {name: (app && app.name) || front.title || 'This window', items: items};
 	}
 
 	function onShellHotkey (e) {
@@ -2209,6 +2330,7 @@ function fsOnInit () {
 			e.stopPropagation();
 			startMenu.close();
 			palette.close();
+			shortcuts.close();
 			overview.toggle();
 			return;
 		}
@@ -2216,14 +2338,24 @@ function fsOnInit () {
 			e.preventDefault();
 			e.stopPropagation();
 			startMenu.close();
+			shortcuts.close();
 			palette.toggle();
+			return;
+		}
+		if (isShortcutsChord(e)) {
+			e.preventDefault();
+			e.stopPropagation();
+			startMenu.close();
+			palette.close();
+			overview.close();
+			shortcuts.toggle();
 			return;
 		}
 		// Ctrl/Cmd+W. Only reachable at all while fullscreen *and* the keyboard lock was
 		// granted -- otherwise the browser closed the tab before this ever ran, and
 		// handling it here would be a lie in code. Checked rather than assumed, because
 		// leaving fullscreen releases the lock without telling us in the keydown.
-		if ((e.metaKey || e.ctrlKey) && !e.altKey && e.code === 'KeyW') {
+		if (shortcuts.matchesAny(e, shortcuts.shellKeys('close'))) {
 			if (!fullscreen.isKeyboardLocked()) {
 				return;
 			}
@@ -2244,7 +2376,7 @@ function fsOnInit () {
 		// tab switching on Windows and Linux -- it only ever worked here because macOS
 		// puts that on Cmd+1..9. If the OS claims this one too, the taskbar strip and the
 		// palette's "Desktop: ..." entries still work.
-		if (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && /^Digit[1-9]$/.test(e.code)) {
+		if (shortcuts.matchesAny(e, shortcuts.shellKeys('desktop'))) {
 			var workspaces = winManager.listWorkspaces();
 			var target = workspaces[Number(e.code.slice(5)) - 1];
 			if (target) {
@@ -3377,8 +3509,9 @@ function buildDesktopMenu () {
 			label: 'Recent files',
 			submenu: files.length ? files : [{label: 'Nothing opened yet', disabled: true}]
 		},
-		{label: 'Search...', hint: 'Ctrl+K', action: function () { palette.open(); }},
-		{label: 'All windows', hint: 'Ctrl+Shift+K', action: function () { overview.open(); }},
+		{label: 'Search...', hint: shortcuts.describeShortcut('palette', shortcuts.isMacPlatform()), action: function () { palette.open(); }},
+		{label: 'All windows', hint: shortcuts.describeShortcut('overview', shortcuts.isMacPlatform()), action: function () { overview.open(); }},
+		{label: 'Keyboard shortcuts', hint: shortcuts.describeShortcut('shortcuts', shortcuts.isMacPlatform()), action: function () { shortcuts.open(); }},
 		{label: 'Peers...', action: function () { peersPanel.open(); }},
 		{separator: true},
 		{label: 'New Explorer', action: function () { openApp('explorer'); }},
@@ -3387,6 +3520,7 @@ function buildDesktopMenu () {
 		{label: 'Wallpaper...', action: function () { desktop.openWallpaperPicker(); }},
 		{
 			label: desktop.isPeeking() ? 'Show windows' : 'Show desktop',
+			hint: shortcuts.describeShortcut('peek', shortcuts.isMacPlatform()),
 			action: function () { desktop.togglePeek(); }
 		}
 	];

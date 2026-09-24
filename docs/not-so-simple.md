@@ -458,6 +458,25 @@ Enter. Each keystroke cancels the previous walk through its token.
 **`Ctrl+Shift+1..9` switches desktops**, not `Ctrl+1..9` — that is the browser's own tab
 switching on Windows and Linux, and only ever worked because macOS puts it on `Cmd+1..9`.
 
+**Every shell chord is spelled once, and the sheet reads the spelling the handler does.**
+`js/shell/shortcuts.js` holds each chord as a string (`Mod+Shift+K`; `Mod` is Cmd or Ctrl,
+whichever is held), and the hotkey handler in `index.html` and the peek's in `desktop.js` test a
+keydown with `matchesChord` against that string — which is also what the *Keyboard shortcuts*
+sheet, the palette's key column, the desktop menu's hints and the taskbar tooltip print, through
+`formatChord` (`⇧⌘K` on a Mac, `Ctrl+Shift+K` elsewhere). Before phase 25 the handlers tested
+modifier flags by hand and a hint was typed in beside the command, as `Ctrl+K` — which on a Mac is
+not the key anyone presses. `matchesChord` is strict where the old tests were loose in two places:
+a modifier the chord does not name must not be held, so `Ctrl+Shift+Space` no longer opens the
+palette and `Cmd+Shift+W` in fullscreen no longer closes a window.
+
+**A chord the OS takes is bound but not advertised.** `Ctrl+Space` (macOS input sources) and the
+peek's `Ctrl/Cmd+Alt+D` (taken on a Mac in phase 1; `⌥⌘D` is the Dock's show-and-hide) are left off
+the Mac sheet and out of every Mac hint by `availableKeys`, and stay bound for the machine where
+they do arrive. **`Ctrl/Cmd+/` opens the sheet except while typing**: it is *toggle comment* in both
+code editors, which take their keys through a hidden textarea, so the handler lets the chord through
+to any text field, textarea or contenteditable. The sheet takes the focus when it opens, for the
+overview's reason — the window in front is usually an app, and its Esc would never reach the shell.
+
 **App icons are mostly generated.** `pixos.app.json` gains an `icon` when the generator
 finds `favicon.svg` / `icon.svg` / `favicon.png` / `icon.png` in the app folder — and only
 if that file is also in `files`, or installing would not copy it. Barely any app ships
@@ -498,6 +517,29 @@ only when the path is a different one. Explorer calls it at the end of a success
 **after** the walk up from a folder that has gone, so a window is saved where it is drawn; a
 listing that failed reports nothing. A folder under a mount that has not come back yet — a local
 folder waiting for its click — is therefore saved as the folder the window walked up to.
+
+`watchStorage(win, handler)` is the one figure an app is handed rather than asked for: the storage
+use `js/shell/system-stats.js` already measures for the taskbar and the widgets, drawn since phase 24
+in Explorer's foot. It is `parent.watchStorage`, not injected — it needs no window id — but it takes
+the app's own window like `watchFiles` and stops the first time that frame is found gone. **Only a
+change is passed on.** `system-stats` emits every second for the clock, and each of those carries the
+same storage object, so the shell compares and calls the handler once per new figure, plus once
+straight away with whatever is known — `null` until the first measurement, `{supported: false}` in a
+browser that will not estimate. `subscribe` calls back *before* it returns, so a window already gone
+on that first call cannot reach `stop` yet; it is stopped once `subscribe` has returned. The figure
+is the quota manager's bookkeeping, which Chromium updates on its own schedule after a write, so a
+copy that just finished can still show the number from before it.
+
+**An app's keys are the app's to list, and are read when they are asked for.** An app sets
+`window.pixosShortcuts` to a list of `{keys, label, note}` in the shell's spelling, and the shell
+reads it from the window in front at the moment the shortcuts sheet opens (`frontAppShortcuts`),
+checked entry by entry by `readAppShortcuts` — a bad entry is dropped, a cross-origin frame answers
+nothing. It is deliberately **not** a `pixos.app.json` field: a manifest field has to be named by hand
+in four record builders (see `autosave` below) or it silently does not exist, and a list kept in the
+manifest is kept away from the handler it describes. Explorer keeps its list in `apps/explorer/js/keys.js`
+beside nothing but itself, and its test presses every chord on it against the real handler. An app
+that wants to print a chord the way the shell does calls `parent.formatShortcut(spec)` and
+`parent.isMacPlatform()`; Explorer's menus and tooltips do, and print nothing with no shell.
 
 **Two ways an editor can be safe, and it must declare which.** `"autosave": true` in
 `pixos.app.json` means the app writes changes back on its own — `ace` and `monaco` do, and
@@ -722,6 +764,17 @@ installed keeps serving a cache that has never heard of the new file — the sym
 Explorer that opens unstyled, which reads like a CSS bug and is not one.
 `tests/explorer-modules.test.mjs` walks the folder and asserts all four lists agree with
 what is on disk.
+
+**Explorer's fonts are files in those lists too, and binary ones.** Phase 24 bundled Archivo and
+DM Mono under `apps/explorer/fonts/` — ten `woff2` files, two licences and a README, thirteen
+entries in each list. Two things came with them. Preinstall copies with `arrayBuffer()`, so a font
+arrives intact, but the worker's MIME table had no `woff2` and served it as
+`application/octet-stream`; browsers load a same-origin font anyway, and the table now says
+`font/woff2` so nothing depends on that leniency. And the fallback check in
+`tests/explorer-modules.test.mjs` read a fixed 2000 characters after `FALLBACK_PREINSTALL`, which
+thirteen more lines pushed Explorer's last entries past — it now reads to the end of the literal.
+**Neither face has Cyrillic**: a Russian file name is drawn letter by letter in the fallback face
+named after them in `--ui` and `--data`, in the same line, which is the browser working as intended.
 
 **Boot is data-driven.** `settings/preinstall.json` — fetched over HTTP, because on a first
 boot BrowserFS is empty — says which files to copy in (`refresh: true` re-copies every

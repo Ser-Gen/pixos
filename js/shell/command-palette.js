@@ -98,6 +98,17 @@ var CSS = `
 	white-space: nowrap;
 }
 
+/* The chord that does the same as the entry, written for this machine by js/shell/shortcuts.js. */
+.PixPalette__keys {
+	flex: none;
+	font: 11px/1 ui-monospace, Menlo, Consolas, monospace;
+	padding: 3px 5px;
+	color: #b8bec7;
+	background: rgba(255, 255, 255, .06);
+	border: 1px solid #434850;
+	white-space: nowrap;
+}
+
 .PixPalette__badge {
 	flex: none;
 	font-size: 10px;
@@ -464,6 +475,7 @@ function collectCommands (query) {
 				group: 'Commands',
 				title: entry.command.title,
 				subtitle: entry.command.subtitle || '',
+				keys: entry.command.keys || '',
 				badge: 'command',
 				run: entry.command.run
 			};
@@ -559,6 +571,13 @@ function render () {
 			text.append(subtitle);
 		}
 		item.append(text);
+
+		if (result.keys) {
+			var keys = document.createElement('kbd');
+			keys.className = 'PixPalette__keys';
+			keys.textContent = result.keys;
+			item.append(keys);
+		}
 
 		if (result.badge) {
 			var badge = document.createElement('span');

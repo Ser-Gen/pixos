@@ -1,6 +1,10 @@
 // Everything Explorer draws of itself: the whole chrome in one template, the order the rows
-// go in, and the five redraws that follow a change in `state`. It is the last of the big
-// blocks to come out of `openExplorer` that is not `actions`.
+// go in, and the six redraws that follow a change in `state` or in the shell's storage figure.
+// It is the last of the big blocks to come out of `openExplorer` that is not `actions`.
+//
+// **Phase 24 drew it again from mockup B** (docs/explorer-chrome-mockup-b.html): the commands on a
+// rail, the path as the title, a selection line and a foot. What every control was before, and
+// where it went, is docs/explorer-controls.md -- read it before taking one out.
 //
 // **`renderLayout` is why `ui` can be passed to a module before it holds anything.** Every
 // other file takes `ui` by reference and reads nodes off it; this is the one that puts them
@@ -22,6 +26,11 @@
 // is built first and takes `renderStatus` and `renderToolbarState` late-bound, which is
 // exactly what that file's own header said would happen.
 
+import { ICONS } from './icons.js';
+
+// What each sort key is called wherever it is named: the sort button's title, its menu, the foot.
+export var SORT_LABELS = {name: 'Name', type: 'Type', mtime: 'Modified', size: 'Size'};
+
 export function createView (deps) {
 
 	var state = deps.state;
@@ -33,80 +42,98 @@ export function createView (deps) {
 	var formatSize = deps.formatSize;
 	var getExt = deps.getExt;
 	var getItemTitle = deps.getItemTitle;
+	var kindOf = deps.kindOf;
 	var hasInternalClipboard = deps.hasInternalClipboard;
 	var getSelectedItems = deps.getSelectedItems;
 	var syncSelectAllUI = deps.syncSelectAllUI;
+	// The chord for a command, already written for this machine by the shell, or ''.
+	var keyHint = deps.keyHint || function () { return ''; };
 
 
+	// The template and its lookups. Built from mockup B: a rail of commands down the left edge,
+	// which cannot crop because it does not compete for width; the drawer beside it; and the
+	// document -- the path as its title, a line under that which is a count until something is
+	// selected and then also what can be done with it, the listing, and a foot holding what is
+	// true whatever is selected. Each rail button names itself with `title` and `aria-label`: a
+	// tooltip drawn by CSS would be clipped by the rail's own scrolling.
 	function renderLayout () {
 		rootElem.innerHTML = `
 		<div class="Explorer">
-			<div class="Explorer__toolbar">
-				<div class="Explorer__toolbarGroup">
-					<button class="Explorer__sidebarToggle" title="Show the sidebar" aria-pressed="false">☰</button>
-					<button class="Explorer__back" title="Back">←</button>
-					<button class="Explorer__forward" title="Forward">→</button>
-					<button class="Explorer__up" title="Up">↑ Up</button>
-				</div>
-				<div class="Explorer__toolbarGroup">
-					<button class="Explorer__new">New</button>
-					<button class="Explorer__upload">Upload</button>
-					<button class="Explorer__copy">Copy</button>
-					<button class="Explorer__cut">Cut</button>
-					<button class="Explorer__paste">Paste</button>
-					<button class="Explorer__defaults">Default Apps</button>
-					<label class="Explorer__toolbarLabel" title="Select all items in current folder">
-						<input class="Explorer__selectAllToolbar Explorer__check" type="checkbox">
-						<span>All</span>
-					</label>
-				</div>
-				<div class="Explorer__toolbarGroup Explorer__toolbarGroup--grow">
-					<select class="Explorer__viewMode">
-						<option value="details">Details</option>
-						<option value="grid">Grid</option>
-					</select>
-					<select class="Explorer__sortKey">
-						<option value="name">Sort: Name</option>
-						<option value="type">Sort: Type</option>
-						<option value="mtime">Sort: Date</option>
-						<option value="size">Sort: Size</option>
-					</select>
-					<button class="Explorer__refresh">Refresh</button>
-					<span class="Explorer__recordingIndicator" hidden>
-						<span class="Explorer__recordingDot"></span>
-						<span class="Explorer__recordingTime">00:00:00</span>
-						<button class="Explorer__recordingBtn Explorer__recordingMicBtn" title="Mute microphone"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V20H9v2h6v-2h-2v-2.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg></button>
-						<button class="Explorer__recordingBtn Explorer__recordingSysBtn" title="Mute system audio"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg></button>
-						<button class="Explorer__recordingBtn Explorer__recordingStop" title="Stop recording"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h12v12H6z"/></svg></button>
-					</span>
-				</div>
-				<input class="Explorer__fileInput" type="file" multiple hidden>
-			</div>
-			<div class="Explorer__breadcrumbs"></div>
+			<nav class="Explorer__rail" aria-label="Commands">
+				${railButton('Explorer__sidebarToggle', 'Show the sidebar', ICONS.drawer, ' aria-pressed="false"')}
+				<div class="Explorer__railRule"></div>
+				${railButton('Explorer__back', 'Back', ICONS.back)}
+				${railButton('Explorer__forward', 'Forward', ICONS.forward)}
+				${railButton('Explorer__up', 'Up one folder', ICONS.up)}
+				<div class="Explorer__railRule"></div>
+				${railButton('Explorer__new Explorer__railButton--accent', 'New', ICONS.add, ' aria-haspopup="menu"')}
+				${railButton('Explorer__upload', 'Upload', ICONS.upload)}
+				${railButton('Explorer__paste', 'Paste', ICONS.paste, '', 'paste')}
+				<div class="Explorer__railRule"></div>
+				${railButton('Explorer__viewDetails', 'Details', ICONS.details, ' aria-pressed="true"')}
+				${railButton('Explorer__viewGrid', 'Grid', ICONS.grid, ' aria-pressed="false"')}
+				${railButton('Explorer__sort', 'Sort', ICONS.sort, ' aria-haspopup="menu"')}
+				${railButton('Explorer__refresh', 'Refresh', ICONS.refresh)}
+				<div class="Explorer__railGap"></div>
+				${railButton('Explorer__more', 'More', ICONS.more, ' aria-haspopup="menu"')}
+			</nav>
 			<div class="Explorer__body">
 				<aside class="Explorer__sidebar">
 					<div class="Explorer__sidebarList"></div>
 					<div class="Explorer__sidebarFooter"></div>
 				</aside>
-				<main class="Explorer__main">
-					<table class="Explorer__table">
-						<thead>
-							<tr>
-								<th class="Explorer__selectCol"><input class="Explorer__selectAll Explorer__check" type="checkbox" aria-label="Select all"></th>
-								<th data-sort-key="name">Name</th>
-								<th data-sort-key="type">Type</th>
-								<th data-sort-key="mtime">Modified</th>
-								<th data-sort-key="size">Size</th>
-							</tr>
-						</thead>
-						<tbody class="Explorer__rows"></tbody>
-					</table>
-					<div class="Explorer__grid" hidden></div>
-					<div class="Explorer__empty" hidden>No items in this folder</div>
-					<div class="Explorer__selectionBox"></div>
-				</main>
+				<section class="Explorer__doc">
+					<header class="Explorer__head">
+						<h1 class="Explorer__breadcrumbs"></h1>
+						<div class="Explorer__sub">
+							<label class="Explorer__selectAllLabel" title="Select every item in this folder">
+								<input class="Explorer__selectAllToolbar Explorer__check" type="checkbox">
+								<span>All</span>
+							</label>
+							<span class="Explorer__status"></span>
+							<div class="Explorer__acts" hidden>
+								<button class="Explorer__act Explorer__copy" type="button"${keyTitle('Copy', 'copy')}>Copy</button>
+								<button class="Explorer__act Explorer__act--destructive Explorer__cut" type="button"${keyTitle('Cut', 'cut')}>Cut</button>
+								<button class="Explorer__act Explorer__compress" type="button">Compress…</button>
+								<button class="Explorer__act Explorer__act--destructive Explorer__delete" type="button"${keyTitle('Delete', 'delete')}>Delete</button>
+								<button class="Explorer__act Explorer__pasteHere" type="button"${keyTitle('Paste', 'paste')}>Paste</button>
+							</div>
+						</div>
+					</header>
+					<main class="Explorer__main">
+						<table class="Explorer__table">
+							<thead>
+								<tr>
+									<th class="Explorer__selectCol"><input class="Explorer__selectAll Explorer__check" type="checkbox" aria-label="Select all"></th>
+									<th class="Explorer__colName" data-sort-key="name">Name</th>
+									<th class="Explorer__colType" data-sort-key="type">Type</th>
+									<th class="Explorer__colModified" data-sort-key="mtime">Modified</th>
+									<th class="Explorer__colSize" data-sort-key="size">Size</th>
+								</tr>
+							</thead>
+							<tbody class="Explorer__rows"></tbody>
+						</table>
+						<div class="Explorer__grid" hidden></div>
+						<div class="Explorer__empty" hidden>No items in this folder</div>
+						<div class="Explorer__selectionBox"></div>
+					</main>
+					<footer class="Explorer__foot">
+						<span class="Explorer__recordingIndicator" hidden>
+							<span class="Explorer__recordingDot"></span>
+							<span class="Explorer__recordingTime">00:00:00</span>
+							<button class="Explorer__recordingBtn Explorer__recordingMicBtn" type="button" title="Mute microphone">${ICONS.mic}</button>
+							<button class="Explorer__recordingBtn Explorer__recordingSysBtn" type="button" title="Mute system audio">${ICONS.speaker}</button>
+							<button class="Explorer__recordingBtn Explorer__recordingStop" type="button" title="Stop recording">${ICONS.stop}</button>
+						</span>
+						<span class="Explorer__footText"></span>
+						<span class="Explorer__gauge" hidden>
+							<span class="Explorer__gaugeText"></span>
+							<span class="Explorer__gaugeBar"><span class="Explorer__gaugeFill"></span></span>
+						</span>
+					</footer>
+				</section>
 			</div>
-			<div class="Explorer__status"></div>
+			<input class="Explorer__fileInput" type="file" multiple hidden>
 		</div>
 		<div class="Explorer__overlays"></div>
 		`;
@@ -117,36 +144,59 @@ export function createView (deps) {
 		ui.up = rootElem.querySelector('.Explorer__up');
 		ui.newBtn = rootElem.querySelector('.Explorer__new');
 		ui.upload = rootElem.querySelector('.Explorer__upload');
+		ui.paste = rootElem.querySelector('.Explorer__paste');
+		ui.viewDetails = rootElem.querySelector('.Explorer__viewDetails');
+		ui.viewGrid = rootElem.querySelector('.Explorer__viewGrid');
+		ui.sort = rootElem.querySelector('.Explorer__sort');
+		ui.refresh = rootElem.querySelector('.Explorer__refresh');
+		ui.more = rootElem.querySelector('.Explorer__more');
+		ui.breadcrumbs = rootElem.querySelector('.Explorer__breadcrumbs');
+		ui.selectAllToolbar = rootElem.querySelector('.Explorer__selectAllToolbar');
+		ui.status = rootElem.querySelector('.Explorer__status');
+		ui.acts = rootElem.querySelector('.Explorer__acts');
 		ui.copy = rootElem.querySelector('.Explorer__copy');
 		ui.cut = rootElem.querySelector('.Explorer__cut');
-		ui.paste = rootElem.querySelector('.Explorer__paste');
-		ui.defaults = rootElem.querySelector('.Explorer__defaults');
-		ui.selectAll = rootElem.querySelector('.Explorer__selectAll');
-		ui.selectAllToolbar = rootElem.querySelector('.Explorer__selectAllToolbar');
-		ui.fileInput = rootElem.querySelector('.Explorer__fileInput');
-		ui.viewMode = rootElem.querySelector('.Explorer__viewMode');
-		ui.sortKey = rootElem.querySelector('.Explorer__sortKey');
-		ui.refresh = rootElem.querySelector('.Explorer__refresh');
-		ui.recordingIndicator = rootElem.querySelector('.Explorer__recordingIndicator');
-		ui.recordingTime = rootElem.querySelector('.Explorer__recordingTime');
-		ui.recordingMicBtn = rootElem.querySelector('.Explorer__recordingMicBtn');
-		ui.recordingSysBtn = rootElem.querySelector('.Explorer__recordingSysBtn');
-		ui.recordingStop = rootElem.querySelector('.Explorer__recordingStop');
-		ui.breadcrumbs = rootElem.querySelector('.Explorer__breadcrumbs');
+		ui.compress = rootElem.querySelector('.Explorer__compress');
+		ui.delete = rootElem.querySelector('.Explorer__delete');
+		ui.pasteHere = rootElem.querySelector('.Explorer__pasteHere');
 		ui.body = rootElem.querySelector('.Explorer__body');
 		ui.sidebar = rootElem.querySelector('.Explorer__sidebar');
 		ui.sidebarList = rootElem.querySelector('.Explorer__sidebarList');
 		ui.sidebarFooter = rootElem.querySelector('.Explorer__sidebarFooter');
 		ui.main = rootElem.querySelector('.Explorer__main');
+		ui.table = rootElem.querySelector('.Explorer__table');
+		ui.selectAll = rootElem.querySelector('.Explorer__selectAll');
 		ui.rows = rootElem.querySelector('.Explorer__rows');
 		ui.grid = rootElem.querySelector('.Explorer__grid');
-		ui.table = rootElem.querySelector('.Explorer__table');
 		ui.empty = rootElem.querySelector('.Explorer__empty');
 		ui.selectionBox = rootElem.querySelector('.Explorer__selectionBox');
-		ui.status = rootElem.querySelector('.Explorer__status');
+		ui.recordingIndicator = rootElem.querySelector('.Explorer__recordingIndicator');
+		ui.recordingTime = rootElem.querySelector('.Explorer__recordingTime');
+		ui.recordingMicBtn = rootElem.querySelector('.Explorer__recordingMicBtn');
+		ui.recordingSysBtn = rootElem.querySelector('.Explorer__recordingSysBtn');
+		ui.recordingStop = rootElem.querySelector('.Explorer__recordingStop');
+		ui.footText = rootElem.querySelector('.Explorer__footText');
+		ui.gauge = rootElem.querySelector('.Explorer__gauge');
+		ui.gaugeText = rootElem.querySelector('.Explorer__gaugeText');
+		ui.gaugeFill = rootElem.querySelector('.Explorer__gaugeFill');
+		ui.fileInput = rootElem.querySelector('.Explorer__fileInput');
 		ui.overlays = rootElem.querySelector('.Explorer__overlays');
 	}
 
+	// `keys` names the command in js/keys.js whose chord goes in the tooltip, after the name. The
+	// label a screen reader hears stays the name alone.
+	function railButton (classes, name, icon, extra, keys) {
+		var hint = keys ? keyHint(keys) : '';
+		return '<button class="Explorer__railButton ' + classes + '" type="button" title="'
+			+ escapeAttr(hint ? name + ' (' + hint + ')' : name)
+			+ '" aria-label="' + name + '"' + (extra || '') + '>' + icon + '</button>';
+	}
+
+	// A tooltip for a worded button: its chord and nothing else, since the word is on it already.
+	function keyTitle (name, keys) {
+		var hint = keyHint(keys);
+		return hint ? ' title="' + escapeAttr(name + ' (' + hint + ')') + '"' : '';
+	}
 
 	function sortItems () {
 		var dirMul = state.sort.dir === 'asc' ? 1 : -1;
@@ -178,17 +228,44 @@ export function createView (deps) {
 		ui.back.disabled = !state.historyBack.length;
 		ui.forward.disabled = !state.historyForward.length;
 		ui.up.disabled = state.cwd === '/';
-		ui.copy.disabled = !state.selectedPaths.size;
-		ui.cut.disabled = !state.selectedPaths.size;
-		ui.paste.disabled = !hasInternalClipboard();
-		ui.sortKey.value = state.sort.key;
-		ui.viewMode.value = state.viewMode;
+		// The line under the path carries what can be done right now: the selection's own actions
+		// while there is a selection, and Paste while something is copied. With neither it is a
+		// count, and nothing shifts.
+		var selected = !!state.selectedPaths.size;
+		var copied = hasInternalClipboard();
+		[ui.copy, ui.cut, ui.compress, ui.delete].forEach(function (button) { button.hidden = !selected; });
+		ui.pasteHere.hidden = !copied;
+		ui.acts.hidden = !selected && !copied;
+		// Follows the clipboard, not the selection: pasting needs something copied, and nothing
+		// selected. Mockup B had this the wrong way round.
+		ui.paste.disabled = !copied;
+		ui.viewDetails.setAttribute('aria-pressed', state.viewMode === 'grid' ? 'false' : 'true');
+		ui.viewGrid.setAttribute('aria-pressed', state.viewMode === 'grid' ? 'true' : 'false');
+		var sorted = describeSort();
+		ui.sort.title = 'Sort: ' + sorted;
+		ui.sort.setAttribute('aria-label', 'Sort: ' + sorted);
+		// Read by the stylesheet, which draws the direction on the header being sorted by. There
+		// is one attribute pair here instead of one per header so that nothing has to look the
+		// headers up.
+		ui.table.dataset.sortKey = state.sort.key;
+		ui.table.dataset.sortDir = state.sort.dir;
+		ui.footText.textContent = 'sorted by ' + sorted.toLowerCase() + '  ·  '
+			+ (state.viewMode === 'grid' ? 'grid' : 'details') + ' view';
 		syncSelectAllUI();
 	}
 
+	function describeSort () {
+		return (SORT_LABELS[state.sort.key] || SORT_LABELS.name) + ', '
+			+ (state.sort.dir === 'desc' ? 'descending' : 'ascending');
+	}
+
+	// The path is the document's title. The root is `/` rather than a name, and nothing separates
+	// it from the first folder, so the title reads as the path it is: `/home/docs`, each part of
+	// it a way back there. The folder being shown is text, not a button -- there is nowhere for
+	// it to go.
 	function renderBreadcrumbs () {
 		var segments = state.cwd.split('/').filter(Boolean);
-		var crumbs = [{label: 'rootfs', path: '/'}];
+		var crumbs = [{label: '/', path: '/'}];
 		segments.forEach(function (segment, index) {
 			crumbs.push({
 				label: segment,
@@ -198,14 +275,18 @@ export function createView (deps) {
 
 		ui.breadcrumbs.innerHTML = '';
 		crumbs.forEach(function (crumb, index) {
-			var span = document.createElement('span');
-			span.className = 'Explorer__crumb' + (index === crumbs.length - 1 ? ' Explorer__crumb--current' : '');
-			span.dataset.path = crumb.path;
-			span.textContent = crumb.label;
-			ui.breadcrumbs.append(span);
-			if (index < crumbs.length - 1) {
+			var current = index === crumbs.length - 1;
+			var node = document.createElement(current ? 'span' : 'button');
+			node.className = 'Explorer__crumb' + (current ? ' Explorer__crumb--current' : '');
+			if (!current) {
+				node.type = 'button';
+			}
+			node.dataset.path = crumb.path;
+			node.textContent = crumb.label;
+			ui.breadcrumbs.append(node);
+			if (index > 0 && !current) {
 				var sep = document.createElement('span');
-				sep.className = 'Explorer__muted';
+				sep.className = 'Explorer__crumbSep';
 				sep.textContent = '/';
 				ui.breadcrumbs.append(sep);
 			}
@@ -233,19 +314,33 @@ export function createView (deps) {
 			selectTd.innerHTML = '<input class="Explorer__itemCheckbox Explorer__check" type="checkbox" data-path="' + escapeAttr(item.path) + '"' + (state.selectedPaths.has(item.path) ? ' checked' : '') + ' aria-label="Select ' + escapeAttr(item.name) + '">';
 			tr.append(selectTd);
 
+			var kind = kindOf(item);
 			var nameTd = document.createElement('td');
-			nameTd.innerHTML = `<div class="Explorer__nameCell"><span>${item.isDirectory ? '📁' : '📄'}</span><span class="Explorer__nameText">${escapeHtml(item.name)}</span></div>`;
+			nameTd.className = 'Explorer__colName';
+			nameTd.innerHTML = `<div class="Explorer__nameCell">${kindMark(kind)}<span class="Explorer__nameText">${escapeHtml(item.name)}</span></div>`;
 			tr.append(nameTd);
 
 			var typeTd = document.createElement('td');
+			typeTd.className = 'Explorer__colType';
 			typeTd.textContent = item.isDirectory ? 'Folder' : (getExt(item.name) || 'File');
 			tr.append(typeTd);
 
 			var dateTd = document.createElement('td');
-			dateTd.textContent = item.mtime;
+			dateTd.className = 'Explorer__colModified';
+			// The day and the time apart, so that a narrow window can drop the time and keep the
+			// column; the row's title still has the whole stamp.
+			var stamp = String(item.mtime);
+			dateTd.textContent = stamp.slice(0, 10);
+			if (stamp.length > 10) {
+				var time = document.createElement('span');
+				time.className = 'Explorer__time';
+				time.textContent = stamp.slice(10);
+				dateTd.append(time);
+			}
 			tr.append(dateTd);
 
 			var sizeTd = document.createElement('td');
+			sizeTd.className = 'Explorer__colSize';
 			sizeTd.textContent = item.isDirectory ? '' : formatSize(item.size);
 			tr.append(sizeTd);
 
@@ -259,7 +354,7 @@ export function createView (deps) {
 			card.title = getItemTitle(item);
 			card.innerHTML = `
 				<input class="Explorer__itemCheckbox Explorer__check Explorer__cardCheck" type="checkbox" data-path="${escapeAttr(item.path)}"${state.selectedPaths.has(item.path) ? ' checked' : ''} aria-label="Select ${escapeAttr(item.name)}">
-				<div class="Explorer__cardIcon">${item.isDirectory ? '📁' : '📄'}</div>
+				<div class="Explorer__cardIcon">${kindMark(kind)}</div>
 				<div class="Explorer__cardName">${escapeHtml(item.name)}</div>
 			`;
 			ui.grid.append(card);
@@ -269,15 +364,46 @@ export function createView (deps) {
 		syncSelectAllUI();
 	}
 
+	// One hairline square, varied by kind -- see `kindOf` in js/format.js. Empty, and hidden from a
+	// screen reader: the Type column and the tooltip already say what the file is.
+	function kindMark (kind) {
+		return '<span class="Explorer__kind Explorer__kind--' + kind + '" aria-hidden="true"></span>';
+	}
+
+	// "12 items", and while something is selected "12 items — 3 selected (1.2 MB)". The size counts
+	// files only: a folder's size would mean walking it.
 	function renderStatus () {
 		var selectedItems = getSelectedItems();
 		var totalSize = selectedItems.reduce(function (acc, item) {
 			return acc + (item.isDirectory ? 0 : item.size);
 		}, 0);
 
-		ui.status.textContent = state.items.length + ' items' +
-			' | selected: ' + selectedItems.length +
-			' | selected size: ' + formatSize(totalSize);
+		ui.status.innerHTML = '';
+		ui.status.append(document.createTextNode(state.items.length + (state.items.length === 1 ? ' item' : ' items')));
+		if (selectedItems.length) {
+			var selected = document.createElement('b');
+			selected.textContent = selectedItems.length + ' selected';
+			ui.status.append(document.createTextNode('  —  '), selected);
+			if (totalSize) {
+				ui.status.append(document.createTextNode(' (' + formatSize(totalSize) + ')'));
+			}
+		}
+	}
+
+	// What the shell says about storage: `{supported, usage, quota}` from js/shell/system-stats.js,
+	// or nothing. The gauge is hidden until there is a figure to draw -- a window with no shell, or
+	// a browser that will not estimate, has no gauge rather than an empty one.
+	function renderStorage (storage) {
+		if (!storage || !storage.supported || !storage.quota) {
+			ui.gauge.hidden = true;
+			return;
+		}
+		var share = Math.max(0, Math.min(1, storage.usage / storage.quota));
+		var text = formatSize(storage.usage) + ' / ' + formatSize(storage.quota);
+		ui.gaugeText.textContent = text;
+		ui.gaugeFill.style.width = (share * 100).toFixed(1) + '%';
+		ui.gauge.title = formatSize(storage.usage) + ' of ' + formatSize(storage.quota) + ' used by PixOS in this browser';
+		ui.gauge.hidden = false;
 	}
 
 	return {
@@ -286,6 +412,7 @@ export function createView (deps) {
 		renderToolbarState: renderToolbarState,
 		renderBreadcrumbs: renderBreadcrumbs,
 		renderRows: renderRows,
-		renderStatus: renderStatus
+		renderStatus: renderStatus,
+		renderStorage: renderStorage
 	};
 }

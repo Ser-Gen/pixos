@@ -105,9 +105,7 @@ export function createArchiveUi (deps) {
 			box.append(field);
 
 			var note = doc.createElement('div');
-			note.className = 'Modal__list';
-			note.style.fontSize = '12px';
-			note.style.color = '#888';
+			note.className = 'Modal__list Modal__hint';
 			// The distinction the whole classifier exists for, in one line.
 			note.textContent = 'Nothing has been written. If the password is right and it '
 				+ 'still fails, the archive itself is damaged rather than locked.';
@@ -137,11 +135,7 @@ export function createArchiveUi (deps) {
 		box.append(summary);
 
 		var list = doc.createElement('div');
-		list.className = 'Modal__list';
-		list.style.maxHeight = '260px';
-		list.style.overflow = 'auto';
-		list.style.border = '1px solid #444';
-		list.style.padding = '6px 8px';
+		list.className = 'Modal__list Modal__list--tall';
 
 		if (!files.length) {
 			list.textContent = 'This archive is empty.';
@@ -167,9 +161,7 @@ export function createArchiveUi (deps) {
 			name.style.overflowWrap = 'anywhere';
 
 			var size = doc.createElement('span');
-			size.style.color = '#888';
-			size.style.fontSize = '12px';
-			size.style.whiteSpace = 'nowrap';
+			size.className = 'Modal__hint Modal__hint--nowrap';
 			size.textContent = formatSize(entry.size || 0) + (entry.encrypted ? ' · locked' : '');
 
 			row.append(box2, name, size);
@@ -368,10 +360,7 @@ export function createArchiveUi (deps) {
 
 	function hint (text) {
 		var node = doc.createElement('div');
-		node.className = 'Modal__list';
-		node.style.fontSize = '12px';
-		node.style.color = '#888';
-		node.style.marginTop = '-4px';
+		node.className = 'Modal__list Modal__hint Modal__hint--tucked';
 		node.textContent = text;
 		return node;
 	}
