@@ -58,6 +58,66 @@ function isOnMount(path) {
 	return false;
 }
 
+// --- asking a shell for a file on a mount ------------------------------------------------------
+//
+// A mount lives in the page that made it: this worker has only IndexedDB, so a file under a zip,
+// an iso, a local folder or a peer is read by asking a PixOS shell to read it. It used to ask one
+// guessed window -- the first top-level one `matchAll` returned, which is whichever was focused
+// last and only among the pages this worker controls. Both limits lost the mount. A file opened in
+// a browser tab, focused after the shell, was asked instead and never answered; so was an app
+// frame when a hard reload had left the shell uncontrolled. Either way every file under the mount
+// timed out into a 404, while every file outside it still opened.
+//
+// So only a shell is asked -- a page directly in the scope's folder; an app, a file tab or a
+// check page is somewhere below it -- controlled or not, best first, one at a time until one
+// answers. A second PixOS that does not have the mount answers with an error at once and the
+// next is asked; asking all of them together would read a large file once per tab.
+var ASK_TIMEOUT_MS = 5000;
+
+function isShellUrl (url, scope) {
+	var page = new URL(url).pathname;
+	var base = new URL(scope).pathname;
+	return page.indexOf(base) === 0 && page.slice(base.length).indexOf('/') === -1;
+}
+
+function askOne (client, msg, timeoutMs) {
+	return new Promise(function (resolve, reject) {
+		var ch = new MessageChannel();
+		var timeout = setTimeout(function () {
+			ch.port1.close();
+			reject(new Error('askClient timeout'));
+		}, timeoutMs);
+		ch.port1.onmessage = function (e) {
+			clearTimeout(timeout);
+			ch.port1.close();
+			if (e.data && e.data.error) {
+				reject(new Error(e.data.error));
+			} else {
+				resolve(e.data);
+			}
+		};
+		client.postMessage(msg, [ch.port2]);
+	});
+}
+
+// `clients` in `matchAll`'s order, which puts the most recently focused first.
+function askShells (clients, scope, msg, timeoutMs) {
+	var shells = clients.filter(function (client) { return isShellUrl(client.url, scope); });
+	var last = new Error('No PixOS window to ask');
+	var i = 0;
+	function next () {
+		if (i >= shells.length) {
+			return Promise.reject(last);
+		}
+		return askOne(shells[i++], msg, timeoutMs).catch(function (err) {
+			last = err;
+			return next();
+		});
+	}
+	return next();
+}
+// --- end of asking a shell ---------------------------------------------------------------------
+
 function parseRangeHeader(rangeHeader, size) {
 	var match = /^bytes=(\d+)-(\d*)$/i.exec((rangeHeader || '').trim());
 	if (!match) {
@@ -571,30 +631,11 @@ self.addEventListener('fetch', function (event) {
     });
     event.respondWith(fs.then(function(fs) {
         return new Promise(function(resolve, reject) {
-            // Ask the main thread to perform a FS operation via MessageChannel.
-            // Used as fallback when the SW's own IndexedDB doesn't have the file
-            // (e.g. the file is on a mounted ZipFS/IsoFS/FileSystemAccess).
+            // Ask a shell to perform a FS operation, for a file this worker's own IndexedDB
+            // does not have (it is on a mount). See askShells above for which shell.
             function askClient(msg) {
-                return self.clients.matchAll({type: 'window'}).then(function(clients) {
-                    if (!clients.length) {
-                        return Promise.reject(new Error('No client available'));
-                    }
-                    var target = clients.find(function(c) { return c.frameType === 'top-level'; }) || clients[0];
-                    return new Promise(function(resolve, reject) {
-                        var timeout = setTimeout(function() {
-                            reject(new Error('askClient timeout'));
-                        }, 5000);
-                        var ch = new MessageChannel();
-                        ch.port1.onmessage = function(e) {
-                            clearTimeout(timeout);
-                            if (e.data.error) {
-                                reject(new Error(e.data.error));
-                            } else {
-                                resolve(e.data);
-                            }
-                        };
-                        target.postMessage(msg, [ch.port2]);
-                    });
+                return self.clients.matchAll({type: 'window', includeUncontrolled: true}).then(function(clients) {
+                    return askShells(clients, self.registration.scope, msg, ASK_TIMEOUT_MS);
                 });
             }
 

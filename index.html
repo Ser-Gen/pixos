@@ -420,6 +420,27 @@ if ('serviceWorker' in navigator) {
 					sessionStorage.setItem('pixos-coi-reload', '1');
 					location.reload();
 				}
+				// A shell loaded around its worker -- a hard reload does that, with the worker
+				// already active -- stays uncontrolled until it is loaded again. Its own
+				// /__browserfs__ fetches go to the server and 404, it is not isolated, and the
+				// worker cannot count on it for a file on a mount. So it is loaded again, once:
+				// the flag stops a browser that bypasses the worker every time from looping.
+				// It does not boot first, since a shell about to be replaced should write nothing.
+				function ensureControlled() {
+					if (navigator.serviceWorker.controller) {
+						sessionStorage.removeItem('pixos-sw-reload');
+						return false;
+					}
+					if (!reg.active || sessionStorage.getItem('pixos-sw-reload')) {
+						return false;
+					}
+					sessionStorage.setItem('pixos-sw-reload', '1');
+					location.reload();
+					return true;
+				}
+				if (ensureControlled()) {
+					return;
+				}
 				ensureCrossOriginIsolated();
 				navigator.serviceWorker.addEventListener('controllerchange', ensureCrossOriginIsolated);
 

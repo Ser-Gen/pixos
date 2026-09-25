@@ -23,6 +23,30 @@ file up*, but the iframe's document URL keeps it — so an app can read its own 
 A directory URL without a trailing slash gets a redirect first, so relative `../` references
 inside an app resolve either way.
 
+**A file on a mount is read by asking a shell, and which shell is the whole question.** The
+worker has only IndexedDB; a zip, an iso, a local folder, a Files3 storage or a peer exists only
+in the page that mounted it. So a request under a mount is posted to a PixOS window as `stat`,
+`readFile` or `readdir` over a `MessageChannel`, and the `navigator.serviceWorker` listener in
+`index.html` answers from `window.fs`. The worker used to ask one guessed window — the first
+top-level one `clients.matchAll()` returned, which is the one focused last, and only among the
+pages it controls — and both limits lost the mount. A file opened in a browser tab and focused
+after the shell was asked instead; after a hard reload the shell was not controlled, so an app
+frame was. Neither answers, so after five seconds every file under the mount was a 404 and its
+app opened empty, while every file outside it opened, because the worker reads those itself.
+Whatever put the shell first again — a reload, usually — made it work, which is why it looked
+like a mount that only works once PixOS has been reloaded. `askShells` in `sw.js` now asks
+**only a shell** — a page directly in the scope's folder; an app, a file tab and a check page
+are all somewhere below it — **controlled or not** (`includeUncontrolled`), best first and
+**one at a time**: a second PixOS without that mount says no at once and the next is asked,
+whereas asking them all together would read a large file once per tab. **And a shell loaded
+around its worker reloads once into it** (`ensureControlled` in `index.html`). A hard reload
+does that while the worker is active, and such a page stays uncontrolled: its own
+`/__browserfs__` fetches go to the server and 404, and it is not cross-origin isolated. It
+reloads before BrowserFS is configured, so a page about to be replaced writes nothing, and
+`pixos-sw-reload` in `sessionStorage` stops a browser that bypasses the worker every time from
+looping. It is not the isolation reload's flag, which a browser that is never isolated never
+clears. `tests/sw-mount-reads.test.mjs`.
+
 **Failures have one surface, and it is not the console.** `js/shell/notifications.js`
 renders into `#overlays`; `window.notify({level, title, message, actions, source})` is
 reachable from any app iframe as `parent.notify`. `source` is always stamped — an app must

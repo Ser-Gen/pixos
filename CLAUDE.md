@@ -206,7 +206,8 @@ It is not loaded automatically the way this file is, so it has to be opened deli
 sections, and the kind of thing each one will catch:
 
 - *Serving, offline, and saying when something failed* — the service worker and its query
-  strings, the notification surface and its three layers in Explorer, `failure.js`,
+  strings, how it reads a file on a mount (by asking a shell, and which one) and why a shell a
+  hard reload left uncontrolled reloads itself once, the notification surface and its three layers in Explorer, `failure.js`,
   `needsNetwork` and the four record builders that keep dropping it, why the precache is
   network-first and what it follows rather than lists, the error reporter the worker
   injects into every app document so a window that dies before its own script runs still
