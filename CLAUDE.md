@@ -11,7 +11,11 @@ run in iframes. Pure static site — no build step, no backend.
 - `js/shell/` — the shell's own modules (ES modules, loaded directly): `wm.js` window
   manager, `desktop.js` desktop layer, `taskbar.js`, `widgets.js`, `system-stats.js`
   (one poller for clock/storage/battery), `about.js` (`/home/about.md` for the About
-  widget), `wallpaper.js` + `wallpaper-shader.js` background providers, `apps-model.js` +
+  widget), `wallpaper.js` + `wallpaper-shader.js` + `wallpaper-page.js` background providers (a
+  colour, gradient, image, shader or screensaver page; each mount is a handle that pauses and
+  unloads it), `wallpaper-dialog.js` the dialog that chooses the background and the screensaver
+  (two tabs, one gallery; Explorer's *Preview* and *Set as…* go through it too), `screensaver.js` (when nobody is there — Chrome's idle detection or the
+  input PixOS sees — and the layer that shows one and swallows the input that ends it), `apps-model.js` +
   `start-menu.js` + `command-palette.js` launchers, `overview.js` the all-windows
   overlay, `file-search.js` the tree walk behind it, `open-with.js` the chooser for a
   file with no default app, `bookmarks.js` the shell's half of `/settings/links.json` (every edit made to it from outside
@@ -68,7 +72,7 @@ run in iframes. Pure static site — no build step, no backend.
   per file and the question would otherwise be asked a few hundred times)
   and `menu-items.js` (what is *in* a context menu, as opposed to `context-menu.js`, which
   draws one: four builders returning an array of entries, with everything the shell owns —
-  peers, bookmarks, the wallpaper — offered only when there is a shell to own it)
+  peers, bookmarks, the wallpaper, the screensaver — offered only when there is a shell to own it)
   and `view.js` (everything Explorer draws of itself, as mockup B since phase 24 — a rail of
   commands, the path as the title, a selection line, a foot with the storage gauge: the one
   template `renderLayout` writes and the forty-three nodes it then looks up in it by class, the order
@@ -97,9 +101,10 @@ run in iframes. Pure static site — no build step, no backend.
   conflict question before it writes and catches nothing, because the errno translation is one
   level up in the guard; `File`, `Blob`, `fetch` and `crypto` come off `win`, and are called *on*
   it, since a detached `fetch` throws in a browser and not in node) and `shell-actions.js` (*Open*,
-  *Open with...*, *Manage Defaults*, *Add to bookmarks*, *Share with peers*, *Stop sharing* — the
+  *Open with...*, *Manage Defaults*, *Add to bookmarks*, *Share with peers*, *Stop sharing*, and a
+  screensaver's *Preview*, *Show contents*, *Set as wallpaper* and *Set as screensaver* — the
   actions whose work the shell does, keeping only what Explorer knows: a folder is navigated to in
-  place, several files open together; the chooser's *Manage Defaults* button runs after `openWith`
+  place, several files open together, a screensaver is shown rather than opened; the chooser's *Manage Defaults* button runs after `openWith`
   has returned, so the module wraps it with the same `guarded` the table's loop uses rather than
   reading the table it is part of) and `convert.js` (*FFmpeg*: the options dialog, one engine
   per window, files converted one at a time and written through `writeNewFile` — for an engine
@@ -147,6 +152,9 @@ run in iframes. Pure static site — no build step, no backend.
   markdown file, `js/deck.js` holds everything that is not the DOM, and `vendor/` carries
   the comark parser and Prism. Its block palette is built in and extended by whatever is in
   `/settings/filmoskop-blocks`.
+- `apps/screensavers/` — not an app (it has no `index.html` of its own, so neither the generator nor
+  the local scan takes it for one): the screensaver pages PixOS ships, `Slideshow.xscr/` so far,
+  copied in by `preinstall.json` on every boot.
 - `settings/preinstall.json` + `templates/` — what a fresh system is made of, served over
   HTTP rather than read from BrowserFS. See *Boot is data-driven* in
   `docs/not-so-simple.md`.
@@ -160,6 +168,9 @@ run in iframes. Pure static site — no build step, no backend.
   `tests/assert.mjs` sets the exit code, which is all `tests/run.mjs` reads — five files once
   ended without passing it on and could not fail.
 - `docs/*.ru.md` — architecture and how-to docs (Russian); the newer plans are `.md` English.
+- `docs/checks/` — pages that settled a question only a real browser could answer
+  (`hidden-frame.html`: does a hidden frame stop drawing), and fixtures a checklist asks for
+  (`Trail.xscr.html`). Not part of the shell, and not precached.
 - **`docs/not-so-simple.md` — how this system actually behaves**, in sixteen sections: the
   things you would not predict from the code, each written after somebody lost an afternoon
   to it. Not loaded with this file, so it has to be opened; see below for what is in it.
@@ -169,7 +180,7 @@ run in iframes. Pure static site — no build step, no backend.
 - `docs/ux-improvements-plan.md` (phases 1–5, built), `docs/reliability-plan.md`
   (phases 6–20, all built), `docs/explorer-plan.md` (phases 21–24, all built),
   `docs/shortcuts-plan.md` (phase 25, keyboard shortcuts shown, built) and
-  `docs/screensavers-plan.md` (phase 26, animated backgrounds and screensavers, planned) are the
+  `docs/screensavers-plan.md` (phase 26, animated backgrounds and screensavers, being built) are the
   scheduled work, each phase with a browser checklist beside it
   (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
@@ -202,8 +213,12 @@ sections, and the kind of thing each one will catch:
   says so, and the progress note a long operation draws in that same stack.
 - *Apps that carry their own engine* — 7-Zip's exit codes and staging rules, filmoskop's
   parser boundary and its two editors, and the two apps whose folder is not their id.
-- *The desktop and its widgets* — peeks, widgets as doors, and who knows the desktop is
-  visible.
+- *The desktop and its widgets* — peeks, widgets as doors, who knows the desktop is
+  visible, and animated backgrounds: paused when covered, unloaded after 30 s, a page's frames
+  held from outside because hiding a frame does not stop it, and the pointer handed in. The
+  screensaver: whose idle counts, what holds it off, the permission asked in a click, and why its
+  key listener has to be registered first. Explorer previewing one, and its copy of which names are
+  screensavers.
 - *Windows, desktops and sessions* — the five layers, why an iframe is never reparented,
   one windows container for every desktop, and what a session actually persists.
 - *Getting around* — one model behind three launchers, keystroke bridging into iframes, the

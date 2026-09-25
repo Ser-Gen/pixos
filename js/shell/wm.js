@@ -84,6 +84,8 @@ export default class WM {
 		// Ids being moved between desktops. Removing a placeholder fires itemDestroyed,
 		// which would otherwise be indistinguishable from the window being closed.
 		this.moving = new Set();
+		// When the last input inside any window was seen, for noteActivity's once a second.
+		this.lastActivity = 0;
 
 		this.initialised = cfg.initialised || function () {};
 
@@ -380,12 +382,21 @@ export default class WM {
 				doc.__pixosInputBridge = true;
 				doc.addEventListener('keydown', function (e) {
 					wm.noteInteraction(id);
+					wm.noteActivity();
 					wm.emit('keydown', e);
 				}, true);
 				doc.addEventListener('mousedown', function (e) {
 					wm.noteInteraction(id);
+					wm.noteActivity();
 					wm.emit('mousedown', e);
 				}, true);
+				// Moving the pointer and scrolling focus nothing, but they are someone at the
+				// machine, which is all the screensaver asks. Counted, never passed on.
+				var active = function () {
+					wm.noteActivity();
+				};
+				doc.addEventListener('pointermove', active, {capture: true, passive: true});
+				doc.addEventListener('wheel', active, {capture: true, passive: true});
 			}
 			this.watchForFrames(doc, id);
 			this.bridgeFrames(doc, id);
@@ -440,6 +451,17 @@ export default class WM {
 	// only GoldenLayout's tab selection. Two panes side by side are both visible, so
 	// selecting one tab and then typing in the other left the shell naming the wrong
 	// window -- and "Close window" closing it.
+	// Someone is using a window: `activity`, at most once a second, because a pointer move
+	// arrives every frame and the only listener wants to know that, not how often.
+	noteActivity () {
+		var now = Date.now();
+		if (now - this.lastActivity < 1000) {
+			return;
+		}
+		this.lastActivity = now;
+		this.emit('activity', now);
+	}
+
 	noteInteraction (id) {
 		if (id === undefined || id === null || this.activeWindowId === id) {
 			return;

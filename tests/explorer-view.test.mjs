@@ -248,6 +248,29 @@ function item (name, extra) {
 }
 
 {
+	// Phase 26: a screensaver is typed as one, page or folder, and sorts under that name rather
+	// than under html or among the plain folders.
+	const h = harness({
+		items: [item('b.zip'), item('Rain.xscr.html'), item('a.txt'), item('page.html'),
+			item('Slideshow.xscr', {isDirectory: true}), item('zfolder', {isDirectory: true}), item('old.zip', {isDirectory: true})],
+		sort: {key: 'type', dir: 'asc'}
+	});
+	h.view.sortItems();
+	// A folder's type is Folder whatever it is called -- old.zip sorts as one, not as a zip.
+	check('sorting by type puts a screensaver where its Type says, not with the pages or the folders',
+		h.state.items.map(i => i.name), ['old.zip', 'zfolder', 'Slideshow.xscr', 'page.html', 'Rain.xscr.html', 'a.txt', 'b.zip']);
+	h.view.renderRows();
+	const cells = h.ui.rows.children.map(n => n.children[2].textContent);
+	check('and the Type column says Screensaver for the folder and the page',
+		cells, ['Folder', 'Folder', 'Screensaver', 'html', 'Screensaver', 'txt', 'zip']);
+	const marks = html => (html.match(/Explorer__kind--(\w+)/) || [])[1];
+	check('both drawn with the screensaver mark, in the row and the card',
+		[marks(h.ui.rows.children[2].children[1].innerHTML), marks(h.ui.rows.children[4].children[1].innerHTML),
+			marks(h.ui.grid.children[2].innerHTML), marks(h.ui.grid.children[4].innerHTML)], ['scr', 'scr', 'scr', 'scr']);
+	check('while the folder stays a folder to everything else', h.ui.rows.children[2].dataset.type, 'dir');
+}
+
+{
 	// Every key falls through to the name when the key itself ties, which is what stops the
 	// list reshuffling itself on a refresh that changed nothing.
 	const h = harness({

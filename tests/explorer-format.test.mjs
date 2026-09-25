@@ -11,11 +11,13 @@
 import path from 'path';
 import {check, report} from './assert.mjs';
 import {createFormat} from '../apps/explorer/js/format.js';
+// The shell's rule, which Explorer keeps a copy of rather than importing (see isScreensaver).
+import {isScreensaverPath} from '../js/shell/wallpaper-page.js';
 
 const {
 	normalizePath, getParentPath, formatSize, getItemTitle,
 	escapeHtml, escapeAttr, getExt, getNameByPath,
-	splitNameAndExtension, basenameEnd, isImageExtension, kindOf
+	splitNameAndExtension, basenameEnd, isImageExtension, isScreensaver, kindOf
 } = createFormat(path.posix);
 
 // --- paths ------------------------------------------------------------------------------
@@ -118,7 +120,7 @@ check('and a name with no extension does not',
 
 // --- the mark a row is drawn with ------------------------------------------------------------
 //
-// Phase 24 draws kinds instead of 📁 and 📄. Five marks, decided by the name alone.
+// Phase 24 draws kinds instead of 📁 and 📄. Five marks, decided by the name alone; a sixth below.
 
 const file = name => ({name: name, isDirectory: false});
 check('a folder is a folder, whatever it is called', kindOf({name: 'photos.zip', isDirectory: true}), 'dir');
@@ -130,5 +132,32 @@ check('so is a program', kindOf(file('tool.wasm')), 'bin');
 check('everything else is a document', kindOf(file('notes.md')), 'doc');
 check('including a name with no extension', kindOf(file('README')), 'doc');
 check('and a dotfile, whose "extension" is its name', kindOf(file('.png')), 'doc');
+
+// --- a screensaver ---------------------------------------------------------------------------
+//
+// Phase 26 adds a sixth mark, and the one exception to "a folder is a folder": a folder called
+// `Name.xscr` is a screensaver made of many files, and is drawn and typed as one.
+
+const dir = name => ({name: name, isDirectory: true});
+check('a page named .xscr.html is a screensaver', kindOf(file('Rain.xscr.html')), 'scr');
+check('in any case, and as .htm', [kindOf(file('RAIN.XSCR.HTML')), kindOf(file('Rain.xscr.htm'))], ['scr', 'scr']);
+check('a folder named .xscr is one too', kindOf(dir('Slideshow.xscr')), 'scr');
+check('a plain page is a document', kindOf(file('index.html')), 'doc');
+check('a file called .xscr with nothing after it is not one: a server sends it as a download',
+	kindOf(file('Hackers.xscr')), 'doc');
+check('nor is a folder called .xscr.html, which the shell would load as a file', kindOf(dir('Odd.xscr.html')), 'dir');
+check('nor a page that only has xscr in its name', kindOf(file('my.xscr.notes.html')), 'doc');
+check('and nothing is one without a name to read', isScreensaver(null), false);
+
+// Every name Explorer offers to show, the shell can show -- or *Preview* opens a note that it failed.
+const names = [
+	file('Rain.xscr.html'), file('Rain.xscr.htm'), file('A.XSCR.HTML'), dir('Slideshow.xscr'), dir('X.XSCR'),
+	file('Hackers.xscr'), file('index.html'), dir('Odd.xscr.html'), file('my.xscr.notes.html'), dir('plain'),
+	file('Rain.xscr.html.txt')
+];
+check('the shell takes every name Explorer takes for a screensaver',
+	names.filter(isScreensaver).filter(item => !isScreensaverPath('/home/' + item.name)).map(item => item.name), []);
+check('and Explorer takes the ones it should', names.filter(isScreensaver).map(item => item.name),
+	['Rain.xscr.html', 'Rain.xscr.htm', 'A.XSCR.HTML', 'Slideshow.xscr', 'X.XSCR']);
 
 process.exit(report('explorer-format') ? 1 : 0);

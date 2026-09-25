@@ -55,7 +55,8 @@
 		color: #fff;
 	}
 
-	/* The shell is four stacked layers and z-index is the entire contract between them.
+	/* The shell is four stacked layers and z-index is the entire contract between them --
+	   five while the screensaver runs, which screensaver.js puts in #shell at 400.
 	   #windows is fixed at the viewport origin on purpose: the containers inside it are
 	   positioned from getBoundingClientRect(), i.e. in viewport coordinates, so giving
 	   this element a transform or an offset parent silently misplaces every window. */
@@ -238,6 +239,9 @@ import * as fileSearch from "./js/shell/file-search.js";
 import * as openWith from "./js/shell/open-with.js";
 import * as bookmarks from "./js/shell/bookmarks.js";
 import * as fsEvents from "./js/shell/fs-events.js";
+import {pageName} from "./js/shell/wallpaper-page.js";
+import * as screensaver from "./js/shell/screensaver.js";
+import * as wallpaperDialog from "./js/shell/wallpaper-dialog.js";
 import {createMountTable, createHandleStore, FILE as MOUNT_TABLE_FILE} from "./js/shell/mount-table.js";
 
 var winManager = new WM({
@@ -319,7 +323,9 @@ window.describeWriteLimit = async function (bytes) {
 window.__pixosAppError = function (info) {
 	var report = info || {};
 	var app = appForEntryPath(report.src);
-	var name = (app && (app.label || app.name || app.id)) || 'An app';
+	// A screensaver page is not an app, and is called by its own name: a background that
+	// breaks reports from a frame nobody opened.
+	var name = (app && (app.label || app.name || app.id)) || pageName(report.src) || 'An app';
 	console.error('Error inside ' + (report.src || 'an app'), report.message, report.detail || '');
 
 	// A missing script from somewhere else is the common shape of this, and when the
@@ -1523,6 +1529,33 @@ function fsOnInit () {
 		});
 		await appsModel.load();
 
+		// Before desktop.init, and before anything else puts a key listener on window: the key
+		// that ends the screensaver is swallowed by the first capture listener there, so a
+		// Ctrl+K that wakes it does not open the palette as well. See js/shell/screensaver.js.
+		screensaver.init({
+			host: document.getElementById('shell'),
+			wm: winManager,
+			settings: settings.screensaver,
+			ignore: [document.getElementById('desktop')],
+			persist: persistDesktopSettings,
+			// Whatever was open is covered, and would keep its own keys: an Escape that
+			// closed the palette under it would not also end the screensaver.
+			onStart: function () {
+				startMenu.close();
+				palette.close();
+				overview.close();
+				shortcuts.close();
+				contextMenu.close();
+				desktop.setObscured(true);
+			},
+			onStop: function () {
+				desktop.setObscured(false);
+			},
+			onError: function (message, failed) {
+				window.notify(desktop.wallpaperErrorNote(message, failed, 'screensaver'));
+			}
+		});
+
 		desktop.init({
 			shell: document.getElementById('shell'),
 			desktop: document.getElementById('desktop'),
@@ -1536,13 +1569,34 @@ function fsOnInit () {
 				taskbar.setPeeking(peeking);
 			}
 		});
+		wallpaperDialog.init({
+			host: document.getElementById('overlays'),
+			getWallpaper: desktop.getWallpaper,
+			setWallpaper: desktop.setWallpaper,
+			screensaver: screensaver,
+			listDir: function (dirPath) {
+				return new Promise(function (resolve) {
+					window.fs.readdir(dirPath, function (err, names) {
+						resolve(err ? [] : names);
+					});
+				});
+			},
+			describeKey: function (id) {
+				return shortcuts.describeShortcut(id, shortcuts.isMacPlatform());
+			},
+			notify: function (note) {
+				window.notify(note);
+			}
+		});
+
 		startMenu.init({
 			host: document.getElementById('overlays'),
 			openApp: openApp,
 			openRecentFile: openRecentFile,
 			actions: [
 				{label: 'App Manager', run: function () { openApp('app-manager'); }},
-				{label: 'Wallpaper...', run: function () { desktop.openWallpaperPicker(); }},
+				{label: 'Wallpaper...', run: function () { wallpaperDialog.open('background'); }},
+				{label: 'Screensaver...', run: function () { wallpaperDialog.open('screensaver'); }},
 				{label: 'Show desktop', run: function () { desktop.togglePeek(); }},
 				{label: 'Fullscreen', run: function () { toggleFullscreen(); }},
 				{label: 'Keyboard shortcuts', run: function () { shortcuts.open(); }}
@@ -2242,7 +2296,9 @@ function fsOnInit () {
 				run: function () { window.startCleanSession(); }
 			},
 			{title: 'Show desktop', subtitle: 'Hide every window without closing it', keys: shortcuts.describeShortcut('peek', mac), run: function () { desktop.togglePeek(); }},
-			{title: 'Wallpaper...', subtitle: 'Change the desktop background', run: function () { desktop.openWallpaperPicker(); }},
+			{title: 'Wallpaper...', subtitle: 'Change the desktop background', run: function () { wallpaperDialog.open('background'); }},
+			{title: 'Screensaver...', subtitle: 'Choose one, and how long before it starts', run: function () { wallpaperDialog.open('screensaver'); }},
+			{title: 'Start screensaver', subtitle: 'Show it now. Any key or the mouse ends it', keys: shortcuts.describeShortcut('screensaver', mac), run: startScreensaver},
 			{title: 'New Explorer', subtitle: 'Open a file manager window', run: function () { openApp('explorer'); }},
 			{title: 'App Manager', subtitle: 'Install and update applications', run: function () { openApp('app-manager'); }},
 			{
@@ -2351,6 +2407,12 @@ function fsOnInit () {
 			shortcuts.toggle();
 			return;
 		}
+		if (shortcuts.matchesAny(e, shortcuts.shellKeys('screensaver'))) {
+			e.preventDefault();
+			e.stopPropagation();
+			startScreensaver();
+			return;
+		}
 		// Ctrl/Cmd+W. Only reachable at all while fullscreen *and* the keyboard lock was
 		// granted -- otherwise the browser closed the tab before this ever ran, and
 		// handling it here would be a lie in code. Checked rather than assumed, because
@@ -2404,6 +2466,20 @@ function fsOnInit () {
 
 	window.setWallpaperImage = function (filePath, options) {
 		return desktop.setWallpaperImage(filePath, options);
+	};
+
+	// Explorer's commands for a screensaver file or folder: a double-click previews it, and the menu
+	// sets it. js/shell/wallpaper-dialog.js makes the choice from the path, and says what it set.
+	window.previewScreensaver = function (filePath) {
+		return wallpaperDialog.previewFile(filePath);
+	};
+
+	window.setWallpaperPage = function (filePath) {
+		return wallpaperDialog.useFile(filePath, 'background');
+	};
+
+	window.setScreensaverPage = function (filePath) {
+		return wallpaperDialog.useFile(filePath, 'screensaver');
 	};
 
 	function normalizeExtension (ext) {
@@ -3481,6 +3557,16 @@ async function openPath (dirPath, appId) {
 	return launch({appId: appId, paths: dirPath ? [dirPath] : []});
 }
 
+// The palette, the desktop menu and the key all come here. With nothing chosen there is nothing
+// to start, and the command leads to where one is chosen rather than doing nothing.
+function startScreensaver () {
+	if (!screensaver.start()) {
+		if (!screensaver.getSettings().show) {
+			wallpaperDialog.open('screensaver');
+		}
+	}
+}
+
 function buildDesktopMenu () {
 	var groups = appsModel.ordered();
 	var submenu = [];
@@ -3517,7 +3603,13 @@ function buildDesktopMenu () {
 		{label: 'New Explorer', action: function () { openApp('explorer'); }},
 		{label: 'App Manager', action: function () { openApp('app-manager'); }},
 		{separator: true},
-		{label: 'Wallpaper...', action: function () { desktop.openWallpaperPicker(); }},
+		{label: 'Wallpaper...', action: function () { wallpaperDialog.open('background'); }},
+		{label: 'Screensaver...', action: function () { wallpaperDialog.open('screensaver'); }},
+		{
+			label: 'Start screensaver',
+			hint: shortcuts.describeShortcut('screensaver', shortcuts.isMacPlatform()),
+			action: startScreensaver
+		},
 		{
 			label: desktop.isPeeking() ? 'Show windows' : 'Show desktop',
 			hint: shortcuts.describeShortcut('peek', shortcuts.isMacPlatform()),

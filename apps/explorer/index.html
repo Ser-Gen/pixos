@@ -102,7 +102,7 @@ window.mountManager = parent.mountManager;
 const {
 	normalizePath, getParentPath, formatSize, getItemTitle,
 	escapeHtml, escapeAttr, getExt, getNameByPath,
-	splitNameAndExtension, basenameEnd, isImageExtension, kindOf
+	splitNameAndExtension, basenameEnd, isImageExtension, isScreensaver, kindOf
 } = createFormat(window.path);
 
 const {
@@ -493,16 +493,19 @@ async function openExplorer () {
 		refreshCurrentDir: refreshCurrentDir
 	});
 
-	// Open, Open with, Manage Defaults, bookmarks and the peer share: the actions whose work the
-	// shell does. `guarded` and `readableActionName` go in because the chooser's Manage Defaults
-	// button runs after `openWith` has returned and needs the same wrapper the loop below gives
-	// the table -- which this module cannot read, being one of the things it is built from.
+	// Open, Open with, Manage Defaults, bookmarks, the peer share and a screensaver's four: the
+	// actions whose work the shell does. `guarded` and `readableActionName` go in because the
+	// chooser's Manage Defaults button runs after `openWith` has returned and needs the same wrapper
+	// the loop below gives the table -- which this module cannot read, being one of the things it is
+	// built from.
 	var {
-		open, openWith, manageDefaultApps, addToBookmarks, shareWithPeers, stopSharing
+		open, previews, showContents, setAsWallpaper, setAsScreensaver,
+		openWith, manageDefaultApps, addToBookmarks, shareWithPeers, stopSharing
 	} = createShellActions({
 		state: state,
 		shell: parent,
 		getItemByPath: getItemByPath,
+		isScreensaver: isScreensaver,
 		getSelectedItems: getSelectedItems,
 		getNameByPath: getNameByPath,
 		getOpenWithAppsForItems: getOpenWithAppsForItems,
@@ -1142,6 +1145,9 @@ async function openExplorer () {
 
 		// js/shell-actions.js: the actions whose work the shell does.
 		open: open,
+		showContents: showContents,
+		setAsWallpaper: setAsWallpaper,
+		setAsScreensaver: setAsScreensaver,
 		openWith: openWith,
 		manageDefaultApps: manageDefaultApps,
 		addToBookmarks: addToBookmarks,
@@ -1224,6 +1230,8 @@ async function openExplorer () {
 		getNameByPath: getNameByPath,
 		getNormalizedExtension: getNormalizedExtension,
 		isImageExtension: isImageExtension,
+		isScreensaver: isScreensaver,
+		previews: previews,
 		keyHint: keyHint
 	});
 

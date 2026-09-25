@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Slideshow</title>
+<!--
+	PixOS's own screensaver page: the pictures in a folder, one at a time, in random order.
+	Phase 26; docs/screensavers-plan.md.
+
+	The folder comes in the address, `index.html?folder=/home/pictures` -- the dialog writes it
+	there -- and the pictures are read through the shell's filesystem, `parent.fs`, the way every
+	app reads a file. So this page shows nothing outside PixOS, and says so.
+
+	It defines `pixosPause` and `pixosResume`, which PixOS calls rather than holding its animation
+	frames from outside: what moves here is a timer and the Web Animations below, and a hold would
+	reach neither. Paused, the picture on screen stays, and the next one waits.
+-->
+<style>
+	html, body {
+		margin: 0;
+		height: 100%;
+		overflow: hidden;
+		background: #000;
+	}
+	figure {
+		position: absolute;
+		inset: 0;
+		margin: 0;
+		opacity: 0;
+	}
+	figure img {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+	}
+	/* The picture's own colours, blurred, fill what the picture does not. */
+	.behind {
+		object-fit: cover;
+		filter: blur(32px) brightness(.4);
+		transform: scale(1.12);
+	}
+	.picture {
+		object-fit: contain;
+	}
+	#say {
+		position: absolute;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		width: min(440px, calc(100% - 48px));
+		font: 13px/1.7 Arial, Helvetica, sans-serif;
+		color: rgba(220, 228, 240, .6);
+		text-align: center;
+	}
+</style>
+</head>
+<body>
+<div id="say" hidden></div>
+<script>
+(function () {
+	var SHOW_MS = 9000;
+	var FADE_MS = 1600;
+	var MOST = 1000;
+	var PICTURE = /\.(jpe?g|png|gif|webp|avif|bmp|svg)$/i;
+
+	var say = document.getElementById('say');
+	var folder = new URLSearchParams(location.search).get('folder') || '/home';
+	var fs = null;
+	try {
+		fs = parent !== window && parent.fs ? parent.fs : null;
+	}
+	catch (err) {
+		fs = null;
+	}
+
+	var queue = [];
+	var all = [];
+	var shown = null;
+	var paused = false;
+	var timer = null;
+	var dueAt = 0;
+	var left = 0;
+
+	function tell (text) {
+		say.textContent = text;
+		say.hidden = false;
+	}
+
+	function call (method, path) {
+		return new Promise(function (resolve, reject) {
+			fs[method](path, function (err, value) {
+				if (err) {
+					reject(err);
+				}
+				else {
+					resolve(value);
+				}
+			});
+		});
+	}
+
+	function join (dir, name) {
+		return (dir === '/' ? '' : dir.replace(/\/+$/, '')) + '/' + name;
+	}
+
+	// Every picture under the folder, a few levels down, skipping hidden folders -- and /apps and
+	// /settings, full of icons, unless the folder chosen is inside them.
+	async function collect (root) {
+		var found = [];
+		var looked = 0;
+		var todo = [{dir: root, depth: 0}];
+		while (todo.length && found.length < MOST) {
+			var next = todo.shift();
+			var names = await call('readdir', next.dir).catch(function () { return []; });
+			for (var i = 0; i < names.length && found.length < MOST; i++) {
+				var name = names[i];
+				var full = join(next.dir, name);
+				if (name.charAt(0) === '.') {
+					continue;
+				}
+				if (PICTURE.test(name)) {
+					found.push(full);
+					continue;
+				}
+				if (next.depth >= 4 || looked > 2000) {
+					continue;
+				}
+				if ((full === '/apps' || full === '/settings') && root.indexOf(full) !== 0) {
+					continue;
+				}
+				looked++;
+				var stat = await call('stat', full).catch(function () { return null; });
+				if (stat && stat.isDirectory()) {
+					todo.push({dir: full, depth: next.depth + 1});
+				}
+			}
+		}
+		return found;
+	}
+
+	function address (path) {
+		return '/__browserfs__' + path.split('/').map(encodeURIComponent).join('/');
+	}
+
+	function shuffled (list) {
+		var copy = list.slice();
+		for (var i = copy.length - 1; i > 0; i--) {
+			var j = Math.floor(Math.random() * (i + 1));
+			var swap = copy[i];
+			copy[i] = copy[j];
+			copy[j] = swap;
+		}
+		return copy;
+	}
+
+	function image (className, src) {
+		var img = document.createElement('img');
+		img.className = className;
+		img.alt = '';
+		img.decoding = 'async';
+		img.src = src;
+		return img;
+	}
+
+	// The next picture that actually decodes; a broken file is passed over, not shown.
+	async function nextFigure () {
+		for (var tries = 0; tries < Math.min(all.length, 20); tries++) {
+			if (!queue.length) {
+				queue = shuffled(all);
+			}
+			var path = queue.shift();
+			var picture = image('picture', address(path));
+			try {
+				await picture.decode();
+			}
+			catch (err) {
+				continue;
+			}
+			var figure = document.createElement('figure');
+			figure.append(image('behind', picture.src), picture);
+			return figure;
+		}
+		return null;
+	}
+
+	function wait (ms) {
+		left = ms;
+		dueAt = Date.now() + ms;
+		timer = setTimeout(advance, ms);
+	}
+
+	async function advance () {
+		timer = null;
+		var figure = await nextFigure();
+		if (!figure) {
+			tell('None of the pictures in ' + folder + ' could be opened.');
+			return;
+		}
+		document.body.append(figure);
+		var origin = Math.round(20 + Math.random() * 60) + '% ' + Math.round(20 + Math.random() * 60) + '%';
+		figure.querySelector('.picture').style.transformOrigin = origin;
+		figure.querySelector('.picture').animate([{transform: 'scale(1)'}, {transform: 'scale(1.07)'}],
+			{duration: SHOW_MS + FADE_MS * 2, easing: 'linear', fill: 'forwards'});
+		figure.animate([{opacity: 0}, {opacity: 1}], {duration: FADE_MS, easing: 'ease-in-out', fill: 'forwards'});
+		var old = shown;
+		shown = figure;
+		if (old) {
+			var out = old.animate([{opacity: 1}, {opacity: 0}], {duration: FADE_MS, easing: 'ease-in-out', fill: 'forwards'});
+			out.finished.then(function () {
+				old.remove();
+			}, function () {
+				old.remove();
+			});
+		}
+		if (paused) {
+			document.getAnimations().forEach(function (animation) {
+				animation.pause();
+			});
+			left = SHOW_MS;
+			return;
+		}
+		if (all.length > 1) {
+			wait(SHOW_MS);
+		}
+	}
+
+	window.pixosPause = function () {
+		if (paused) {
+			return;
+		}
+		paused = true;
+		if (timer) {
+			clearTimeout(timer);
+			timer = null;
+			left = Math.max(0, dueAt - Date.now());
+		}
+		document.getAnimations().forEach(function (animation) {
+			animation.pause();
+		});
+	};
+
+	window.pixosResume = function () {
+		if (!paused) {
+			return;
+		}
+		paused = false;
+		document.getAnimations().forEach(function (animation) {
+			animation.play();
+		});
+		if (shown && all.length > 1 && !timer) {
+			wait(left || SHOW_MS);
+		}
+	};
+
+	async function begin () {
+		if (!fs) {
+			tell('This slideshow reads its pictures from PixOS. Choose it there, as the background or the screensaver.');
+			return;
+		}
+		var stat = await call('stat', folder).catch(function () { return null; });
+		if (!stat || !stat.isDirectory()) {
+			tell('There is no folder ' + folder + '. Choose another in the Wallpaper dialog.');
+			return;
+		}
+		all = await collect(folder);
+		if (!all.length) {
+			tell('No pictures in ' + folder + '. Choose another folder in the Wallpaper dialog.');
+			return;
+		}
+		advance();
+	}
+
+	begin();
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,12 @@
 // The actions whose work is the shell's: *Open*, *Open with...*, *Manage Defaults*, *Add to
-// bookmarks*, *Share with peers* and *Stop sharing*. What stays in Explorer is only what Explorer
+// bookmarks*, *Share with peers*, *Stop sharing*, and for a screensaver *Preview*, *Show contents*,
+// *Set as wallpaper* and *Set as screensaver*. What stays in Explorer is only what Explorer
 // knows -- that a folder can be navigated to in place rather than opened, that several files can
 // be opened together, which folder you are looking at -- and everything else is a call on `shell`.
+//
+// **A screensaver is shown, not opened** (phase 26): a folder one would otherwise be gone into, and
+// a page opened in a window, neither of which is what it is for. *Show contents* goes in, and
+// *Open with...* still opens the page. Only where the shell can show one; elsewhere it opens.
 //
 // `shell` is the parent window. Explorer does not boot without one (index.html refuses before
 // `openExplorer` runs), but not every shell has every entry point, so the two that are optional
@@ -22,6 +27,7 @@ export function createShellActions (deps) {
 	var state = deps.state;
 	var shell = deps.shell;
 	var getItemByPath = deps.getItemByPath;
+	var isScreensaver = deps.isScreensaver || function () { return false; };
 	var getSelectedItems = deps.getSelectedItems;
 	var getNameByPath = deps.getNameByPath;
 	var getOpenWithAppsForItems = deps.getOpenWithAppsForItems;
@@ -41,6 +47,10 @@ export function createShellActions (deps) {
 		var item = getItemByPath(itemPath);
 		if (!item) return;
 
+		if (!forcedApp && previews(item)) {
+			shell.previewScreensaver(item.path);
+			return;
+		}
 		if (item.isDirectory) {
 			if (forcedApp && forcedApp !== 'explorer') {
 				shell.openPath(item.path, forcedApp);
@@ -50,6 +60,39 @@ export function createShellActions (deps) {
 			return;
 		}
 		shell.openFile(item.path, forcedApp);
+	}
+
+	// Whether *Open* shows this one rather than opening it. The menu asks too, to call it *Preview*.
+	function previews (item) {
+		return isScreensaver(item) && typeof shell.previewScreensaver === 'function';
+	}
+
+	// Into a screensaver folder, which *Open* no longer does.
+	function showContents (itemPath) {
+		var item = getItemByPath(itemPath);
+		if (item && item.isDirectory) {
+			navigateTo(item.path);
+		}
+	}
+
+	// An image or a screensaver, each through the shell's own entry for it.
+	function setAsWallpaper (itemPath) {
+		var item = getItemByPath(itemPath);
+		if (!item) {
+			return;
+		}
+		if (isScreensaver(item)) {
+			return shell.setWallpaperPage(item.path);
+		}
+		return shell.setWallpaperImage(item.path);
+	}
+
+	// The shell says what it set, and when it will start: nothing on screen changes.
+	function setAsScreensaver (itemPath) {
+		var item = getItemByPath(itemPath);
+		if (item && isScreensaver(item)) {
+			return shell.setScreensaverPage(item.path);
+		}
 	}
 
 	async function addToBookmarks (itemPath) {
@@ -240,6 +283,10 @@ export function createShellActions (deps) {
 
 	return {
 		open: open,
+		previews: previews,
+		showContents: showContents,
+		setAsWallpaper: setAsWallpaper,
+		setAsScreensaver: setAsScreensaver,
 		openWith: openWith,
 		manageDefaultApps: manageDefaultApps,
 		addToBookmarks: addToBookmarks,

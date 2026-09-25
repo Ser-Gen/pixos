@@ -313,12 +313,12 @@ const forwarded = [];
 wm.on('keydown', e => forwarded.push('key:' + e.code));
 wm.on('mousedown', () => forwarded.push('click'));
 
-const appDoc = {listeners: {}, addEventListener (evt, fn) { (this.listeners[evt] = this.listeners[evt] || []).push(fn); }};
+const appDoc = {listeners: {}, options: {}, addEventListener (evt, fn, options) { (this.listeners[evt] = this.listeners[evt] || []).push(fn); this.options[evt] = options; }};
 const framed = wm.openWindow({title: 'app', content: '<iframe id="view9"></iframe>'});
 wm.getFrame(framed.id).contentDocument = appDoc;
 wm.getFrame(framed.id).dispatch('load');
 
-check('loading a window installs the bridge', Object.keys(appDoc.listeners).sort(), ['keydown', 'mousedown']);
+check('loading a window installs the bridge', Object.keys(appDoc.listeners).sort(), ['keydown', 'mousedown', 'pointermove', 'wheel']);
 appDoc.listeners.keydown[0]({code: 'KeyK'});
 appDoc.listeners.mousedown[0]({});
 check('input inside an app is republished to the shell', forwarded, ['key:KeyK', 'click']);
@@ -332,6 +332,39 @@ const crossOriginFrame = {
 };
 wm.bridgeInput(crossOriginFrame);
 check('a cross-origin frame is skipped without throwing', forwarded.length, 2);
+
+// Phase 26: the screensaver's fallback idle needs to know someone is there, and a pointer move
+// or a scroll inside a window is the one sign of it the shell never otherwise sees.
+{
+	const activity = [];
+	wm.on('activity', at => activity.push(at));
+	const realNow = Date.now;
+	// Ahead of the real clock: the key and the click above were counted at the real time.
+	const start = realNow() + 60000;
+	let clock = start;
+	Date.now = () => clock;
+	appDoc.listeners.pointermove[0]({});
+	check('a pointer move inside a window is activity', activity, [start]);
+	clock += 400;
+	appDoc.listeners.wheel[0]({});
+	appDoc.listeners.pointermove[0]({});
+	check('counted at most once a second, since a move arrives every frame', activity.length, 1);
+	clock += 700;
+	appDoc.listeners.wheel[0]({});
+	check('and a scroll a second on counts again', activity.length, 2);
+	clock += 1000;
+	appDoc.listeners.keydown[0]({code: 'KeyA'});
+	check('a key is activity', activity.length, 3);
+	clock += 1000;
+	appDoc.listeners.mousedown[0]({});
+	check('and so is a click', activity.length, 4);
+	check('the moves and scrolls are not republished as events', forwarded, ['key:KeyK', 'click', 'key:KeyA', 'click']);
+	check('listened for in the capture phase, so an app that swallows them is still heard',
+		[appDoc.options.pointermove.capture, appDoc.options.wheel.capture], [true, true]);
+	check('and passively, so a scroll is never held up waiting for the shell',
+		[appDoc.options.pointermove.passive, appDoc.options.wheel.passive], [true, true]);
+	Date.now = realNow;
+}
 
 // --- an app's own iframes ---------------------------------------------------------
 //
@@ -371,7 +404,7 @@ wm.getFrame(editor.id).contentDocument = editorDoc;
 wm.getFrame(editor.id).dispatch('load');
 
 check('a nested same-origin frame is bridged too',
-	Object.keys(innerDoc.listeners).sort(), ['keydown', 'mousedown']);
+	Object.keys(innerDoc.listeners).sort(), ['keydown', 'mousedown', 'pointermove', 'wheel']);
 innerDoc.listeners.keydown[0]({code: 'KeyK'});
 check('so a keystroke in the document you are typing into reaches the shell',
 	forwarded[forwarded.length - 1], 'key:KeyK');
@@ -383,7 +416,7 @@ observers[observers.length - 1].callback([{addedNodes: [
 	{nodeType: 1, tagName: 'IFRAME', addEventListener () {}, contentDocument: lateDoc}
 ]}]);
 check('a frame created after load is bridged when it appears',
-	Object.keys(lateDoc.listeners).sort(), ['keydown', 'mousedown']);
+	Object.keys(lateDoc.listeners).sort(), ['keydown', 'mousedown', 'pointermove', 'wheel']);
 
 const buriedDoc = fakeDoc();
 const wrapper = {
@@ -393,7 +426,7 @@ const wrapper = {
 };
 observers[observers.length - 1].callback([{addedNodes: [wrapper]}]);
 check('and so is one added inside a wrapper element',
-	Object.keys(buriedDoc.listeners).sort(), ['keydown', 'mousedown']);
+	Object.keys(buriedDoc.listeners).sort(), ['keydown', 'mousedown', 'pointermove', 'wheel']);
 
 observers[observers.length - 1].callback([{addedNodes: [{nodeType: 3}]}]);
 check('a text node -- which is most of what an editor adds -- is ignored',

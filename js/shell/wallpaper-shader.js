@@ -9,7 +9,11 @@
 //   the loop outright rather than merely slowing it.
 //
 //   Failing visibly. A shader that will not compile must not leave a black rectangle
-//   with the reason buried in devtools -- it falls back to a gradient and keeps the log.
+//   with the reason buried in devtools -- it says so through `context.fail`, which paints
+//   the default gradient and reports it.
+//
+// Everything below is per mount since phase 26: one shader can be the background and the
+// screensaver at the same time, each with its own canvas, context and clock.
 
 import * as wallpaper from './wallpaper.js';
 
@@ -87,24 +91,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	}
 };
 
-var canvas = null;
-var gl = null;
-var program = null;
-var uniforms = {};
-var frameHandle = null;
-var running = false;
-var startTime = 0;
-var lastFrame = 0;
-var frameCount = 0;
-var mouse = [0, 0, 0, 0];
-var fpsCap = 30;
-var lastLog = null;
-
-export function getLastError () {
-	return lastLog;
-}
-
-function compile (source, type) {
+function compile (gl, source, type) {
 	var shader = gl.createShader(type);
 	gl.shaderSource(shader, source);
 	gl.compileShader(shader);
@@ -116,9 +103,9 @@ function compile (source, type) {
 	return shader;
 }
 
-function build (fragmentSource) {
-	var vertex = compile(VERTEX_SHADER, gl.VERTEX_SHADER);
-	var fragment = compile(FRAGMENT_PRELUDE + fragmentSource + FRAGMENT_EPILOGUE, gl.FRAGMENT_SHADER);
+function build (gl, fragmentSource) {
+	var vertex = compile(gl, VERTEX_SHADER, gl.VERTEX_SHADER);
+	var fragment = compile(gl, FRAGMENT_PRELUDE + fragmentSource + FRAGMENT_EPILOGUE, gl.FRAGMENT_SHADER);
 	var built = gl.createProgram();
 	gl.attachShader(built, vertex);
 	gl.attachShader(built, fragment);
@@ -135,75 +122,6 @@ function build (fragmentSource) {
 	gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
 	return built;
-}
-
-function resize () {
-	if (!canvas) {
-		return;
-	}
-	// Deliberately capped below devicePixelRatio: a full-resolution retina background is
-	// four times the fragment work for something nobody looks at closely.
-	var scale = Math.min(window.devicePixelRatio || 1, 1.5);
-	var width = Math.max(1, Math.round(canvas.clientWidth * scale));
-	var height = Math.max(1, Math.round(canvas.clientHeight * scale));
-	if (canvas.width !== width || canvas.height !== height) {
-		canvas.width = width;
-		canvas.height = height;
-		gl.viewport(0, 0, width, height);
-	}
-}
-
-function draw (now) {
-	frameHandle = null;
-	if (!running || !gl || !program) {
-		return;
-	}
-
-	var minInterval = 1000 / fpsCap;
-	if (now - lastFrame < minInterval - 1) {
-		schedule();
-		return;
-	}
-
-	var delta = lastFrame ? (now - lastFrame) / 1000 : 0;
-	lastFrame = now;
-
-	resize();
-	gl.useProgram(program);
-	gl.uniform3f(uniforms.iResolution, canvas.width, canvas.height, 1);
-	gl.uniform1f(uniforms.iTime, (now - startTime) / 1000);
-	gl.uniform1f(uniforms.iTimeDelta, delta);
-	gl.uniform1i(uniforms.iFrame, frameCount++);
-	gl.uniform4f(uniforms.iMouse, mouse[0], mouse[1], mouse[2], mouse[3]);
-	gl.drawArrays(gl.TRIANGLES, 0, 3);
-
-	schedule();
-}
-
-function schedule () {
-	if (running && frameHandle === null) {
-		frameHandle = requestAnimationFrame(draw);
-	}
-}
-
-function onMouseMove (e) {
-	mouse[0] = e.clientX;
-	mouse[1] = window.innerHeight - e.clientY;
-}
-
-function onContextLost (e) {
-	// Without this the browser never fires a restore and the background stays dead
-	// until a reload.
-	e.preventDefault();
-	running = false;
-	program = null;
-}
-
-function onContextRestored () {
-	var config = wallpaper.getConfig();
-	if (config && config.type === 'shader') {
-		wallpaper.apply(canvas.parentNode, config);
-	}
 }
 
 function resolveSource (config) {
@@ -226,92 +144,91 @@ function resolveSource (config) {
 	return Promise.reject(new Error('unknown shader: ' + value));
 }
 
-// The gradient the desktop falls back to when a shader cannot run at all. Rendered
-// directly rather than by re-entering wallpaper.apply(), which would overwrite the
-// user's stored choice with the fallback.
-function paintFallback (element, message) {
-	lastLog = message;
-	console.error('Shader wallpaper: ' + message);
-	var preset = wallpaper.PRESETS[wallpaper.DEFAULT_WALLPAPER.value];
-	element.style.background = 'linear-gradient(' + preset.angle + 'deg, ' + preset.stops.join(', ') + ')';
-}
+function mountShader (element, config, context) {
+	var fpsCap = (config.options && config.options.fps) || 30;
+	var canvas = document.createElement('canvas');
+	var gl = null;
+	var program = null;
+	var source = null;
+	var uniforms = {};
+	var frameHandle = null;
+	// `paused` is what the desktop asked for, `running` is whether the loop is going. They
+	// differ while the source is still on its way: a pause that arrives before the program
+	// exists must still hold once it does.
+	var paused = false;
+	var running = false;
+	var gone = false;
+	var startTime = 0;
+	var lastFrame = 0;
+	var frameCount = 0;
+	var mouse = [0, 0, 0, 0];
 
-wallpaper.register('shader', {
-	mount: function (element, config) {
-		lastLog = null;
-		fpsCap = (config.options && config.options.fps) || 30;
+	canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
+	element.append(canvas);
 
-		canvas = document.createElement('canvas');
-		canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;';
-		element.append(canvas);
+	gl = canvas.getContext('webgl2', {antialias: false, depth: false, powerPreference: 'low-power'});
+	if (!gl) {
+		canvas.remove();
+		context.fail('WebGL2 is not available in this browser');
+		return null;
+	}
 
-		gl = canvas.getContext('webgl2', {antialias: false, depth: false, powerPreference: 'low-power'});
-		if (!gl) {
-			canvas.remove();
-			canvas = null;
-			paintFallback(element, 'WebGL2 is not available in this browser');
+	function resize () {
+		// Deliberately capped below devicePixelRatio: a full-resolution retina background is
+		// four times the fragment work for something nobody looks at closely.
+		var scale = Math.min(window.devicePixelRatio || 1, 1.5);
+		var width = Math.max(1, Math.round(canvas.clientWidth * scale));
+		var height = Math.max(1, Math.round(canvas.clientHeight * scale));
+		if (canvas.width !== width || canvas.height !== height) {
+			canvas.width = width;
+			canvas.height = height;
+			gl.viewport(0, 0, width, height);
+		}
+	}
+
+	function draw (now) {
+		frameHandle = null;
+		if (!running || !program) {
 			return;
 		}
 
-		canvas.addEventListener('webglcontextlost', onContextLost);
-		canvas.addEventListener('webglcontextrestored', onContextRestored);
-		window.addEventListener('mousemove', onMouseMove);
-
-		resolveSource(config).then(function (source) {
-			program = build(source);
-			uniforms = {
-				iResolution: gl.getUniformLocation(program, 'iResolution'),
-				iTime: gl.getUniformLocation(program, 'iTime'),
-				iTimeDelta: gl.getUniformLocation(program, 'iTimeDelta'),
-				iFrame: gl.getUniformLocation(program, 'iFrame'),
-				iMouse: gl.getUniformLocation(program, 'iMouse')
-			};
-			startTime = performance.now();
-			lastFrame = 0;
-			frameCount = 0;
-			running = true;
+		var minInterval = 1000 / fpsCap;
+		if (now - lastFrame < minInterval - 1) {
 			schedule();
-		}).catch(function (err) {
-			if (canvas) {
-				canvas.remove();
-				canvas = null;
-			}
-			paintFallback(element, err.message);
-		});
-	},
+			return;
+		}
 
-	unmount: function () {
+		var delta = lastFrame ? (now - lastFrame) / 1000 : 0;
+		lastFrame = now;
+
+		resize();
+		gl.useProgram(program);
+		gl.uniform3f(uniforms.iResolution, canvas.width, canvas.height, 1);
+		gl.uniform1f(uniforms.iTime, (now - startTime) / 1000);
+		gl.uniform1f(uniforms.iTimeDelta, delta);
+		gl.uniform1i(uniforms.iFrame, frameCount++);
+		gl.uniform4f(uniforms.iMouse, mouse[0], mouse[1], mouse[2], mouse[3]);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+		schedule();
+	}
+
+	function schedule () {
+		if (running && frameHandle === null) {
+			frameHandle = requestAnimationFrame(draw);
+		}
+	}
+
+	function stop () {
 		running = false;
 		if (frameHandle !== null) {
 			cancelAnimationFrame(frameHandle);
 			frameHandle = null;
 		}
-		window.removeEventListener('mousemove', onMouseMove);
-		if (canvas) {
-			canvas.removeEventListener('webglcontextlost', onContextLost);
-			canvas.removeEventListener('webglcontextrestored', onContextRestored);
-			// Frees the GPU resources now instead of whenever the canvas is collected.
-			var lose = gl && gl.getExtension('WEBGL_lose_context');
-			if (lose) {
-				lose.loseContext();
-			}
-			canvas.remove();
-			canvas = null;
-		}
-		gl = null;
-		program = null;
-	},
+	}
 
-	pause: function () {
-		running = false;
-		if (frameHandle !== null) {
-			cancelAnimationFrame(frameHandle);
-			frameHandle = null;
-		}
-	},
-
-	resume: function () {
-		if (!program || running) {
+	function go () {
+		if (gone || paused || running || !program) {
 			return;
 		}
 		running = true;
@@ -319,4 +236,100 @@ wallpaper.register('shader', {
 		lastFrame = 0;
 		schedule();
 	}
-});
+
+	function link () {
+		program = build(gl, source);
+		uniforms = {
+			iResolution: gl.getUniformLocation(program, 'iResolution'),
+			iTime: gl.getUniformLocation(program, 'iTime'),
+			iTimeDelta: gl.getUniformLocation(program, 'iTimeDelta'),
+			iFrame: gl.getUniformLocation(program, 'iFrame'),
+			iMouse: gl.getUniformLocation(program, 'iMouse')
+		};
+	}
+
+	function onMouseMove (e) {
+		mouse[0] = e.clientX;
+		mouse[1] = window.innerHeight - e.clientY;
+	}
+
+	function onContextLost (e) {
+		// Without this the browser never fires a restore and the background stays dead
+		// until a reload.
+		e.preventDefault();
+		stop();
+		program = null;
+	}
+
+	// The context comes back empty: the program is built again from the source this mount
+	// already has, and nothing else about the background changes.
+	function onContextRestored () {
+		if (gone || source === null) {
+			return;
+		}
+		try {
+			link();
+		}
+		catch (err) {
+			teardown();
+			context.fail(err.message);
+			return;
+		}
+		go();
+	}
+
+	function teardown () {
+		gone = true;
+		stop();
+		window.removeEventListener('mousemove', onMouseMove);
+		canvas.removeEventListener('webglcontextlost', onContextLost);
+		canvas.removeEventListener('webglcontextrestored', onContextRestored);
+		// Frees the GPU resources now instead of whenever the canvas is collected.
+		var lose = gl.getExtension('WEBGL_lose_context');
+		if (lose) {
+			lose.loseContext();
+		}
+		canvas.remove();
+		program = null;
+	}
+
+	canvas.addEventListener('webglcontextlost', onContextLost);
+	canvas.addEventListener('webglcontextrestored', onContextRestored);
+	window.addEventListener('mousemove', onMouseMove);
+
+	resolveSource(config).then(function (text) {
+		if (gone) {
+			return;
+		}
+		source = text;
+		link();
+		startTime = performance.now();
+		lastFrame = 0;
+		frameCount = 0;
+		go();
+	}).catch(function (err) {
+		if (gone) {
+			return;
+		}
+		teardown();
+		context.fail(err.message);
+	});
+
+	return {
+		pause: function () {
+			paused = true;
+			stop();
+		},
+		resume: function () {
+			paused = false;
+			go();
+		},
+		unmount: function () {
+			if (!gone) {
+				teardown();
+			}
+		}
+	};
+}
+
+wallpaper.register('shader', {mount: mountShader});

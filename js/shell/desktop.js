@@ -4,13 +4,15 @@
 // Three jobs. It owns the wallpaper (and decides when the wallpaper is worth rendering
 // at all), it hosts the right-click menu that makes closing every window recoverable,
 // and it implements peek -- getting the windows out of the way without touching them.
+// The dialog that chooses a wallpaper is wallpaper-dialog.js since phase 26.
 
 import * as wallpaper from './wallpaper.js';
 import * as menu from './context-menu.js';
 import {matchesAny, shellKeys} from './shortcuts.js';
 import * as widgets from './widgets.js';
-// Imported for its side effect: registering the 'shader' provider with wallpaper.js.
-import * as shader from './wallpaper-shader.js';
+// Imported for their side effect: registering the 'shader' and 'page' providers.
+import './wallpaper-shader.js';
+import './wallpaper-page.js';
 
 var STYLE_ID = 'pixos-desktop-style';
 
@@ -42,128 +44,6 @@ var CSS = `
 	padding: 1px 5px;
 	margin: 0 2px;
 }
-
-.PixDialog {
-	position: absolute;
-	left: 50%;
-	top: 50%;
-	transform: translate(-50%, -50%);
-	width: min(520px, calc(100vw - 32px));
-	max-height: calc(100vh - 48px);
-	overflow-y: auto;
-	background: #23262b;
-	border: 1px solid #434850;
-	box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
-	font-family: Arial, Helvetica, sans-serif;
-	color: #e4e4e4;
-	font-size: 13px;
-}
-
-.PixDialog__head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 10px 14px;
-	border-bottom: 1px solid #383c44;
-	font-size: 13px;
-}
-
-.PixDialog__close {
-	background: none;
-	border: none;
-	color: #9aa1ac;
-	font-size: 16px;
-	cursor: pointer;
-	line-height: 1;
-}
-
-.PixDialog__close:hover {
-	color: #fff;
-}
-
-.PixDialog__body {
-	padding: 14px;
-}
-
-.PixDialog__label {
-	display: block;
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: .06em;
-	color: #8a919c;
-	margin: 0 0 8px;
-}
-
-.PixDialog__section + .PixDialog__section {
-	margin-top: 18px;
-}
-
-.PixSwatches {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-}
-
-.PixSwatch {
-	width: 76px;
-	height: 46px;
-	border: 1px solid #434850;
-	cursor: pointer;
-	padding: 0;
-	position: relative;
-}
-
-.PixSwatch:hover {
-	border-color: #7d8695;
-}
-
-.PixSwatch--active {
-	outline: 2px solid #4f9dff;
-	outline-offset: -2px;
-}
-
-.PixDialog__row {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-}
-
-.PixDialog__row input[type="text"],
-.PixDialog__row select {
-	flex: 1;
-	min-width: 0;
-	background: #1b1e23;
-	border: 1px solid #434850;
-	color: #e4e4e4;
-	padding: 6px 8px;
-	font-size: 12px;
-	font-family: inherit;
-}
-
-.PixDialog__row select {
-	flex: 0 0 110px;
-}
-
-.PixButton {
-	background: #333840;
-	border: 1px solid #4b515b;
-	color: #e4e4e4;
-	padding: 6px 12px;
-	font-size: 12px;
-	font-family: inherit;
-	cursor: pointer;
-}
-
-.PixButton:hover {
-	background: #3d434d;
-}
-
-.PixDialog__note {
-	margin: 10px 0 0;
-	font-size: 11px;
-	color: #8a919c;
-	line-height: 1.6;
-}
 `;
 
 var shellEl = null;
@@ -175,8 +55,11 @@ var wm = null;
 var buildMenu = function () { return []; };
 var persist = function () { return Promise.resolve(); };
 var onPeekChange = function () {};
-var config = {wallpaper: null};
+// The mounted background: wallpaper.js's handle, which owns pausing and unloading it.
+var current = null;
 var peeking = false;
+// Something drawn over the whole desktop: the screensaver.
+var obscured = false;
 
 function ensureStyle () {
 	if (document.getElementById(STYLE_ID)) {
@@ -229,6 +112,12 @@ export function init (cfg) {
 	// while peeking so are the windows, so in either case the right-click lands here.
 	desktopEl.addEventListener('contextmenu', onContextMenu);
 
+	// A page as the background takes the pointer through here rather than itself: its frame
+	// is click-through, so the right-click above still reaches the desktop.
+	['pointermove', 'pointerdown', 'pointerup', 'click'].forEach(function (type) {
+		desktopEl.addEventListener(type, onPointer);
+	});
+
 	window.addEventListener('keydown', onKeyDown, true);
 	document.addEventListener('visibilitychange', refreshWallpaperActivity);
 
@@ -257,6 +146,19 @@ export function init (cfg) {
 function onContextMenu (e) {
 	e.preventDefault();
 	menu.open(buildMenu(), e.clientX, e.clientY);
+}
+
+function onPointer (e) {
+	if (current && isBackgroundInput(e, wallpaperEl, desktopEl)) {
+		current.forward(e);
+	}
+}
+
+// Whether a pointer event on the desktop is the background's to have. A move is, wherever the
+// pointer is -- it moves over a widget as well as over the background -- but a press on a
+// widget is the widget's. Exported for the tests.
+export function isBackgroundInput (e, wallpaperElement, desktopElement) {
+	return e.type === 'pointermove' || e.target === wallpaperElement || e.target === desktopElement;
 }
 
 function onKeyDown (e) {
@@ -290,17 +192,27 @@ export function togglePeek () {
 	setPeek(!peeking);
 }
 
+// The screensaver covers the desktop as surely as a window does, widgets and all.
+export function setObscured (on) {
+	obscured = !!on;
+	refresh();
+}
+
 // Nothing above the fold decides this: the wallpaper renders only when it can actually
-// be seen. Phase 2's shader provider turns this into real battery savings.
+// be seen. Phase 2's shader provider turns this into real battery savings, and the handle
+// unloads an animated one that stays out of sight (see wallpaper.js).
 function refreshWallpaperActivity () {
+	if (!current) {
+		return;
+	}
 	// The active desktop's windows, not every window: an empty desktop next to a busy
 	// one still shows its wallpaper, and would otherwise sit frozen.
-	var covered = !!(wm && wm.count(wm.getActiveWorkspace()) > 0) && !peeking;
+	var covered = (!!(wm && wm.count(wm.getActiveWorkspace()) > 0) && !peeking) || obscured;
 	if (document.hidden || covered) {
-		wallpaper.pause();
+		current.pause();
 	}
 	else {
-		wallpaper.resume();
+		current.resume();
 	}
 }
 
@@ -312,18 +224,41 @@ function refresh () {
 	if (hintEl) {
 		hintEl.style.opacity = (empty || peeking) ? '1' : '0';
 	}
-	widgets.setVisible(empty || peeking);
+	widgets.setVisible((empty || peeking) && !obscured);
 	refreshWallpaperActivity();
 }
 
 export function getWallpaper () {
-	return wallpaper.getConfig();
+	return current ? Object.assign({}, current.config) : null;
+}
+
+// A background that cannot be drawn shows the default gradient and says why. The choice
+// stays as it was in /settings/desktop.json: a file that is missing today may be back
+// tomorrow, and the dialog is where it is changed. `surface` is 'background' or 'screensaver',
+// whose layer falls back the same way.
+export function wallpaperErrorNote (message, failed, surface) {
+	var name = failed.type === 'page' ? 'That screensaver page' : failed.type === 'shader' ? 'That shader' : 'The picture';
+	return {
+		level: 'error',
+		title: 'The ' + (surface || 'background') + ' could not be drawn',
+		message: name + ' failed: ' + message + '. The default gradient is showing instead.',
+		source: 'PixOS'
+	};
+}
+
+function onWallpaperError (message, failed) {
+	if (typeof window.notify === 'function') {
+		window.notify(wallpaperErrorNote(message, failed, 'background'));
+	}
 }
 
 function apply (next) {
-	config.wallpaper = wallpaper.apply(wallpaperEl, next);
+	if (current) {
+		current.unmount();
+	}
+	current = wallpaper.mount(wallpaperEl, next, {onError: onWallpaperError});
 	refreshWallpaperActivity();
-	return config.wallpaper;
+	return current.config;
 }
 
 export async function setWallpaper (next) {
@@ -334,114 +269,4 @@ export async function setWallpaper (next) {
 
 export function setWallpaperImage (filePath, options) {
 	return setWallpaper({type: 'image', value: filePath, options: options || {fit: 'cover'}});
-}
-
-export function openWallpaperPicker () {
-	var current = wallpaper.getConfig() || wallpaper.DEFAULT_WALLPAPER;
-
-	var dialog = document.createElement('div');
-	dialog.className = 'PixDialog';
-	dialog.innerHTML = '<div class="PixDialog__head"><span>Wallpaper</span>'
-		+ '<button class="PixDialog__close" title="Close">×</button></div>'
-		+ '<div class="PixDialog__body"></div>';
-
-	var body = dialog.querySelector('.PixDialog__body');
-	var close = function () {
-		dialog.remove();
-	};
-	dialog.querySelector('.PixDialog__close').onclick = close;
-
-	body.append(
-		buildSwatchSection('Gradients', Object.keys(wallpaper.PRESETS).map(function (key) {
-			var preset = wallpaper.PRESETS[key];
-			return {
-				title: preset.label,
-				css: 'linear-gradient(' + preset.angle + 'deg, ' + preset.stops.join(', ') + ')',
-				active: current.type === 'gradient' && current.value === key,
-				config: {type: 'gradient', value: key}
-			};
-		}), close),
-		buildSwatchSection('Solid colours', ['#1a1a2e', '#12141a', '#20262e', '#2b2118', '#182a20'].map(function (color) {
-			return {
-				title: color,
-				css: color,
-				active: current.type === 'color' && current.value === color,
-				config: {type: 'color', value: color}
-			};
-		}), close)
-	);
-
-	body.append(buildSwatchSection('Shaders', Object.keys(shader.BUILT_IN).map(function (key) {
-		return {
-			title: shader.BUILT_IN[key].label + ' (animated)',
-			css: 'linear-gradient(150deg, #101a2b, #241a33)',
-			active: current.type === 'shader' && current.value === key,
-			config: {type: 'shader', value: key}
-		};
-	}), close));
-
-	var shaderNote = document.createElement('p');
-	shaderNote.className = 'PixDialog__note';
-	shaderNote.textContent = 'Animated backgrounds stop rendering entirely while a window '
-		+ 'covers them, so they cost nothing when you are not looking. A .glsl file in the '
-		+ 'filesystem works too — Shadertoy-style mainImage(), set it from the field below.';
-	body.append(shaderNote);
-
-	var imageSection = document.createElement('div');
-	imageSection.className = 'PixDialog__section';
-	imageSection.innerHTML = '<span class="PixDialog__label">A file from the filesystem</span>'
-		+ '<div class="PixDialog__row">'
-		+ '<input type="text" placeholder="/home/pictures/sea.jpg or /home/plasma.glsl">'
-		+ '<select><option value="cover">Cover</option><option value="contain">Contain</option>'
-		+ '<option value="center">Center</option><option value="tile">Tile</option></select>'
-		+ '<button class="PixButton">Set</button></div>'
-		+ '<p class="PixDialog__note">Easier: right-click any image in Explorer and choose '
-		+ '<b>Set as wallpaper</b>.</p>';
-
-	var input = imageSection.querySelector('input');
-	var fit = imageSection.querySelector('select');
-	if (current.type === 'image') {
-		input.value = current.value || '';
-		fit.value = (current.options && current.options.fit) || 'cover';
-	}
-	imageSection.querySelector('button').onclick = function () {
-		var value = input.value.trim();
-		if (!value) {
-			return;
-		}
-		setWallpaper(/\.(glsl|frag)$/i.test(value)
-			? {type: 'shader', value: value}
-			: {type: 'image', value: value, options: {fit: fit.value}});
-		close();
-	};
-	body.append(imageSection);
-
-	overlaysEl.append(dialog);
-	return dialog;
-}
-
-function buildSwatchSection (label, entries, close) {
-	var section = document.createElement('div');
-	section.className = 'PixDialog__section';
-
-	var heading = document.createElement('span');
-	heading.className = 'PixDialog__label';
-	heading.textContent = label;
-	section.append(heading);
-
-	var row = document.createElement('div');
-	row.className = 'PixSwatches';
-	entries.forEach(function (entry) {
-		var button = document.createElement('button');
-		button.className = 'PixSwatch' + (entry.active ? ' PixSwatch--active' : '');
-		button.style.background = entry.css;
-		button.title = entry.title;
-		button.onclick = function () {
-			setWallpaper(entry.config);
-			close();
-		};
-		row.append(button);
-	});
-	section.append(row);
-	return section;
 }

@@ -33,6 +33,7 @@ export var SHELL_SHORTCUTS = [
 			{id: 'overview', keys: ['Mod+Shift+K', 'Ctrl+`'], label: 'All windows, numbered'},
 			{id: 'desktop', keys: ['Ctrl+Shift+1…9'], label: 'Go to desktop 1 to 9'},
 			{id: 'peek', keys: ['Mod+Alt+D'], label: 'Show the desktop, and back'},
+			{id: 'screensaver', keys: ['Mod+Shift+L'], label: 'Start the screensaver', note: 'any key or the mouse ends it'},
 			{id: 'shortcuts', keys: ['Mod+/'], label: 'This list'},
 			{id: 'close', keys: ['Mod+W'], label: 'Close the window in front', note: 'in fullscreen only'}
 		]

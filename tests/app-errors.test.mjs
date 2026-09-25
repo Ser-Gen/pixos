@@ -111,4 +111,9 @@ check('and an app cannot borrow the system’s voice with it',
 check('a report is matched to its app by folder, not by entry file',
 	/\/\\\/apps\\\/\(\[\^\/\]\+\)\\\//.test(shell), true);
 
+// Phase 26: a screensaver page drawn as the background runs in a frame no app opened, under
+// /apps/screensavers/ where no app lives, and was reported as "An app hit an error".
+check('a screensaver page is named by its own name before falling back to "An app"',
+	/\|\| pageName\(report\.src\) \|\| 'An app'/.test(shell), true);
+
 process.exit(report('app-errors') ? 1 : 0);

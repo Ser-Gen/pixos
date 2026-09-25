@@ -51,8 +51,17 @@ const winManager = {
 	}
 };
 var decorated = [];
-const desktop = {isPeeking: () => false, togglePeek () {}, openWallpaperPicker () {}};
+const desktop = {isPeeking: () => false, togglePeek () {}};
 const palette = {open () {}, toggle () {}};
+// Phase 26: the dialog moved out of desktop.js, and the screensaver is a command of its own.
+const dialogOpened = [];
+const wallpaperDialog = {open: tab => dialogOpened.push(tab)};
+const screensaverCalls = [];
+let screensaverChoice = null;
+const screensaver = {
+	start () { screensaverCalls.push('start'); return !!screensaverChoice; },
+	getSettings () { return {show: screensaverChoice, minutes: 5}; }
+};
 
 const win = {
 	viewCounter: 0,
@@ -161,8 +170,9 @@ globalThis.URL = class {
 };
 
 const api = new Function('window', 'winManager', 'desktop', 'appsModel', 'palette', 'openWith', 'notifications', 'bookmarks', 'shortcuts',
+	'wallpaperDialog', 'screensaver',
 	region + '\n; return {launch, openApp, openFile, openFiles, openPath, openUrl, openRecentFile, buildDesktopMenu, listLaunchableApps, appNeedsNetwork};'
-)(win, winManager, desktop, appsModel, palette, openWith, notifications, bookmarks, shortcuts);
+)(win, winManager, desktop, appsModel, palette, openWith, notifications, bookmarks, shortcuts, wallpaperDialog, screensaver);
 
 appsModel.init({listApps: api.listLaunchableApps});
 await appsModel.load();
@@ -222,15 +232,24 @@ check('search is one level up, not buried in a submenu',
 	menu.map(item => item.label).includes('Search...'), true);
 check('and so is the window overview',
 	menu.map(item => item.label).includes('All windows'), true);
-check('and it ends with wallpaper and peek', menu.slice(-2).map(item => item.label), ['Wallpaper...', 'Show desktop']);
+check('and it ends with wallpaper, the screensaver and peek', menu.slice(-4).map(item => item.label),
+	['Wallpaper...', 'Screensaver...', 'Start screensaver', 'Show desktop']);
+menu.find(i => i.label === 'Wallpaper...').action();
+menu.find(i => i.label === 'Screensaver...').action();
+check('the two open one dialog, each on its own tab', dialogOpened, ['background', 'screensaver']);
+menu.find(i => i.label === 'Start screensaver').action();
+check('starting with nothing chosen leads to where one is chosen', [screensaverCalls, dialogOpened.slice(2)], [['start'], ['screensaver']]);
+screensaverChoice = {type: 'shader', value: 'aurora'};
+menu.find(i => i.label === 'Start screensaver').action();
+check('and with one chosen it starts, and opens nothing', [screensaverCalls.length, dialogOpened.length], [2, 3]);
 // Phase 25: a hint is the chord the handler answers to, spelled by js/shell/shortcuts.js for the
 // machine it runs on -- it used to be typed in here as `Ctrl+K`, which a Mac does not press. Node 21+
 // has a `navigator` that reports the host, so the expectation is written for whichever this is.
 {
 	const mac = shortcuts.isMacPlatform();
 	check('the menu hints are the handlers\' own chords, for this machine',
-		['Search...', 'All windows', 'Keyboard shortcuts', 'Show desktop'].map(label => menu.find(i => i.label === label).hint),
-		mac ? ['⌘K', '⇧⌘K', '⌘/', ''] : ['Ctrl+K', 'Ctrl+Shift+K', 'Ctrl+/', 'Ctrl+Alt+D']);
+		['Search...', 'All windows', 'Keyboard shortcuts', 'Start screensaver', 'Show desktop'].map(label => menu.find(i => i.label === label).hint),
+		mac ? ['⌘K', '⇧⌘K', '⌘/', '⇧⌘L', ''] : ['Ctrl+K', 'Ctrl+Shift+K', 'Ctrl+/', 'Ctrl+Shift+L', 'Ctrl+Alt+D']);
 }
 
 // Promoting must not duplicate or drop anything: the submenu is still every app once,

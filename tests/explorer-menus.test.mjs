@@ -19,6 +19,9 @@ import * as archiveNames from '../apps/7z/js/parse.js';
 import {createFailure} from '../apps/explorer/js/failure.js';
 import {createSelection} from '../apps/explorer/js/selection.js';
 import {createMenuItems} from '../apps/explorer/js/menu-items.js';
+import {createShellActions} from '../apps/explorer/js/shell-actions.js';
+import {createFormat} from '../apps/explorer/js/format.js';
+import path from 'path';
 
 const source = fs.readFileSync(new URL('../apps/explorer/index.html', import.meta.url), 'utf8');
 
@@ -77,8 +80,14 @@ const FILE = {path: '/home/notes.csv', name: 'notes.csv', isDirectory: false};
 const IMAGE = {path: '/home/shot.png', name: 'shot.png', isDirectory: false};
 const DIR = {path: '/home/docs', name: 'docs', isDirectory: true};
 const ZIP = {path: '/home/holiday.tar.gz', name: 'holiday.tar.gz', isDirectory: false};
+const SCR = {path: '/home/Rain.xscr.html', name: 'Rain.xscr.html', isDirectory: false};
+const SCR_DIR = {path: '/home/Slideshow.xscr', name: 'Slideshow.xscr', isDirectory: true};
+const PAGE = {path: '/home/page.html', name: 'page.html', isDirectory: false};
+const PNG_DIR = {path: '/home/shots.png', name: 'shots.png', isDirectory: true};
 const items = {'/home/notes.csv': FILE, '/home/shot.png': IMAGE, '/home/docs': DIR,
-	'/home/holiday.tar.gz': ZIP};
+	'/home/holiday.tar.gz': ZIP, '/home/Rain.xscr.html': SCR, '/home/Slideshow.xscr': SCR_DIR, '/home/page.html': PAGE,
+	'/home/shots.png': PNG_DIR};
+const isScreensaver = createFormat(path.posix).isScreensaver;
 
 function build (selected, shellApi, opts) {
 	// Passing null means "opened outside PixOS", where `shell` *is* `win` and every entry
@@ -89,6 +98,13 @@ function build (selected, shellApi, opts) {
 	var noShell = shellApi === null;
 	var stand = opts.sameWindow ? Object.assign({}, opts.sameWindow) : {};
 	var state = {recording: !!opts.recording, selectedPaths: new Set(selected.map(i => i.path)), cwd: '/home'};
+	var shellSide = noShell ? stand : (shellApi || {});
+	// *Preview* or *Open* is asked of the real shell-actions, which *Open* itself asks: the menu
+	// saying one thing while double-click does the other is what this keeps from happening.
+	var previews = createShellActions({
+		state: state, shell: shellSide, isScreensaver: isScreensaver,
+		guarded: fn => fn, readableActionName: name => name
+	}).previews;
 	return createMenuItems({
 		state: state,
 		ui: {fileInput: {click () {}}},
@@ -116,6 +132,8 @@ function build (selected, shellApi, opts) {
 		getNameByPath: p => String(p).split('/').pop(),
 		getNormalizedExtension: p => String(p).split('.').pop().toLowerCase(),
 		isImageExtension: p => /\.(png|jpg|jpeg|gif|webp)$/i.test(p),
+		isScreensaver: isScreensaver,
+		previews: previews,
 		keyHint: opts.keyHint
 	});
 }
@@ -182,10 +200,57 @@ check('an image still offers the wallpaper on its own', labels(imageAlone).inclu
 check('and an ordinary file does not',
 	labels(build([FILE], shell).getRowMenuItems('/home/notes.csv')).includes('Set as wallpaper'), false);
 
+// --- a screensaver (phase 26) -------------------------------------------------------------
+//
+// Double-click shows one rather than opening it, so the entry that does what double-click does is
+// called *Preview*; a folder one gets *Show contents* for going in. Both can be set as either.
+const saverShell = Object.assign({}, shell, {
+	previewScreensaver () {}, setWallpaperPage () {}, setScreensaverPage () {}
+});
+const scrFileMenu = build([SCR], saverShell).getRowMenuItems('/home/Rain.xscr.html');
+const scrDirMenu = build([SCR_DIR], saverShell).getRowMenuItems('/home/Slideshow.xscr');
+check('a screensaver page starts with Preview, where Open was', labels(scrFileMenu).slice(0, 2), ['Preview', 'Open with...']);
+check('and keeps the chord double-click and Enter share',
+	build([SCR], saverShell, {keyHint: name => name === 'open' ? '↵' : ''}).getRowMenuItems('/home/Rain.xscr.html')[0].hint, '↵');
+check('a screensaver folder starts with Preview and Show contents',
+	labels(scrDirMenu).slice(0, 3), ['Preview', 'Show contents', 'Open in New Explorer']);
+check('both end with the shell\'s three, in one group', [labels(scrFileMenu).slice(-3), labels(scrDirMenu).slice(-3)],
+	[['Add to bookmarks', 'Set as wallpaper', 'Set as screensaver'], ['Add to bookmarks', 'Set as wallpaper', 'Set as screensaver']]);
+check('behind one separator', [scrFileMenu[scrFileMenu.length - 4].separator, scrDirMenu[scrDirMenu.length - 4].separator], [true, true]);
+const pressedBefore = pressed.length;
+scrDirMenu.find(e => e.label === 'Show contents').action();
+scrDirMenu.find(e => e.label === 'Set as screensaver').action();
+scrFileMenu.find(e => e.label === 'Set as wallpaper').action();
+scrFileMenu.find(e => e.label === 'Preview').action();
+check('each names its own action, with the row it was opened on', pressed.slice(pressedBefore),
+	[['showContents', '/home/Slideshow.xscr'], ['setAsScreensaver', '/home/Slideshow.xscr'],
+		['setAsWallpaper', '/home/Rain.xscr.html'], ['open', '/home/Rain.xscr.html']]);
+const imageMenu = build([IMAGE], saverShell).getRowMenuItems('/home/shot.png');
+imageMenu.find(e => e.label === 'Set as wallpaper').action();
+check('an image\'s Set as wallpaper is the same action', pressed[pressed.length - 1], ['setAsWallpaper', '/home/shot.png']);
+check('but an image is no screensaver', labels(imageMenu).includes('Set as screensaver'), false);
+// The entries are shared by the file and the folder menus now, so a folder is asked too.
+check('a folder named like a picture is not one', labels(build([PNG_DIR], saverShell).getRowMenuItems('/home/shots.png'))
+	.some(l => /^Set as/.test(l)), false);
+check('and a shell that cannot set a picture is not offered one',
+	labels(build([IMAGE], {addBookmark () {}}).getRowMenuItems('/home/shot.png')).includes('Set as wallpaper'), false);
+check('nor is a plain page', [labels(build([PAGE], saverShell).getRowMenuItems('/home/page.html'))[0],
+	labels(build([PAGE], saverShell).getRowMenuItems('/home/page.html')).some(l => /^Set as/.test(l))], ['Open', false]);
+check('nor a plain folder', [labels(build([DIR], saverShell).getRowMenuItems('/home/docs'))[0],
+	labels(build([DIR], saverShell).getRowMenuItems('/home/docs')).some(l => l === 'Show contents' || /^Set as/.test(l))], ['Open', false]);
+// A shell that cannot show one: *Open* opens it, as before, and goes into a folder one.
+const noPreview = build([SCR_DIR], shell).getRowMenuItems('/home/Slideshow.xscr');
+check('where the shell cannot show one, it is Open, and there is nothing to Show contents for',
+	labels(noPreview).slice(0, 2), ['Open', 'Open in New Explorer']);
+check('and nothing to set it as', labels(noPreview).some(l => /^Set as/.test(l)), false);
+const scrAlone = build([SCR_DIR], null).getRowMenuItems('/home/Slideshow.xscr');
+check('standalone, a screensaver folder is a folder', labels(scrAlone)[0], 'Open');
+check('and its menu does not end on a separator', scrAlone[scrAlone.length - 1].separator, undefined);
+
 // The point of the whole file: an entry that names an action nobody wrote is a dead
 // click, and nothing else would catch it.
 const everyEntry = []
-	.concat(fileMenu, dirMenu, multiMenu, emptyMenu, archiveMenu)
+	.concat(fileMenu, dirMenu, multiMenu, emptyMenu, archiveMenu, scrFileMenu, scrDirMenu)
 	.filter(entry => !entry.separator);
 const dead = [];
 everyEntry.forEach(entry => {

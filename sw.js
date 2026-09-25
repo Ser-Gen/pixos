@@ -170,7 +170,7 @@ function fetchAudioProxy(request) {
 // The version in the cache name is the whole risk: skipWaiting() + clients.claim() means a
 // new worker takes over immediately, and without a versioned name that would be a new
 // worker serving a previous worker's assets. `activate` deletes every cache but this one.
-var SHELL_CACHE = 'pixos-shell-v32';
+var SHELL_CACHE = 'pixos-shell-v34';
 
 // --- an app that dies before its own code runs ---------------------------------------------
 //
@@ -255,12 +255,15 @@ var PRECACHE = [
 	'./js/shell/notifications.js',
 	'./js/shell/open-with.js',
 	'./js/shell/overview.js',
+	'./js/shell/screensaver.js',
 	'./js/shell/session.js',
 	'./js/shell/shortcuts.js',
 	'./js/shell/start-menu.js',
 	'./js/shell/system-stats.js',
 	'./js/shell/tabs.js',
 	'./js/shell/taskbar.js',
+	'./js/shell/wallpaper-dialog.js',
+	'./js/shell/wallpaper-page.js',
 	'./js/shell/wallpaper-shader.js',
 	'./js/shell/wallpaper.js',
 	'./js/shell/peers.js',
@@ -318,6 +321,7 @@ var PRECACHE = [
 	'./apps/explorer/favicon.svg',
 	'./apps/app-manager/index.html',
 	'./apps/app-manager/favicon.svg',
+	'./apps/screensavers/Slideshow.xscr/index.html',
 	// The archive rules, and the engine under them.
 	//
 	// The engine used to be left out on the grounds that it would cost "a megabyte and a

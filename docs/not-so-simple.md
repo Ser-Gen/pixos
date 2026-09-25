@@ -349,6 +349,96 @@ instead — `navigator.storage.estimate()` reports the quota manager's bookkeepi
 whole origin on the browser's own schedule, so a re-read can honestly return the same
 number, and Disk Treemap is what measures the filesystem.
 
+**An animated background is paused the moment it is covered, and unloaded if it stays
+covered.** `desktop.js` decides when the background cannot be seen (a window on the active
+desktop, no peek, or a hidden tab) and tells the handle `wallpaper.mount` returned. The handle
+pauses at once and, after `UNLOAD_AFTER_MS` (30 s) still out of sight, unmounts the provider; the
+next reveal mounts it again from the start. Both halves are needed. A pause saves only the drawing:
+a page keeps its memory, its textures, its timers, and a shader its WebGL context. Unloading at
+once would save everything, but the desktop is uncovered constantly — a peek, the last window
+closed, a switch to an empty desktop — and each would restart the scene and read it from storage
+again. A colour or an image returns no instance and is never unloaded. The handle is also why a
+provider keeps nothing in module state since phase 26: the same shader can be the background and
+the screensaver at once, and `tests/wallpaper-shader.test.mjs` runs two.
+
+**Hiding a frame does not stop it drawing.** Measured in headless Chrome 153 with
+`docs/checks/hidden-frame.html`: a same-origin frame under `display:none`, `visibility:hidden` or
+`opacity:0` goes on at 60 frames a second. So `wallpaper-page.js` pauses a page one of two ways. A
+page that defines `window.pixosPause` / `window.pixosResume` is asked. Any other has its
+`requestAnimationFrame` replaced from outside on every load (`holdAnimationFrames`): while held, a
+callback is queued rather than scheduled, and a release hands the queue on — the same check took
+that to 0 frames and back to 60. Its `cancelAnimationFrame` is replaced too, or a page cancelling an
+id it was given while held would cancel nothing. A hold cannot reach a timer or a CSS animation;
+those stop when the handle unloads the page.
+
+**A page as the background never takes the pointer itself.** Its frame is `pointer-events: none`,
+because a frame that took the pointer would also take the right-click (the desktop's menu) and
+dropped files. The desktop listens for `pointermove`, `pointerdown`, `pointerup` and `click` and
+hands each in as events made in the frame's own window, at the same place under the frame's
+corner — a pointer event and its mouse event both, since a made pointer event brings no mouse event
+with it. Only the left button is handed in, a move goes in wherever the pointer is, and a press on a
+widget is the widget's. The events are not trusted (`isTrusted` is false): a page that checks will
+ignore them. A page that 404s is caught by the status Chrome reports for the frame's navigation
+(`responseStatus`), taken away, and reported through the handle's `onError` — otherwise the worker's
+*404 File Not Found* page would be drawn as the background.
+
+**The screensaver counts idle two ways, and trusts the browser's over its own.** Where Chrome's
+`IdleDetector` is allowed, it is the authority: its threshold is the wait itself, so when it says
+idle the last input anywhere on the machine was that long ago, and `decide` in
+`js/shell/screensaver.js` ignores what PixOS saw before that. Input PixOS sees *after* it still
+counts, because the detector says so only a moment later. Without it, idle is the time since the
+last input PixOS saw: its own document, plus every same-origin window through the WM's bridge,
+which since phase 26 also counts `pointermove` and `wheel` inside windows — passively, at most once
+a second (`noteActivity` → `activity`), never passed on as events. That fallback cannot see into a
+cross-origin frame, so it never starts while the focus is in one (`opaqueFocus`), but scrolling a
+web page window without clicking into it is invisible to it, and the screensaver can start over
+someone reading. Focus outside the page altogether — the address bar, another program — holds
+nothing off: that is usually someone who has walked away.
+
+**A video, a hidden tab or a locked screen hold it off, and the wait starts again from them.** A
+playing `<video>` or `<audio>` in the shell or any same-origin window counts as input
+(`mediaPlaying`), except what plays in the desktop layer or on the screensaver itself — a
+background with a video in it would otherwise hold itself off for ever. The walk through every
+window happens only once the wait is over, not on every five-second tick. Sound made through Web
+Audio alone, or media kept out of the DOM, cannot be seen.
+
+**The permission is asked in the click that turns it on, and nowhere else.** Chrome shows no prompt
+without a user gesture, so the dialog's tile click calls `askForIdle()`, which calls
+`IdleDetector.requestPermission()` before its first `await` — after one, the activation may be
+gone. A headless Chrome answers the prompt with *denied* on its own; the permission is granted
+there with CDP (`Browser.grantPermissions`, `idleDetection`) and idle faked with
+`Emulation.setIdleOverride`.
+
+**The input that ends the screensaver goes nowhere.** Its layer takes the focus when it starts, so
+a key reaches the shell's document and not an app, and a press lands on the layer and not on a
+window. The layer stays, clear, until the press is let go, or the click that follows it would land
+on whatever is underneath. The key listener is a capture listener on `window` and swallows with
+`stopImmediatePropagation`, which stops only listeners registered *after* it — so `index.html` calls
+`screensaver.init` before `desktop.init` and before the shell's hotkey handler, or a Ctrl+K that ends
+the screensaver would also open the palette. The launchers register their Escape handlers at module
+scope, earlier than anything, so the screensaver closes them as it starts (`onStart`): an Escape
+that closed the palette under it would not also end it. A pointer move ends it only after its
+first second and only a few pixels from where the pointer stood — the hand leaving the mouse after
+*Start screensaver*, and a desk being bumped, are not someone back. A repeating key never ends it:
+that is the chord that started it, still held.
+
+**Explorer shows a screensaver rather than opening it, and keeps its own copy of which names are
+one.** Double-click or Enter on `Name.xscr.html` or a `Name.xscr` folder previews it — the menu calls
+that entry *Preview* — so a folder one is no longer gone into by double-click: *Show contents* does
+that, and *Open with...* still opens the page. Both ask one function, `previews` in
+`apps/explorer/js/shell-actions.js`, which is true only where the shell has `previewScreensaver`; a
+standalone Explorer opens it as before. The rule is `isScreensaver` in Explorer's `format.js`, a copy
+of `isScreensaverPath` in `js/shell/wallpaper-page.js` rather than an import: that module is not in
+BrowserFS, and loading it registers a background provider in Explorer's window.
+`tests/explorer-format.test.mjs` checks the shell takes every name Explorer does, so *Preview* never
+offers what the shell would fail to show. **A screensaver folder is the one folder whose kind is not
+`dir`** — it is `scr`, typed *Screensaver* and sorted under that name — but it is still a directory
+everywhere else (`data-type`, folders first). *Set as screensaver* from Explorer asks for idle
+detection like the gallery does, and the click it is asked in is on Explorer's menu, in a frame:
+Chrome counts a click in a frame as its parent's too, so the shell's request still carries it —
+checked in headless Chrome against a control, where the same request with no click is refused with
+*Must be handling a user gesture* and leaves the permission at *prompt*.
+
 ## Windows, desktops and sessions
 
 **The shell is five stacked layers**, `#desktop` / `#root` / `#windows` / `#taskbar` /

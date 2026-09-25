@@ -9,7 +9,7 @@
 
 import { isArchiveName } from '../../7z/js/parse.js';
 
-// What a row's mark is drawn as: one hairline square, varied five ways, instead of 📁 and 📄. A
+// What a row's mark is drawn as: one hairline square, varied six ways, instead of 📁 and 📄. A
 // hint read off the name, never a promise -- nothing opens or refuses a file because of it.
 var KIND_EXTENSIONS = {
 	img: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'ico', 'svg', 'avif', 'tiff', 'tif'],
@@ -99,8 +99,23 @@ export function createFormat (path) {
 		return KIND_EXTENSIONS.img.indexOf(ext) !== -1;
 	}
 
-	// 'dir', 'img', 'av', 'bin' (an archive, or something only a machine reads) or 'doc'.
+	// A screensaver: a page named `Name.xscr.html`, or a folder `Name.xscr` holding one. The shell's
+	// rule is `isScreensaverPath` in js/shell/wallpaper-page.js, which Explorer cannot import -- it
+	// is not in BrowserFS, and loading it registers a background provider -- so this is a copy, and
+	// tests/explorer-format.test.mjs checks that the shell takes every name this one does.
+	function isScreensaver (item) {
+		if (!item) {
+			return false;
+		}
+		return item.isDirectory ? /\.xscr$/i.test(item.name) : /\.xscr\.html?$/i.test(item.name);
+	}
+
+	// 'scr' (a screensaver, file or folder), 'dir', 'img', 'av', 'bin' (an archive, or something
+	// only a machine reads) or 'doc'.
 	function kindOf (item) {
+		if (isScreensaver(item)) {
+			return 'scr';
+		}
 		if (item.isDirectory) {
 			return 'dir';
 		}
@@ -129,6 +144,7 @@ export function createFormat (path) {
 		splitNameAndExtension: splitNameAndExtension,
 		basenameEnd: basenameEnd,
 		isImageExtension: isImageExtension,
+		isScreensaver: isScreensaver,
 		kindOf: kindOf
 	};
 }

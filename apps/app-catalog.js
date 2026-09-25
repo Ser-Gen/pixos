@@ -56,6 +56,7 @@
 				"/apps/explorer/favicon.svg",
 				"/apps/app-manager/index.html",
 				"/apps/app-manager/favicon.svg",
+				"/apps/screensavers/Slideshow.xscr/index.html",
 				"/apps/ace/index.html",
 				"/apps/ace/pixos_supported",
 				"/apps/7z/js/parse.js",

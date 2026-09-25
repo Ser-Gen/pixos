@@ -1,12 +1,12 @@
 {
   "id": "explorer",
   "name": "Explorer",
-  "version": "1.30.0",
+  "version": "1.31.0",
   "entryPath": "/apps/explorer/index.html",
   "files": [
     {
       "path": "/apps/explorer/explorer.css",
-      "hash": "sha256:e0b70843ceab2a438b06b5e0b3494925d9f52d6a6af04c72c442a867b367bc22"
+      "hash": "sha256:18d9a0ce38398887553325e141e81c76b30dba7394ea29b6a0f5e709c57e4c5d"
     },
     {
       "path": "/apps/explorer/favicon.svg",
@@ -66,7 +66,7 @@
     },
     {
       "path": "/apps/explorer/index.html",
-      "hash": "sha256:f407f8f9bdf1edfcf5e7de5289f5d38c27b1dc05830e9812481d5c8567cbb0ec"
+      "hash": "sha256:88221f17b840dfaa4f4e95103fa42f3e743b86d596672194e84508aa45a85d98"
     },
     {
       "path": "/apps/explorer/js/archive-ui.js",
@@ -102,7 +102,7 @@
     },
     {
       "path": "/apps/explorer/js/format.js",
-      "hash": "sha256:e320bccfab12420c29d0e9c4bb5eac9acc8ddace6532bdccbca2c5b708bb0071"
+      "hash": "sha256:c53c351896928b31ba3e870f2f590f970a78a6bd44d66bb45af2d2227c82675f"
     },
     {
       "path": "/apps/explorer/js/fs-helpers.js",
@@ -122,7 +122,7 @@
     },
     {
       "path": "/apps/explorer/js/menu-items.js",
-      "hash": "sha256:bef7f0506f1e761686a6817dd41216cb2162b45fa2c1f5741e6746f45d86cf70"
+      "hash": "sha256:5efc74db2f5ab74fae761b718f4c4b312caa0eb3455005c2a21eb0ca75e9f67e"
     },
     {
       "path": "/apps/explorer/js/mounts.js",
@@ -146,7 +146,7 @@
     },
     {
       "path": "/apps/explorer/js/shell-actions.js",
-      "hash": "sha256:f8057f1d7f640138c8d33e2352b8fb51c9ae401a71fec2e7806520cbbf967fd0"
+      "hash": "sha256:03d23e3fa2c9735f2cbd05af5fc99980f0620bff0a32dd19e5c104cf0470a30d"
     },
     {
       "path": "/apps/explorer/js/sidebar.js",
@@ -154,7 +154,7 @@
     },
     {
       "path": "/apps/explorer/js/view.js",
-      "hash": "sha256:9ebcfc95ad218335ea21cc799a4d46d2f7b73d6760b53e1078abbdc570a2c7c2"
+      "hash": "sha256:9163f44bce1ce661592c5bc4f1149d54d332d08dab68949dc6556a7cb4b89e02"
     }
   ],
   "icon": "/apps/explorer/favicon.svg"

@@ -63,6 +63,8 @@
     {"path": "/apps/app-manager/index.html", "refresh": true},
     {"path": "/apps/app-manager/favicon.svg", "refresh": true},
 
+    {"path": "/apps/screensavers/Slideshow.xscr/index.html", "refresh": true},
+
     {"path": "/apps/ace/index.html"},
     {"path": "/apps/ace/pixos_supported"},
 

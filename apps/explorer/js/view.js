@@ -206,9 +206,7 @@ export function createView (deps) {
 			}
 
 			if (state.sort.key === 'type') {
-				var at = a.isDirectory ? 'dir' : getExt(a.name);
-				var bt = b.isDirectory ? 'dir' : getExt(b.name);
-				var tcmp = at.localeCompare(bt);
+				var tcmp = typeKey(a).localeCompare(typeKey(b));
 				if (tcmp) return tcmp * dirMul;
 			}
 			if (state.sort.key === 'mtime') {
@@ -222,6 +220,22 @@ export function createView (deps) {
 
 			return a.name.localeCompare(b.name) * dirMul;
 		});
+	}
+
+	// What the Type column says, and what sorting by it compares: a screensaver is one whether it is
+	// a page or a folder, so it is neither an `html` nor a Folder there.
+	function typeName (item) {
+		if (kindOf(item) === 'scr') {
+			return 'Screensaver';
+		}
+		return item.isDirectory ? 'Folder' : (getExt(item.name) || 'File');
+	}
+
+	function typeKey (item) {
+		if (kindOf(item) === 'scr') {
+			return 'screensaver';
+		}
+		return item.isDirectory ? 'dir' : getExt(item.name);
 	}
 
 	function renderToolbarState () {
@@ -322,7 +336,7 @@ export function createView (deps) {
 
 			var typeTd = document.createElement('td');
 			typeTd.className = 'Explorer__colType';
-			typeTd.textContent = item.isDirectory ? 'Folder' : (getExt(item.name) || 'File');
+			typeTd.textContent = typeName(item);
 			tr.append(typeTd);
 
 			var dateTd = document.createElement('td');

@@ -925,6 +925,23 @@ button.Explorer__crumb:hover:not(:disabled) {
 	border-bottom: 3px solid transparent;
 }
 
+/* A screensaver, page or folder: a screen on a stand. The stand takes the frame's own colour, so it
+   darkens with it on hover. */
+.Explorer__kind--scr {
+	width: 11px;
+	height: 8px;
+}
+
+.Explorer__kind--scr::after {
+	content: "";
+	position: absolute;
+	left: 2px;
+	right: 2px;
+	bottom: -4px;
+	border-top: 1px solid;
+	border-top-color: inherit;
+}
+
 .Explorer__row:hover .Explorer__kind,
 .Explorer__row--selected .Explorer__kind,
 .Explorer__card:hover .Explorer__kind,

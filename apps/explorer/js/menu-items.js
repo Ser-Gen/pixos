@@ -15,10 +15,11 @@
 // clicked, so the table has to exist *and have been through the guard loop* by then. It is a
 // table of functions this only reads; the context object is still `state` and `ui`.
 //
-// **Everything the shell owns is asked of the shell, never assumed.** Peers, bookmarks and the
-// wallpaper all live out there, so each is offered only when `shell` is not `win` and the
-// function is actually present -- a standalone Explorer shows a shorter menu rather than a
-// menu of dead entries.
+// **Everything the shell owns is asked of the shell, never assumed.** Peers, bookmarks, the
+// wallpaper and the screensaver all live out there, so each is offered only when `shell` is not
+// `win` and the function is actually present -- a standalone Explorer shows a shorter menu rather
+// than a menu of dead entries. A screensaver's first entry is *Preview* only where the shell can
+// show one, which `previews` answers for this menu and for *Open* alike.
 
 export function createMenuItems (deps) {
 	var state = deps.state;
@@ -37,6 +38,8 @@ export function createMenuItems (deps) {
 	var getNameByPath = deps.getNameByPath;
 	var getNormalizedExtension = deps.getNormalizedExtension;
 	var isImageExtension = deps.isImageExtension;
+	var isScreensaver = deps.isScreensaver || function () { return false; };
+	var previews = deps.previews || function () { return false; };
 	// The chord printed beside a command that has one -- js/keys.js, written for this machine.
 	var keyHint = deps.keyHint || function () { return ''; };
 
@@ -76,6 +79,38 @@ export function createMenuItems (deps) {
 		};
 	}
 
+	// What double-click does, first: *Open*, or for a screensaver *Preview* -- and for a folder one,
+	// *Show contents*, since opening it no longer goes in.
+	function openEntries (item) {
+		var open = {label: previews(item) ? 'Preview' : 'Open', hint: keyHint('open'), action: function () { actions.open(item.path); }};
+		if (item.isDirectory && previews(item)) {
+			return [open, {label: 'Show contents', action: function () { actions.showContents(item.path); }}];
+		}
+		return [open];
+	}
+
+	// The entries at the end that only the shell can carry out, for a file or a folder. They share
+	// one separator, so a standalone Explorer does not end its menu with a rule and nothing after it.
+	function shellEntries (item) {
+		var entries = [];
+		if (typeof shell.addBookmark === 'function') {
+			entries.push({label: 'Add to bookmarks', action: function () {
+				actions.addToBookmarks(item.path);
+			}});
+		}
+		// The images are already here, so this is the natural place to set one as the wallpaper;
+		// and the screensavers, so the place to set one as either.
+		var image = !item.isDirectory && isImageExtension(item.path) && typeof shell.setWallpaperImage === 'function';
+		var page = isScreensaver(item) && typeof shell.setWallpaperPage === 'function';
+		if (image || page) {
+			entries.push({label: 'Set as wallpaper', action: function () { actions.setAsWallpaper(item.path); }});
+		}
+		if (isScreensaver(item) && typeof shell.setScreensaverPage === 'function') {
+			entries.push({label: 'Set as screensaver', action: function () { actions.setAsScreensaver(item.path); }});
+		}
+		return entries.length ? [{separator: true}].concat(entries) : [];
+	}
+
 	function getRowMenuItems (path) {
 		var selected = getSelectedItems();
 		if (selected.length > 1) {
@@ -86,8 +121,7 @@ export function createMenuItems (deps) {
 
 		if (item.isDirectory) {
 			var dirIsMountPoint = mountManager && mountManager.isMountPoint(item.path);
-			var dirMenuItems = [
-				{label: 'Open', hint: keyHint('open'), action: function () { actions.open(item.path); }},
+			var dirMenuItems = openEntries(item).concat([
 				{label: 'Open in New Explorer', action: function () { actions.open(item.path, 'new explorer'); }},
 				{label: 'Open with...', action: function () { actions.openWith(item.path); }},
 				{separator: true},
@@ -105,7 +139,7 @@ export function createMenuItems (deps) {
 					{label: 'New Folder', action: actions.createFolder},
 					{label: 'Add Online File', action: actions.addOnlineFile}
 				]}
-			];
+			]);
 			// The shell holds which folder is shared, because it is the shell that answers
 			// when somebody asks to open it. Explorer only offers the folder.
 			if (shell !== win && shell.peers && shell.peers.share) {
@@ -115,11 +149,7 @@ export function createMenuItems (deps) {
 					? {label: 'Stop sharing with peers', action: function () { actions.stopSharing(); }}
 					: {label: 'Share with peers…', action: function () { actions.shareWithPeers(item.path); }});
 			}
-			// Only under the shell: it is the shell that owns the bookmarks document.
-			if (typeof shell.addBookmark === 'function') {
-				dirMenuItems.push({separator: true});
-				dirMenuItems.push({label: 'Add to bookmarks', action: function () { actions.addToBookmarks(item.path); }});
-			}
+			dirMenuItems = dirMenuItems.concat(shellEntries(item));
 			if (dirIsMountPoint) {
 				dirMenuItems.push({separator: true});
 				dirMenuItems.push({label: 'Unmount', action: function () { actions.umount(item.path); }});
@@ -132,8 +162,7 @@ export function createMenuItems (deps) {
 		var isMountable = mountableExts.indexOf(ext) !== -1;
 		var isMountPoint = mountManager && mountManager.isMountPoint(item.path);
 
-		var fileMenuItems = [
-			{label: 'Open', hint: keyHint('open'), action: function () { actions.open(item.path); }},
+		var fileMenuItems = openEntries(item).concat([
 			{label: 'Open with...', action: function () { actions.openWith(item.path); }},
 			{separator: true},
 			{label: 'Copy', hint: keyHint('copy'), action: actions.copySelected},
@@ -159,30 +188,9 @@ export function createMenuItems (deps) {
 				{label: 'FFmpeg', action: actions.ffmpeg},
 				{label: state.recording ? 'Stop Screen Recording' : 'Screen Recording', action: state.recording ? actions.stopScreenRecording : actions.startScreenRecording}
 			]}
-		];
+		]);
 
-		// Both of these only exist under the shell -- it owns the desktop and it owns the
-		// bookmarks document -- and they share one separator so a standalone Explorer does
-		// not end its menu with a rule and nothing after it.
-		var shellExtras = [];
-		if (typeof shell.addBookmark === 'function') {
-			shellExtras.push({label: 'Add to bookmarks', action: function () {
-				actions.addToBookmarks(item.path);
-			}});
-		}
-		// The images are already here, so this is the natural place to set one as the
-		// wallpaper.
-		if (isImageExtension(item.path) && typeof shell.setWallpaperImage === 'function') {
-			shellExtras.push({label: 'Set as wallpaper', action: function () {
-				shell.setWallpaperImage(item.path);
-			}});
-		}
-		if (shellExtras.length) {
-			fileMenuItems.push({separator: true});
-			fileMenuItems = fileMenuItems.concat(shellExtras);
-		}
-
-		return fileMenuItems;
+		return fileMenuItems.concat(shellEntries(item));
 	}
 
 	function getMultiMenuItems () {

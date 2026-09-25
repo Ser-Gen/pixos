@@ -12,6 +12,8 @@
 
 import {check, report} from './assert.mjs';
 import {createShellActions} from '../apps/explorer/js/shell-actions.js';
+import {createFormat} from '../apps/explorer/js/format.js';
+import path from 'path';
 
 const unhandled = [];
 process.on('unhandledRejection', err => { unhandled.push(String(err && err.message)); });
@@ -47,6 +49,12 @@ function harness (options) {
 			open: () => { h.calls.push(['peersPanel']); }
 		}
 	};
+	if (options.screensavers) {
+		shell.previewScreensaver = p => { h.calls.push(['preview', p]); return true; };
+		shell.setWallpaperPage = p => { h.calls.push(['wallpaperPage', p]); return Promise.resolve('page set'); };
+		shell.setScreensaverPage = p => { h.calls.push(['screensaverPage', p]); return Promise.resolve('saver set'); };
+	}
+	shell.setWallpaperImage = p => { h.calls.push(['wallpaperImage', p]); return Promise.resolve('image set'); };
 	if (!options.noOpenFiles) { shell.openFiles = (paths, app) => { h.calls.push(['openFiles', paths, app]); }; }
 	if (!options.noOpenApp) { shell.openApp = id => { h.calls.push(['openApp', id]); }; }
 	if (!options.noBookmarks) { shell.addBookmark = async bookmark => { h.calls.push(['bookmark', bookmark]); }; }
@@ -62,6 +70,7 @@ function harness (options) {
 		state: h.state,
 		shell: shell,
 		getItemByPath: p => h.items.find(i => i.path === p) || null,
+		isScreensaver: createFormat(path.posix).isScreensaver,
 		getSelectedItems: () => h.items.filter(i => h.state.selectedPaths.has(i.path)),
 		getNameByPath: p => String(p).split('/').pop(),
 		getOpenWithAppsForItems: async items => {
@@ -385,4 +394,56 @@ const extra = (h, label) => h.chooser.extras.find(e => e.label === label);
 		[['Stopped sharing', 'info']]);
 }
 
+// --- a screensaver (phase 26) ------------------------------------------------------------------
+
+{
+	const saverItems = [file('/home/Rain.xscr.html'), folder('/home/Slideshow.xscr'), file('/home/a.txt'),
+		folder('/home/docs'), file('/home/sea.jpg')];
+	const h = harness({items: saverItems, screensavers: true});
+	h.actions.open('/home/Rain.xscr.html');
+	h.actions.open('/home/Slideshow.xscr');
+	check('Open shows a screensaver, page or folder, rather than opening it or going in',
+		h.calls, [['preview', '/home/Rain.xscr.html'], ['preview', '/home/Slideshow.xscr']]);
+	h.calls.length = 0;
+	h.actions.open('/home/Slideshow.xscr', 'new explorer');
+	h.actions.open('/home/Rain.xscr.html', 'ace');
+	check('but an app asked for by name still gets it -- Open in New Explorer, Open with',
+		h.calls, [['openPath', '/home/Slideshow.xscr', 'new explorer'], ['openFile', '/home/Rain.xscr.html', 'ace']]);
+	h.calls.length = 0;
+	h.actions.open('/home/docs');
+	h.actions.open('/home/a.txt');
+	check('and nothing else is previewed', h.calls, [['navigate', '/home/docs'], ['openFile', '/home/a.txt', undefined]]);
+	check('previews says which, for the menu to call it Preview',
+		saverItems.map(h.actions.previews), [true, true, false, false, false]);
+
+	h.calls.length = 0;
+	h.actions.showContents('/home/Slideshow.xscr');
+	h.actions.showContents('/home/Rain.xscr.html');
+	h.actions.showContents('/home/missing');
+	check('Show contents goes into a folder, and ignores anything that is not one', h.calls, [['navigate', '/home/Slideshow.xscr']]);
+
+	h.calls.length = 0;
+	const results = [h.actions.setAsWallpaper('/home/Rain.xscr.html'), h.actions.setAsWallpaper('/home/sea.jpg'),
+		h.actions.setAsScreensaver('/home/Slideshow.xscr'), h.actions.setAsScreensaver('/home/a.txt'),
+		h.actions.setAsWallpaper('/home/missing')];
+	check('Set as wallpaper takes a page and an image each to its own door, Set as screensaver only a screensaver',
+		h.calls, [['wallpaperPage', '/home/Rain.xscr.html'], ['wallpaperImage', '/home/sea.jpg'],
+			['screensaverPage', '/home/Slideshow.xscr']]);
+	Promise.all(results).then(values => {
+		check('and each hands back the shell\'s promise, so the guard sees a refusal',
+			values, ['page set', 'image set', 'saver set', undefined, undefined]);
+	});
+}
+
+{
+	// A shell with no screensaver in it -- an older one, or none -- opens it the way it always did.
+	const h = harness({items: [file('/home/Rain.xscr.html'), folder('/home/Slideshow.xscr')]});
+	h.actions.open('/home/Rain.xscr.html');
+	h.actions.open('/home/Slideshow.xscr');
+	check('where the shell cannot show one, Open opens the page and goes into the folder',
+		h.calls, [['openFile', '/home/Rain.xscr.html', undefined], ['navigate', '/home/Slideshow.xscr']]);
+	check('and says nothing is previewed', h.actions.previews(file('/home/Rain.xscr.html')), false);
+}
+
+await settle();
 process.exit(report('explorer-shell-actions') ? 1 : 0);

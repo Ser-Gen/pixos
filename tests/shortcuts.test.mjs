@@ -74,7 +74,12 @@ check('the peek is left off a Mac too: Ctrl+Alt+D and Cmd+Alt+D are both the sys
 check('a command prints its first usable chord', [describeShortcut('overview', true), describeShortcut('overview', false)], ['⇧⌘K', 'Ctrl+Shift+K']);
 check('a command with none prints nothing', describeShortcut('no-such', false), '');
 check('every chord the handler reads by name is on the list',
-	['palette', 'overview', 'desktop', 'peek', 'shortcuts', 'close'].filter(id => !shellKeys(id).length), []);
+	['palette', 'overview', 'desktop', 'peek', 'screensaver', 'shortcuts', 'close'].filter(id => !shellKeys(id).length), []);
+// Phase 26. Not Ctrl+Alt+<letter>: on Windows that is AltGr, which types ś or @ in half of Europe.
+check('the screensaver starts on Mod+Shift+L, drawn for each machine',
+	[describeShortcut('screensaver', true), describeShortcut('screensaver', false)], ['⇧⌘L', 'Ctrl+Shift+L']);
+check('and no two shell commands share a chord',
+	(keys => keys.filter((k, i) => keys.indexOf(k) !== i))(SHELL_SHORTCUTS[0].items.flatMap(i => i.keys)), []);
 check('and every chord on the list is one', SHELL_SHORTCUTS.flatMap(g => g.items.flatMap(i => i.keys)).filter(s => !parseChord(s)), []);
 
 // --- an app's own list ---------------------------------------------------------------------------
