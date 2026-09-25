@@ -15,7 +15,9 @@ run in iframes. Pure static site — no build step, no backend.
   colour, gradient, image, shader or screensaver page; each mount is a handle that pauses and
   unloads it), `wallpaper-dialog.js` the dialog that chooses the background and the screensaver
   (two tabs, one gallery; Explorer's *Preview* and *Set as…* go through it too), `screensaver.js` (when nobody is there — Chrome's idle detection or the
-  input PixOS sees — and the layer that shows one and swallows the input that ends it), `apps-model.js` +
+  input PixOS sees — and the layer that shows one and swallows the input that ends it), `screensaver-catalog.js`
+  (which screensavers there are and which looks each has — on disk, or downloadable from the served repo —
+  and downloading a look, the files it still needs one at a time, its page last), `apps-model.js` +
   `start-menu.js` + `command-palette.js` launchers, `overview.js` the all-windows
   overlay, `file-search.js` the tree walk behind it, `open-with.js` the chooser for a
   file with no default app, `bookmarks.js` the shell's half of `/settings/links.json` (every edit made to it from outside
@@ -153,8 +155,12 @@ run in iframes. Pure static site — no build step, no backend.
   the comark parser and Prism. Its block palette is built in and extended by whatever is in
   `/settings/filmoskop-blocks`.
 - `apps/screensavers/` — not an app (it has no `index.html` of its own, so neither the generator nor
-  the local scan takes it for one): the screensaver pages PixOS ships, `Slideshow.xscr/` so far,
-  copied in by `preinstall.json` on every boot.
+  the local scan takes it for one): the screensaver pages PixOS ships. `Slideshow.xscr/` is ours and
+  copied in by `preinstall.json` on every boot. `Matrix.xscr/`, `Pipes.xscr/` and `Habitats.xscr/` are
+  vendored, each trimmed to what its looks need, with a `README.md` pinning the commit it came from and
+  saying what was left out and changed; they are **not** preinstalled but downloaded into BrowserFS the
+  first time one of their looks is chosen. A folder's `looks.json` (ours) lists its looks — the page and
+  query each opens, and the files only it needs. `index.json` beside them is generated, not edited.
 - `settings/preinstall.json` + `templates/` — what a fresh system is made of, served over
   HTTP rather than read from BrowserFS. See *Boot is data-driven* in
   `docs/not-so-simple.md`.
@@ -163,7 +169,9 @@ run in iframes. Pure static site — no build step, no backend.
   two of the four files in `templates/` came to 404 on a server that had them. Do not
   delete it; `tests/precache.test.mjs` checks it is there.
 - `scripts/generate-apps-catalog.js` — writes every app manifest, `apps/registry.json`
-  and `apps/app-catalog.js` (the fallback catalog) from one pass over `apps/`.
+  and `apps/app-catalog.js` (the fallback catalog) from one pass over `apps/`, and
+  `apps/screensavers/index.json` through `scripts/screensaver-index.js` — every screensaver not
+  preinstalled, its files with sizes and hashes, and what each look needs. It refuses a bad `looks.json`.
 - `tests/` — plain node, no framework, no dependencies. `npm test`. `report()` in
   `tests/assert.mjs` sets the exit code, which is all `tests/run.mjs` reads — five files once
   ended without passing it on and could not fail.
@@ -206,7 +214,7 @@ It is not loaded automatically the way this file is, so it has to be opened deli
 sections, and the kind of thing each one will catch:
 
 - *Serving, offline, and saying when something failed* — the service worker and its query
-  strings, how it reads a file on a mount (by asking a shell, and which one) and why a shell a
+  strings and fragments, how it reads a file on a mount (by asking a shell, and which one) and why a shell a
   hard reload left uncontrolled reloads itself once, the notification surface and its three layers in Explorer, `failure.js`,
   `needsNetwork` and the four record builders that keep dropping it, why the precache is
   network-first and what it follows rather than lists, the error reporter the worker
@@ -217,6 +225,8 @@ sections, and the kind of thing each one will catch:
 - *The desktop and its widgets* — peeks, widgets as doors, who knows the desktop is
   visible, and animated backgrounds: paused when covered, unloaded after 30 s, a page's frames
   held from outside because hiding a frame does not stop it, and the pointer handed in. The
+  screensavers downloaded on first use: what a look needs, the page written last, which look a folder
+  opens by its path, and what the gallery offers offline. The
   screensaver: whose idle counts, what holds it off, the permission asked in a click, and why its
   key listener has to be registered first. Explorer previewing one, and its copy of which names are
   screensavers.

@@ -1,0 +1,9 @@
+{
+  "looks": [
+    {
+      "name": "Pipes",
+      "entry": "index.html#%7B%22hideUI%22%3Atrue%7D",
+      "tile": "linear-gradient(90deg, transparent 18%, #c8452f 18% 25%, transparent 25%), linear-gradient(0deg, transparent 52%, #3a7bd5 52% 62%, transparent 62%), linear-gradient(90deg, transparent 64%, #d8b13a 64% 71%, transparent 71%), #000"
+    }
+  ]
+}

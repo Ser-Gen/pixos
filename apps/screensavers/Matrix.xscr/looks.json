@@ -1,0 +1,22 @@
+{
+  "looks": [
+    {
+      "name": "Classic",
+      "entry": "index.html?suppressWarnings=true",
+      "files": ["assets/matrixcode_msdf.png"],
+      "tile": "linear-gradient(transparent 15%, #000 95%), repeating-linear-gradient(90deg, #1d8a45 0 2px, transparent 2px 9px), #010a05"
+    },
+    {
+      "name": "Resurrections",
+      "entry": "index.html?version=resurrections&suppressWarnings=true",
+      "files": ["assets/resurrections_msdf.png", "assets/resurrections_glint_msdf.png"],
+      "tile": "linear-gradient(transparent 25%, #000 95%), repeating-linear-gradient(90deg, #7ef0b0 0 1px, transparent 1px 6px, #2a9c63 6px 7px, transparent 7px 11px), #01100a"
+    },
+    {
+      "name": "3D",
+      "entry": "index.html?version=3d&suppressWarnings=true",
+      "files": ["assets/matrixcode_msdf.png"],
+      "tile": "radial-gradient(circle, #000 12%, transparent 62%), repeating-conic-gradient(#1d8a45 0 2deg, transparent 2deg 11deg), #010a05"
+    }
+  ]
+}

@@ -58,6 +58,27 @@ function isOnMount(path) {
 	return false;
 }
 
+// --- the path a /__browserfs__ request names ---------------------------------------------------
+// Everything after /__browserfs__, still escaped, without the query or the fragment: the query is
+// the page's to read, and so is the fragment -- which Chrome hands a worker too, since the Fetch
+// standard keeps it in `request.url`. Only the query used to be dropped, so Pipes (phase 26),
+// opened as `index.html#{"hideUI":true}`, was looked up under that whole name and 404'd, as was
+// any page opened with a `#`. Null when the URL is not one of these.
+function servedPath (url) {
+	var match = /__browserfs__([^?#]*)/.exec(String(url));
+	return match ? match[1] : null;
+}
+
+// Where a folder asked for without its slash is sent: the same address with one, the query kept
+// and the fragment left to the browser, which carries it over a redirect that names none.
+function withSlash (url) {
+	var to = new URL(url);
+	to.hash = '';
+	to.pathname += '/';
+	return to.toString();
+}
+// --- end of the path ---------------------------------------------------------------------------
+
 // --- asking a shell for a file on a mount ------------------------------------------------------
 //
 // A mount lives in the page that made it: this worker has only IndexedDB, so a file under a zip,
@@ -230,7 +251,7 @@ function fetchAudioProxy(request) {
 // The version in the cache name is the whole risk: skipWaiting() + clients.claim() means a
 // new worker takes over immediately, and without a versioned name that would be a new
 // worker serving a previous worker's assets. `activate` deletes every cache but this one.
-var SHELL_CACHE = 'pixos-shell-v34';
+var SHELL_CACHE = 'pixos-shell-v35';
 
 // --- an app that dies before its own code runs ---------------------------------------------
 //
@@ -315,6 +336,7 @@ var PRECACHE = [
 	'./js/shell/notifications.js',
 	'./js/shell/open-with.js',
 	'./js/shell/overview.js',
+	'./js/shell/screensaver-catalog.js',
 	'./js/shell/screensaver.js',
 	'./js/shell/session.js',
 	'./js/shell/shortcuts.js',
@@ -894,7 +916,7 @@ self.addEventListener('fetch', function (event) {
             }
             var url = event.request.url;
             function redirect_dir() {
-                return resolve(Response.redirect(url + '/', 301));
+                return resolve(Response.redirect(withSlash(url), 301));
             }
             function serveFromClient(path) {
                 var decodedPath = decodeURIComponent(path);
@@ -979,13 +1001,12 @@ self.addEventListener('fetch', function (event) {
                     }
                 });
             }
-            var m = url.match(/__browserfs__(.*)/);
-            var path = m[1];
+            var path = servedPath(url);
             if (path === '') {
                 return redirect_dir();
             }
             console.log('serving ' + path + ' from browserfs');
-            serve(path.replace(/\?.*$/, ''));
+            serve(path);
         });
     }));
 });

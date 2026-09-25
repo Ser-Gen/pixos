@@ -40,13 +40,6 @@ check('the same value of another type is another picture',
 	dialog.samePicture({type: 'image', value: '/x.xscr.html'}, {type: 'page', value: '/x.xscr.html'}), false);
 check('nothing is the same as nothing, and not as something', [dialog.samePicture(null, null), dialog.samePicture(null, BLANK)], [false, false]);
 
-// --- the pages in /apps/screensavers ---------------------------------------------------------------
-
-check('only screensavers, by name, as paths',
-	dialog.pagesIn(['Slideshow.xscr', 'README.md', 'matrix.xscr', 'Rain.xscr.html', 'index.html', 'Pipes.xscr.htm'], '/apps/screensavers/'),
-	['/apps/screensavers/matrix.xscr', '/apps/screensavers/Pipes.xscr.htm', '/apps/screensavers/Rain.xscr.html', '/apps/screensavers/Slideshow.xscr']);
-check('an unreadable folder is an empty gallery', dialog.pagesIn(null, '/apps/screensavers'), []);
-
 // --- the slideshow's folder ------------------------------------------------------------------------
 
 const odd = '/home/my pictures/#1 & more';
@@ -63,7 +56,8 @@ check('any other choice has no folder', [dialog.slideshowFolder({type: 'page', v
 
 // --- the gallery -----------------------------------------------------------------------------------
 
-const pages = ['/apps/screensavers/Slideshow.xscr'];
+// What the catalog lists (tests/screensaver-catalog.test.mjs): here, only the slideshow.
+const pages = [{name: 'Slideshow', path: '/apps/screensavers/Slideshow.xscr', looks: null}];
 const plain = dialog.animatedTiles(pages, null);
 check('the shaders first, then the pages', plain.map(t => t.title), ['Aurora', 'Drift', 'Grid', 'Slideshow']);
 check('nothing is marked when nothing moving is chosen', plain.filter(t => t.active).length, 0);
@@ -107,8 +101,9 @@ check('every one says media and a hidden tab hold it off',
 
 // --- the click that turns it on ------------------------------------------------------------------
 
-check('turning it on asks for idle detection in the same click, before anything is awaited',
-	/if \(config && !chosen\) \{\s*saver\.askForIdle\(\);\s*\}\s*Promise\.resolve\(saver\.setSettings/.test(source), true);
+check('turning it on asks for idle detection in the same click, before anything is awaited or downloaded',
+	/if \(config && !chosen\) \{\s*saver\.askForIdle\(\);\s*\}\s*var again = redrawIfSame\(render\);\s*choose\(tile, config/.test(source), true);
+check('the background goes through the same choose', /choose\(tile, config, setWallpaper\)\.then\(again, again\)/.test(source), true);
 
 // --- Explorer's commands (pass 3) ----------------------------------------------------------------
 //
@@ -201,5 +196,149 @@ check('the shell hands Explorer a preview, a background and a screensaver, each 
 
 check('with no screensaver module there is nothing to preview or set',
 	[dialog.previewFile('/home/Rain.xscr.html'), await dialog.useFile('/home/Rain.xscr.html', 'screensaver'), calls], [false, null, []]);
+
+// --- looks, and downloading one (pass 4) ---------------------------------------------------------
+//
+// The catalog (js/shell/screensaver-catalog.js) lists each screensaver with its looks, and what each
+// look would still download. A look is a tile; one to download says what it costs, and choosing it
+// downloads it first.
+
+const MATRIX = '/apps/screensavers/Matrix.xscr';
+const matrix = {name: 'Matrix', path: MATRIX, looks: [
+	{name: 'Classic', entry: 'index.html?suppressWarnings=true', tile: 'green', missing: 0},
+	{name: 'Resurrections', entry: 'index.html?version=resurrections', missing: 231369},
+	{name: 'Plain', missing: 0}
+]};
+const pipes = {name: 'Pipes', path: '/apps/screensavers/Pipes.xscr', looks: [{name: 'Pipes', entry: 'index.html#hide', missing: 626757}]};
+const listed = [matrix, pipes, pages[0]];
+const looksTiles = dialog.animatedTiles(listed, null);
+const byTitle = title => looksTiles.find(t => t.title === title);
+
+check('a tile per look, in the order the looks come', looksTiles.map(t => t.title),
+	['Aurora', 'Drift', 'Grid', 'Classic', 'Resurrections', 'Plain', 'Pipes', 'Slideshow']);
+check('each chooses its look of its folder, by name and by page',
+	byTitle('Resurrections').config, {type: 'page', value: MATRIX, options: {look: 'Resurrections', entry: 'index.html?version=resurrections'}});
+check('a look with no page of its own opens index.html, so it names none', byTitle('Plain').config.options, {look: 'Plain'});
+check('a look is drawn with its own colours, or a page\'s when it has none', [byTitle('Classic').look, byTitle('Resurrections').look === byTitle('Slideshow').look], ['green', true]);
+check('its screensaver\'s name goes above it, unless the look already says it',
+	[byTitle('Classic').group, byTitle('Pipes').group], ['Matrix', '']);
+check('what is still to download is on the tile', [byTitle('Classic').download, byTitle('Resurrections').download], [0, 231369]);
+
+check('two looks of one folder are two pictures', dialog.samePicture(byTitle('Classic').config, byTitle('Resurrections').config), false);
+check('one look is one picture, slash or not',
+	dialog.samePicture(byTitle('Classic').config, {type: 'page', value: MATRIX + '/', options: {look: 'Classic'}}), true);
+check('and a look is not the folder chosen by its path alone', dialog.samePicture(byTitle('Classic').config, {type: 'page', value: MATRIX}), false);
+
+const marked = chosen => dialog.animatedTiles(listed, chosen).filter(t => t.active).map(t => t.title);
+check('the folder chosen by its path alone is its first look, which is what it opens',
+	marked({type: 'page', value: MATRIX + '/'}), ['Classic']);
+check('a chosen look marks that look only', marked({type: 'page', value: MATRIX, options: {look: 'Resurrections'}}), ['Resurrections']);
+const riverOnly = [{name: 'Habitats', path: '/apps/screensavers/Habitats.xscr', looks: [{name: 'Reefscape', missing: 100}, {name: 'Riverscape', missing: 0}]}];
+check('with the first look not downloaded, the folder by its path alone is the first look that is, which is what it opens',
+	dialog.animatedTiles(riverOnly, {type: 'page', value: '/apps/screensavers/Habitats.xscr'}).filter(t => t.active).map(t => t.title), ['Riverscape']);
+check('and with none downloaded, the first', dialog.animatedTiles([{name: 'Habitats', path: '/apps/screensavers/Habitats.xscr',
+	looks: [{name: 'Reefscape', missing: 100}, {name: 'Riverscape', missing: 50}]}], {type: 'page', value: '/apps/screensavers/Habitats.xscr'})
+	.filter(t => t.active).map(t => t.title), ['Reefscape']);
+const gone = dialog.animatedTiles(listed, {type: 'page', value: MATRIX, options: {look: 'Trinity', entry: 'index.html?version=trinity'}});
+check('a look the folder no longer has gets a tile of its own, named by both', [gone.pop().title, gone.some(t => t.active)],
+	['Matrix · Trinity', false]);
+
+check('a choice is called by its screensaver and its look',
+	[dialog.choiceName(byTitle('Resurrections').config), dialog.choiceName(byTitle('Pipes').config), dialog.choiceName({type: 'page', value: MATRIX})],
+	['Matrix · Resurrections', 'Pipes', 'Matrix']);
+check('and the note says so', dialog.screensaverNote(byTitle('Resurrections').config, 5).title, 'Matrix · Resurrections is the screensaver');
+check('a tile says what it costs, in the one spelling of a size',
+	[dialog.tileTip(byTitle('Resurrections')), dialog.tileTip(byTitle('Classic')), dialog.tileTip(byTitle('Pipes'), true)],
+	['Matrix · Resurrections, 226 KB to download', 'Matrix · Classic', 'Pipes, downloading']);
+
+// Choosing a look to download. The download is the catalog's; the note, and which choice wins, are here.
+const events = [];
+let finish = null;
+let fail = null;
+const fakeCatalog = {
+	list: () => Promise.resolve(listed),
+	download (path, look, onProgress) {
+		events.push(['download', path, look]);
+		onProgress(0, 231369, null);
+		onProgress(1000, 231369, 'assets/resurrections_msdf.png');
+		return new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+	}
+};
+dialog.init({
+	host: null,
+	screensaver: fakeSaver,
+	getWallpaper: () => wall,
+	setWallpaper: config => Promise.resolve(config),
+	catalog: fakeCatalog,
+	progress: cfg => {
+		events.push(['note', cfg.title, cfg.total, cfg.unit]);
+		return {
+			update: next => { events.push(['update', next.value, next.total, next.message]); },
+			done: next => { events.push(['done', next.title]); },
+			fail: next => { events.push(['fail', next.title, next.message]); }
+		};
+	},
+	describeError: (context, err) => ({title: context, message: 'because ' + err.message})
+});
+const applied = [];
+const apply = label => config => { applied.push(label); return config; };
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+const resurrections = byTitle('Resurrections');
+const first = dialog.choose(resurrections, resurrections.config, apply('first click'));
+await tick();
+check('a look to download is not chosen yet', applied, []);
+check('a note says what is downloading and what it costs, in bytes',
+	events[0], ['note', 'Downloading Matrix · Resurrections', 231369, 'bytes']);
+check('the catalog is asked for that look of that folder', events[1], ['download', MATRIX, 'Resurrections']);
+check('and what it reports goes onto the note', events.slice(2), [['update', 0, 231369, ''], ['update', 1000, 231369, 'assets/resurrections_msdf.png']]);
+const second = dialog.choose(resurrections, resurrections.config, apply('second click'));
+await tick();
+check('clicked again while it runs, it is the same download and the same note',
+	[events.filter(e => e[0] === 'note').length, events.filter(e => e[0] === 'download').length], [1, 1]);
+finish({files: 2, bytes: 231369});
+await Promise.all([first, second]);
+check('downloaded, it says so', events.filter(e => e[0] === 'done'), [['done', 'Matrix · Resurrections is downloaded']]);
+check('and is chosen once, by the last click', applied, ['second click']);
+
+events.length = 0;
+applied.length = 0;
+const later = dialog.choose(byTitle('Pipes'), byTitle('Pipes').config, apply('pipes'));
+await dialog.choose(byTitle('Grid'), byTitle('Grid').config, apply('grid'));
+check('a choice made while a look downloads is made at once', applied, ['grid']);
+finish();
+await later;
+check('and the download, finishing after it, does not undo it', applied, ['grid']);
+
+applied.length = 0;
+const beforeExplorer = dialog.choose(byTitle('Pipes'), byTitle('Pipes').config, apply('pipes'));
+await tick();
+await dialog.useFile('/home/Rain.xscr.html', 'background');
+finish();
+await beforeExplorer;
+check('nor does one finishing after Explorer set something', applied, []);
+const beforeExplorerSaver = dialog.choose(byTitle('Pipes'), byTitle('Pipes').config, apply('pipes'));
+await tick();
+await dialog.useFile('/home/Rain.xscr.html', 'screensaver');
+finish();
+await beforeExplorerSaver;
+check('as the screensaver too', applied, []);
+
+events.length = 0;
+const failing = dialog.choose(byTitle('Pipes'), byTitle('Pipes').config, apply('pipes'));
+await tick();
+fail(new Error('the server sent 404'));
+check('a download that fails chooses nothing', [await failing, applied], [null, []]);
+check('and the note becomes the error, in the shell\'s words',
+	events.filter(e => e[0] === 'fail'), [['fail', 'Could not download Pipes', 'because the server sent 404']]);
+events.length = 0;
+await dialog.choose(byTitle('Classic'), byTitle('Classic').config, apply('classic'));
+check('a look that is all here is chosen at once, with no note', [applied, events], [['classic'], []]);
+
+check('the shell hands the dialog the catalog, the progress note and the error wording', [
+	/catalog: screensaverCatalog,/.test(shellSource),
+	/progress: function \(cfg\) \{\s*return window\.startProgress\(cfg\);/.test(shellSource),
+	/describeError: function \(context, error\) \{\s*return window\.describeError\(context, error\);/.test(shellSource)
+], [true, true, true]);
 
 process.exit(report('wallpaper-dialog') ? 1 : 0);

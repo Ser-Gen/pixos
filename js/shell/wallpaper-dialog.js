@@ -3,11 +3,17 @@
 // Out of desktop.js since then, and taking both halves as parameters: the desktop owns the
 // background and screensaver.js owns the screensaver, and neither should know the other exists.
 //
-// **One gallery.** Everything that moves -- the built-in shaders and every screensaver page in
-// /apps/screensavers -- is one list, offered in both tabs, because anything that can be the
-// background can be the screensaver. The Background tab adds the colours and gradients; the
-// Screensaver tab adds *None* and *Blank*. A page or shader file chosen from somewhere else gets
-// a tile of its own while it is the choice, so the dialog never shows a choice it cannot point at.
+// **One gallery.** Everything that moves -- the built-in shaders and every screensaver in
+// /apps/screensavers, or that PixOS can download into it -- is one list, offered in both tabs,
+// because anything that can be the background can be the screensaver. The Background tab adds the
+// colours and gradients; the Screensaver tab adds *None* and *Blank*. A page or shader file chosen
+// from somewhere else gets a tile of its own while it is the choice, so the dialog never shows a
+// choice it cannot point at.
+//
+// **A folder with looks is a tile per look** (pass 4), and a look not downloaded yet says on its
+// tile what it costs. Choosing it downloads it first, under a progress note, and then chooses it
+// -- unless something else was chosen in the meantime, which wins. js/shell/screensaver-catalog.js
+// knows what is there and what can be fetched; this only asks it.
 //
 // **Every choice applies at once, and the dialog stays.** A new background is visible behind it
 // on an empty desktop, and the screensaver tab has more than one thing to set.
@@ -16,8 +22,10 @@ import * as wallpaper from './wallpaper.js';
 import * as shader from './wallpaper-shader.js';
 import {isScreensaverPath, pageName} from './wallpaper-page.js';
 import * as screensaverModule from './screensaver.js';
+import {SCREENSAVERS_DIR} from './screensaver-catalog.js';
+import * as failure from './failure.js';
 
-export var SCREENSAVERS_DIR = '/apps/screensavers';
+export {SCREENSAVERS_DIR};
 export var SLIDESHOW = SCREENSAVERS_DIR + '/Slideshow.xscr';
 export var DEFAULT_PICTURES = '/home';
 
@@ -154,6 +162,31 @@ var CSS = `
 	background: linear-gradient(transparent, rgba(0, 0, 0, .55));
 }
 
+.PixSwatch__group {
+	display: block;
+	font-size: 9px;
+	letter-spacing: .04em;
+	text-transform: uppercase;
+	color: #b7bec9;
+}
+
+/* What a look not downloaded yet costs, top right, where the name is not. */
+.PixSwatch__size {
+	position: absolute;
+	top: 3px;
+	right: 3px;
+	padding: 1px 4px;
+	font: 9px/1.3 Arial, Helvetica, sans-serif;
+	color: #e9edf2;
+	background: rgba(8, 10, 14, .78);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.PixSwatch[aria-busy="true"] .PixSwatch__size {
+	color: #8fc2ff;
+}
+
 .PixDialog__row {
 	display: flex;
 	gap: 8px;
@@ -239,27 +272,25 @@ function bare (value) {
 	return String(value || '').replace(/\/+$/, '');
 }
 
+// The look a choice names, '' for none.
+function lookOf (config) {
+	return config && config.options && typeof config.options.look === 'string' ? config.options.look : '';
+}
+
 // Whether two choices are the same picture. A folder page is the same with or without its slash,
-// and the same slideshow whatever folder it shows -- that is a setting of it, drawn beside it.
+// and the same slideshow whatever folder it shows -- that is a setting of it, drawn beside it. Its
+// look is not a setting: Matrix's Classic and its 3D are two pictures.
 export function samePicture (a, b) {
 	if (!a || !b || a.type !== b.type) {
 		return false;
 	}
-	if (a.type === 'page' || a.type === 'shader' || a.type === 'image') {
+	if (a.type === 'page') {
+		return bare(a.value) === bare(b.value) && lookOf(a) === lookOf(b);
+	}
+	if (a.type === 'shader' || a.type === 'image') {
 		return bare(a.value) === bare(b.value);
 	}
 	return a.value === b.value;
-}
-
-// The screensaver pages in a folder's listing, as paths, by name.
-export function pagesIn (names, dir) {
-	return (names || []).filter(function (name) {
-		return isScreensaverPath(String(name));
-	}).sort(function (a, b) {
-		return pageName(a).localeCompare(pageName(b));
-	}).map(function (name) {
-		return bare(dir) + '/' + bare(name);
-	});
 }
 
 export function slideshowConfig (folder) {
@@ -289,9 +320,46 @@ function fileName (value) {
 	return String(value || '').split('/').filter(Boolean).pop() || String(value || '');
 }
 
-// The shared gallery: the shaders, then the pages, then the current choice if it is something
-// that moves and is neither -- a .glsl file, or a page kept somewhere else.
-export function animatedTiles (pages, chosen) {
+// What a choice is called: a page by its name, and by its look too when that says more -- Matrix
+// has a look called 3D, and Pipes one called Pipes.
+export function choiceName (config) {
+	if (!config) {
+		return '';
+	}
+	if (config.type !== 'page') {
+		return fileName(config.value);
+	}
+	var name = pageName(config.value) || fileName(config.value);
+	var look = lookOf(config);
+	return look && look !== name ? name + ' · ' + look : name;
+}
+
+function lookConfig (screensaver, look) {
+	var options = {look: look.name};
+	if (look.entry !== undefined) {
+		options.entry = look.entry;
+	}
+	return {type: 'page', value: screensaver.path, options: options};
+}
+
+// A folder chosen by its path alone -- from Explorer, or typed -- opens its first look that is
+// here, so that look's tile is the one marked for it. `firstOf` is that folder, on that tile only.
+function marks (tile, chosen) {
+	if (samePicture(tile.config, chosen)) {
+		return true;
+	}
+	return !!(tile.firstOf && chosen && chosen.type === 'page' && !lookOf(chosen)
+		&& bare(chosen.value) === bare(tile.firstOf));
+}
+
+// The shared gallery: the shaders, then the screensavers, then the current choice if it is
+// something that moves and is neither -- a .glsl file, or a page kept somewhere else.
+//
+// `screensavers` is what the catalog lists: [{name, path, looks}], where `looks` is null for a page
+// with none and otherwise [{name, entry, tile, missing}], `missing` being the bytes it would still
+// download. A look's tile carries that as `download`, and its screensaver's name as `group` when
+// the look's own does not say it.
+export function animatedTiles (screensavers, chosen) {
 	var tiles = Object.keys(shader.BUILT_IN).map(function (key) {
 		return {
 			title: shader.BUILT_IN[key].label,
@@ -299,33 +367,62 @@ export function animatedTiles (pages, chosen) {
 			config: {type: 'shader', value: key}
 		};
 	});
-	(pages || []).forEach(function (page) {
-		tiles.push({
-			title: pageName(page) || fileName(page),
-			look: TILE_BACKGROUNDS.page,
-			config: bare(page) === SLIDESHOW ? slideshowConfig(slideshowFolder(chosen)) : {type: 'page', value: page}
+	(screensavers || []).forEach(function (saver) {
+		if (bare(saver.path) === SLIDESHOW) {
+			tiles.push({title: saver.name || 'Slideshow', look: TILE_BACKGROUNDS.page,
+				config: slideshowConfig(slideshowFolder(chosen))});
+			return;
+		}
+		if (!saver.looks || !saver.looks.length) {
+			tiles.push({title: saver.name || pageName(saver.path) || fileName(saver.path), look: TILE_BACKGROUNDS.page,
+				config: {type: 'page', value: saver.path}});
+			return;
+		}
+		// What the folder opens by its path alone: its first look that is here, as the page provider
+		// decides it, or its first look.
+		var opens = saver.looks.findIndex(function (look) {
+			return !(look.missing > 0);
+		});
+		saver.looks.forEach(function (look, index) {
+			tiles.push({
+				title: look.name,
+				group: saver.looks.length > 1 || look.name !== saver.name ? saver.name : '',
+				look: look.tile || TILE_BACKGROUNDS.page,
+				download: look.missing > 0 ? look.missing : 0,
+				config: lookConfig(saver, look),
+				firstOf: index === Math.max(opens, 0) ? saver.path : null
+			});
 		});
 	});
 	var moving = chosen && (chosen.type === 'page' || chosen.type === 'shader');
-	if (moving && !tiles.some(function (tile) { return samePicture(tile.config, chosen); })) {
+	if (moving && !tiles.some(function (tile) { return marks(tile, chosen); })) {
 		tiles.push({
-			title: chosen.type === 'page' ? (pageName(chosen.value) || fileName(chosen.value)) : fileName(chosen.value),
+			title: choiceName(chosen),
 			look: TILE_BACKGROUNDS.file,
 			config: chosen
 		});
 	}
 	return tiles.map(function (tile) {
-		tile.active = samePicture(tile.config, chosen);
+		tile.active = marks(tile, chosen);
 		return tile;
 	});
 }
 
 // The Screensaver tab's gallery: off, a blank screen, and then the same tiles as the background's.
-export function screensaverTiles (pages, chosen) {
+export function screensaverTiles (screensavers, chosen) {
 	return [
 		{title: 'None', look: '#1b1e23', config: null, active: !chosen},
 		{title: 'Blank', look: '#000', config: screensaverModule.BLANK, active: samePicture(screensaverModule.BLANK, chosen)}
-	].concat(animatedTiles(pages, chosen));
+	].concat(animatedTiles(screensavers, chosen));
+}
+
+// What a tile says when pointed at, and what it costs when it has something to download.
+export function tileTip (tile, busy) {
+	var name = tile.group ? tile.group + ' · ' + tile.title : tile.title;
+	if (busy) {
+		return name + ', downloading';
+	}
+	return tile.download > 0 ? name + ', ' + failure.formatBytes(tile.download) + ' to download' : name;
 }
 
 // What choosing the file at `path` makes of it: a new choice by the file field's rule, or the choice
@@ -338,10 +435,9 @@ export function choiceForFile (path, current) {
 
 // The note after Explorer's *Set as screensaver*. Nothing on screen changes, so it says what will.
 export function screensaverNote (show, minutes) {
-	var name = (show && show.type === 'page' && pageName(show.value)) || fileName(show && show.value);
 	return {
 		level: 'info',
-		title: name + ' is the screensaver',
+		title: choiceName(show) + ' is the screensaver',
 		message: 'It starts after ' + minutes + (minutes === 1 ? ' minute' : ' minutes') + ' with nobody there.',
 		source: 'PixOS'
 	};
@@ -375,13 +471,24 @@ var host = null;
 var getWallpaper = function () { return null; };
 var setWallpaper = function () { return Promise.resolve(); };
 var saver = null;
-var listDir = function () { return Promise.resolve([]); };
+var catalog = null;
 var describeKey = function () { return ''; };
 var notify = function () {};
+var progress = function () {
+	return {update: function () {}, done: function () {}, fail: function () {}};
+};
+var describeError = failure.describeError;
 
 var dialog = null;
 var unsubscribe = null;
 var redraw = function () {};
+var relist = function () {};
+
+// Every choice counts one, wherever it was made, so that a download finishing late chooses its
+// look only if nothing was chosen after the click that asked for it.
+var choices = 0;
+// The looks downloading now, by folder and look, each the download's promise.
+var downloading = {};
 
 function ensureStyle () {
 	if (document.getElementById(STYLE_ID)) {
@@ -394,20 +501,71 @@ function ensureStyle () {
 }
 
 // cfg: host, getWallpaper, setWallpaper(config), screensaver (the module's own functions),
-// listDir(path) -> names, describeKey(id) -> the chord to print beside *Start screensaver*,
-// notify(note) for what Explorer's *Set as screensaver* says.
+// catalog (screensaver-catalog.js's list and download), describeKey(id) -> the chord to print
+// beside *Start screensaver*, notify(note) for what Explorer's *Set as screensaver* says,
+// progress(cfg) for a download's note, and describeError(context, error) for its failure.
 export function init (cfg) {
 	host = cfg.host;
 	getWallpaper = cfg.getWallpaper || getWallpaper;
 	setWallpaper = cfg.setWallpaper || setWallpaper;
 	saver = cfg.screensaver || null;
-	listDir = cfg.listDir || listDir;
+	catalog = cfg.catalog || null;
 	describeKey = cfg.describeKey || describeKey;
 	notify = cfg.notify || notify;
+	progress = cfg.progress || progress;
+	describeError = cfg.describeError || failure.describeError;
 }
 
 export function isOpen () {
 	return !!dialog;
+}
+
+function downloadKey (config) {
+	return bare(config.value) + '\n' + lookOf(config);
+}
+
+// Downloads the look a tile shows, under a progress note that becomes the error if it fails.
+// Resolves true once every file is written, false when it failed; asked again while it runs, it
+// is the same download and the same note.
+function fetchLook (tile) {
+	var key = downloadKey(tile.config);
+	if (downloading[key]) {
+		return downloading[key];
+	}
+	var name = choiceName(tile.config);
+	var note = progress({title: 'Downloading ' + name, total: tile.download, unit: 'bytes', source: 'PixOS'});
+	var job = Promise.resolve().then(function () {
+		return catalog.download(tile.config.value, lookOf(tile.config), function (done, total, file) {
+			note.update({value: done, total: total, message: file || ''});
+		});
+	}).then(function () {
+		note.done({title: name + ' is downloaded', message: 'It works offline from now on.'});
+		return true;
+	}, function (err) {
+		var said = describeError('Could not download ' + name, err);
+		note.fail({title: said.title, message: said.message});
+		return false;
+	}).then(function (fetched) {
+		delete downloading[key];
+		relist();
+		return fetched;
+	});
+	downloading[key] = job;
+	redraw();
+	return job;
+}
+
+// Every choice goes through here. One that needs a download is made once it is downloaded, and
+// only if it is still the last choice made; `apply` sets it and returns what setting it returns.
+// Exported for the tests, which have no dialog to click in.
+export function choose (tile, config, apply) {
+	var mine = ++choices;
+	if (!catalog || !tile || !(tile.download > 0)) {
+		return Promise.resolve(apply(config));
+	}
+	return fetchLook(tile).then(function (fetched) {
+		return fetched && mine === choices ? apply(config) : null;
+	});
 }
 
 // Explorer's commands for a screensaver file or folder (pass 3). The path becomes a choice here, so
@@ -430,6 +588,7 @@ export function useFile (path, surface) {
 		if (!show) {
 			return Promise.resolve(null);
 		}
+		choices++;
 		// The same rule as the gallery: turning it on is when to ask. The click was on Explorer's
 		// menu, and a click in a frame is its parent's too, so the browser still takes it for one.
 		if (!before) {
@@ -449,6 +608,7 @@ export function useFile (path, surface) {
 	if (!config) {
 		return Promise.resolve(null);
 	}
+	choices++;
 	return Promise.resolve(setWallpaper(config)).then(done);
 }
 
@@ -469,7 +629,7 @@ export function open (tab) {
 	var current = tab === 'screensaver' && saver ? 'screensaver' : 'background';
 	close();
 
-	var pages = [];
+	var screensavers = [];
 	dialog = document.createElement('div');
 	dialog.className = 'PixDialog';
 	dialog.setAttribute('role', 'dialog');
@@ -507,23 +667,24 @@ export function open (tab) {
 
 	// Drawn again after every choice. The focus goes back to the tile it was on, or to the dialog
 	// itself -- left on a removed button it would fall out onto the page, and take Escape with it.
+	// A tile is found again by its key, not its tooltip, which changes once its look is downloaded.
 	function render () {
 		var active = document.activeElement;
 		var had = dialog.contains(active) && body.contains(active);
-		var onTile = had && active.classList.contains('PixSwatch') ? active.title : null;
+		var onTile = had && active.classList.contains('PixSwatch') ? active.dataset.key : null;
 		tabs.querySelectorAll('.PixDialog__tab').forEach(function (button) {
 			button.setAttribute('aria-selected', button.dataset.tab === current ? 'true' : 'false');
 		});
 		body.replaceChildren();
 		if (current === 'screensaver') {
-			renderScreensaver(body, pages, render);
+			renderScreensaver(body, screensavers, render);
 		}
 		else {
-			renderBackground(body, pages, render);
+			renderBackground(body, screensavers, render);
 		}
 		if (had) {
 			var again = onTile === null ? null : Array.from(body.querySelectorAll('.PixSwatch')).find(function (tile) {
-				return tile.title === onTile;
+				return tile.dataset.key === onTile;
 			});
 			(again || dialog).focus();
 		}
@@ -553,16 +714,23 @@ export function open (tab) {
 		selected.focus();
 	}
 
-	// The gallery grows when the listing arrives; a missing folder is an empty one.
+	// The gallery grows when the listing arrives, and is listed again when a download ends, so the
+	// size comes off the tile it paid for. Without the index -- offline, say -- it is what is on disk.
 	var shown = dialog;
-	Promise.resolve(listDir(SCREENSAVERS_DIR)).catch(function () {
-		return [];
-	}).then(function (names) {
-		pages = pagesIn(names, SCREENSAVERS_DIR);
-		if (dialog === shown && pages.length) {
-			render();
+	relist = function () {
+		if (!catalog || dialog !== shown) {
+			return;
 		}
-	});
+		Promise.resolve(catalog.list()).catch(function () {
+			return [];
+		}).then(function (listed) {
+			if (dialog === shown) {
+				screensavers = listed || [];
+				redraw();
+			}
+		});
+	};
+	relist();
 	return dialog;
 }
 
@@ -582,19 +750,37 @@ function swatches (tiles, pick) {
 	var row = document.createElement('div');
 	row.className = 'PixSwatches';
 	tiles.forEach(function (tile) {
+		var busy = !!(tile.download > 0 && tile.config && downloading[downloadKey(tile.config)]);
 		var button = document.createElement('button');
 		button.className = 'PixSwatch' + (tile.active ? ' PixSwatch--active' : '');
 		button.style.background = tile.look;
-		button.title = tile.title;
+		button.title = tileTip(tile, busy);
+		button.dataset.key = (tile.group || '') + '\n' + tile.title;
 		button.setAttribute('aria-pressed', tile.active ? 'true' : 'false');
+		if (busy) {
+			button.setAttribute('aria-busy', 'true');
+		}
 		if (tile.named) {
 			var name = document.createElement('span');
 			name.className = 'PixSwatch__name';
-			name.textContent = tile.title;
+			if (tile.group) {
+				var group = document.createElement('span');
+				group.className = 'PixSwatch__group';
+				group.textContent = tile.group;
+				name.append(group);
+			}
+			name.append(tile.title);
 			button.append(name);
 		}
+		if (tile.download > 0) {
+			var size = document.createElement('span');
+			size.className = 'PixSwatch__size';
+			size.textContent = busy ? '↓ …' : '↓ ' + failure.formatBytes(tile.download);
+			size.setAttribute('aria-hidden', 'true');
+			button.append(size);
+		}
 		button.onclick = function () {
-			pick(tile.config);
+			pick(tile.config, tile);
 		};
 		row.append(button);
 	});
@@ -613,6 +799,19 @@ function note (text) {
 	element.className = 'PixDialog__note';
 	element.textContent = text;
 	return element;
+}
+
+function hasDownloads (screensavers) {
+	return (screensavers || []).some(function (saver) {
+		return (saver.looks || []).some(function (look) {
+			return look.missing > 0;
+		});
+	});
+}
+
+function downloadNote () {
+	return note('A size on a tile is what it downloads the first time it is chosen. After that it works offline, '
+		+ 'and deleting its folder in /apps/screensavers gives the space back.');
 }
 
 // The slideshow's one setting, drawn under the gallery while it is the choice.
@@ -664,10 +863,22 @@ function fileRow (placeholder, chosen, apply) {
 	return element;
 }
 
-function renderBackground (body, pages, render) {
+// A choice may settle after a download, with the dialog closed or opened again since: it is
+// drawn again only if it is still the dialog it was made in.
+function redrawIfSame (render) {
+	var drawn = dialog;
+	return function () {
+		if (dialog && dialog === drawn) {
+			render();
+		}
+	};
+}
+
+function renderBackground (body, screensavers, render) {
 	var chosen = getWallpaper() || wallpaper.DEFAULT_WALLPAPER;
-	var pick = function (config) {
-		Promise.resolve(setWallpaper(config)).then(render, render);
+	var pick = function (config, tile) {
+		var again = redrawIfSame(render);
+		choose(tile, config, setWallpaper).then(again, again);
 	};
 
 	var gradients = section('Gradients');
@@ -684,9 +895,12 @@ function renderBackground (body, pages, render) {
 	}), pick));
 
 	var moving = section('Animated');
-	moving.append(swatches(named(animatedTiles(pages, chosen)), pick),
+	moving.append(swatches(named(animatedTiles(screensavers, chosen)), pick),
 		note('These stop while a window covers them, and are unloaded if it stays there, so they cost '
 			+ 'nothing when you are not looking. Any of them can be the screensaver too.'));
+	if (hasDownloads(screensavers)) {
+		moving.append(downloadNote());
+	}
 
 	body.append(gradients, colours, moving);
 	var folder = slideshowFolder(chosen);
@@ -699,19 +913,26 @@ function renderBackground (body, pages, render) {
 	body.append(file);
 }
 
-function renderScreensaver (body, pages, render) {
+function renderScreensaver (body, screensavers, render) {
 	var current = saver.getSettings();
 	var chosen = current.show;
-	var pick = function (config) {
-		// The click that turns it on is the one Chrome needs to ask about idle detection.
+	var pick = function (config, tile) {
+		// The click that turns it on is the one Chrome needs to ask about idle detection -- before
+		// a download, which would take the click's activation with it.
 		if (config && !chosen) {
 			saver.askForIdle();
 		}
-		Promise.resolve(saver.setSettings({show: config})).then(render, render);
+		var again = redrawIfSame(render);
+		choose(tile, config, function (next) {
+			return saver.setSettings({show: next});
+		}).then(again, again);
 	};
 
 	var gallery = section('Screensaver');
-	gallery.append(swatches(named(screensaverTiles(pages, chosen)), pick));
+	gallery.append(swatches(named(screensaverTiles(screensavers, chosen)), pick));
+	if (hasDownloads(screensavers)) {
+		gallery.append(downloadNote());
+	}
 	body.append(gallery);
 
 	var folder = slideshowFolder(chosen);

@@ -4,12 +4,15 @@
 var fs = require('fs');
 var path = require('path');
 var crypto = require('crypto');
+var screensaverIndex = require('./screensaver-index.js');
 
 var REPO_ROOT = path.resolve(__dirname, '..');
 var APPS_DIR = path.join(REPO_ROOT, 'apps');
 var CONFIG_PATH = path.join(__dirname, 'apps-catalog.config.json');
 var CATALOG_JS = path.join(APPS_DIR, 'app-catalog.js');
 var REGISTRY_PATH = path.join(APPS_DIR, 'registry.json');
+var SCREENSAVERS_DIR = path.join(APPS_DIR, 'screensavers');
+var SCREENSAVER_INDEX = path.join(SCREENSAVERS_DIR, 'index.json');
 var SKIP_FILE_NAMES = {
 	'.DS_Store': true,
 	'Thumbs.db': true,
@@ -472,6 +475,19 @@ function main () {
 	var catalog = writeCatalog(appDirs);
 	console.log('Wrote', path.relative(REPO_ROOT, CATALOG_JS),
 		'(' + (Object.keys(catalog).length - 1) + ' apps + base)');
+
+	// Not an app, but generated from apps/ all the same: what the gallery can download.
+	var index = writeScreensaverIndex();
+	console.log('Wrote', path.relative(REPO_ROOT, SCREENSAVER_INDEX), '(' + index.screensavers.length + ' screensavers, '
+		+ index.screensavers.reduce(function (sum, entry) { return sum + entry.looks.length; }, 0) + ' looks)');
+}
+
+function writeScreensaverIndex () {
+	var preinstallPath = path.join(REPO_ROOT, 'settings', 'preinstall.json');
+	var preinstall = fs.existsSync(preinstallPath) ? JSON.parse(fs.readFileSync(preinstallPath, 'utf8')) : null;
+	var index = screensaverIndex.buildIndex(SCREENSAVERS_DIR, preinstall);
+	fs.writeFileSync(SCREENSAVER_INDEX, JSON.stringify(index, null, 2) + '\n');
+	return index;
 }
 
 main();

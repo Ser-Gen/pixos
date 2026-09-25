@@ -21,6 +21,10 @@
 //   the real thing. Chrome reports the status of what a frame loaded, so a page that 404s is
 //   taken away and the failure said out loud; a browser that does not report it shows the 404.
 //
+// A folder may have looks (pass 4): several pages or queries in one folder, listed in its
+// looks.json. A choice names its look's page as `options.entry`; a folder chosen by its path alone
+// opens its first look.
+//
 // Screensavers are trusted like apps: the page runs in PixOS's origin. Sandboxing both is a
 // phase of its own (docs/backlog.md).
 
@@ -50,6 +54,36 @@ export function pageName (path) {
 	return match ? match[1] : '';
 }
 
+// A folder's looks, from its `looks.json` (pass 4): `{looks: [{name, entry, files, tile}]}`, where
+// `entry` is the page and query the look opens, `files` what only it needs (read by the generator,
+// scripts/screensaver-index.js, which is strict about all of it), and `tile` a CSS background for its
+// tile in the gallery. Read leniently here: a look without a name, or with an entry pageUrl would
+// refuse, is left out, and anything that is not a list of looks is none.
+export function readLooks (doc) {
+	var looks = doc && Array.isArray(doc.looks) ? doc.looks : [];
+	var seen = {};
+	return looks.filter(function (look) {
+		var name = look && typeof look.name === 'string' ? look.name.trim() : '';
+		if (!name || seen[name]) {
+			return false;
+		}
+		if (look.entry !== undefined && !pageUrl('/a.xscr', look.entry)) {
+			return false;
+		}
+		seen[name] = true;
+		return true;
+	}).map(function (look) {
+		var out = {name: look.name.trim()};
+		if (typeof look.entry === 'string') {
+			out.entry = look.entry;
+		}
+		if (typeof look.tile === 'string') {
+			out.tile = look.tile;
+		}
+		return out;
+	});
+}
+
 // Where the frame goes. A folder opens its `entry`, `index.html` unless a look names another
 // page or a query inside it; the entry is relative and may not climb out of the folder. Each
 // part of the path is escaped, because a `#` or `?` in a filename is otherwise the end of it.
@@ -65,7 +99,7 @@ export function pageUrl (path, entry) {
 		return escaped;
 	}
 	var inside = typeof entry === 'string' && entry ? entry : 'index.html';
-	if (inside.charAt(0) === '/' || /^[a-z][a-z0-9+.-]*:/i.test(inside) || /(^|\/)\.\.(\/|$|\?)/.test(inside)) {
+	if (inside.charAt(0) === '/' || /^[a-z][a-z0-9+.-]*:/i.test(inside) || /(^|\/)\.\.(\/|$|\?|#)/.test(inside)) {
 		return null;
 	}
 	return escaped + '/' + inside;
@@ -194,9 +228,42 @@ function windowOf (frame) {
 	}
 }
 
+// The page a folder opens when nothing names a look: the first of its looks whose page is here, if
+// it has a looks.json, or null for index.html. A folder is chosen by its path alone from Explorer
+// or the file field, and Pipes' index.html shows a panel of controls unless the look's address
+// hides it. "Here", because a folder may have only some of its looks downloaded, and a look's page
+// is the last of its files written. With none here it is the first look, whose 404 says so. Read
+// through the worker like the page itself; a missing or broken looks.json is no looks.
+export function firstLookEntry (path) {
+	var served = function (url) {
+		return Promise.resolve().then(function () {
+			return fetch(url);
+		});
+	};
+	return served(pageUrl(path, 'looks.json')).then(function (response) {
+		return response && response.ok ? response.json() : null;
+	}).then(function (doc) {
+		var looks = readLooks(doc);
+		var next = function (index) {
+			if (index >= looks.length) {
+				return looks.length ? looks[0].entry || null : null;
+			}
+			return served(pageUrl(path, looks[index].entry)).then(function (response) {
+				return response && response.ok ? looks[index].entry || null : next(index + 1);
+			}, function () {
+				return next(index + 1);
+			});
+		};
+		return next(0);
+	}).catch(function () {
+		return null;
+	});
+}
+
 function mountPage (element, config, context) {
 	var path = config.value;
-	var url = pageUrl(path, config.options && config.options.entry);
+	var entry = config.options && config.options.entry;
+	var url = pageUrl(path, entry);
 	if (!url) {
 		context.fail('not a screensaver page: ' + path);
 		return null;
@@ -206,6 +273,7 @@ function mountPage (element, config, context) {
 	var frames = null;
 	var paused = false;
 	var pausedBy = null;
+	var gone = false;
 
 	// What shows while the page loads, and between its frames if it draws with transparency.
 	element.style.background = '#0b0d12';
@@ -263,7 +331,16 @@ function mountPage (element, config, context) {
 		}
 	});
 
-	frame.src = url;
+	if (isFolderPath(path) && !entry) {
+		firstLookEntry(path).then(function (first) {
+			if (!gone) {
+				frame.src = (first && pageUrl(path, first)) || url;
+			}
+		});
+	}
+	else {
+		frame.src = url;
+	}
 	element.append(frame);
 
 	return {
@@ -278,9 +355,10 @@ function mountPage (element, config, context) {
 			paused = false;
 			startDrawing(windowOf(frame));
 		},
-		// Nothing to guard after this: a removed frame fires no load, and the handle takes
-		// nothing from an instance it has unmounted.
+		// Nothing to guard after this but a first look still being read: a removed frame fires no
+		// load, and the handle takes nothing from an instance it has unmounted.
 		unmount: function () {
+			gone = true;
 			frame.remove();
 		},
 		forward: function (event) {

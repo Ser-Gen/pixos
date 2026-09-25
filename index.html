@@ -242,6 +242,7 @@ import * as fsEvents from "./js/shell/fs-events.js";
 import {pageName} from "./js/shell/wallpaper-page.js";
 import * as screensaver from "./js/shell/screensaver.js";
 import * as wallpaperDialog from "./js/shell/wallpaper-dialog.js";
+import {createCatalog as createScreensaverCatalog, INDEX_PATH as SCREENSAVER_INDEX} from "./js/shell/screensaver-catalog.js";
 import {createMountTable, createHandleStore, FILE as MOUNT_TABLE_FILE} from "./js/shell/mount-table.js";
 
 var winManager = new WM({
@@ -1590,23 +1591,77 @@ function fsOnInit () {
 				taskbar.setPeeking(peeking);
 			}
 		});
+		// What the gallery offers and downloads (phase 26, pass 4). The index and the files come
+		// from the served repo; what is already here is BrowserFS's. Every error is passed on:
+		// writeFilePromise would swallow a refused write, and a download has to say it failed.
+		var screensaverCatalog = createScreensaverCatalog({
+			loadIndex: function () {
+				return fetchServed(SCREENSAVER_INDEX).then(function (response) {
+					return response.ok ? response.json() : null;
+				});
+			},
+			readdir: function (dirPath) {
+				return new Promise(function (resolve, reject) {
+					window.fs.readdir(dirPath, function (err, names) {
+						return err ? reject(err) : resolve(names);
+					});
+				});
+			},
+			stat: function (filePath) {
+				return new Promise(function (resolve) {
+					window.fs.stat(filePath, function (err, stats) {
+						resolve(err || !stats ? null : {isDirectory: stats.isDirectory()});
+					});
+				});
+			},
+			readText: function (filePath) {
+				return new Promise(function (resolve, reject) {
+					window.fs.readFile(filePath, 'utf8', function (err, text) {
+						return err ? reject(err) : resolve(text);
+					});
+				});
+			},
+			fetchFile: function (filePath) {
+				var escaped = filePath.split('/').map(encodeURIComponent).join('/');
+				return fetchServed(escaped).then(function (response) {
+					if (!response.ok) {
+						throw new Error(filePath + ': ' + response.status + ' ' + response.statusText);
+					}
+					return response.arrayBuffer();
+				});
+			},
+			writeFile: function (filePath, bytes) {
+				return new Promise(function (resolve, reject) {
+					window.fs.writeFile(filePath, Buffer.from(bytes), function (err) {
+						return err ? reject(err) : resolve();
+					});
+				});
+			},
+			mkdir: function (dirPath) {
+				return new Promise(function (resolve, reject) {
+					window.fs.mkdir(dirPath, function (err) {
+						return !err || err.code === 'EEXIST' ? resolve() : reject(err);
+					});
+				});
+			}
+		});
 		wallpaperDialog.init({
 			host: document.getElementById('overlays'),
 			getWallpaper: desktop.getWallpaper,
 			setWallpaper: desktop.setWallpaper,
 			screensaver: screensaver,
-			listDir: function (dirPath) {
-				return new Promise(function (resolve) {
-					window.fs.readdir(dirPath, function (err, names) {
-						resolve(err ? [] : names);
-					});
-				});
-			},
+			catalog: screensaverCatalog,
 			describeKey: function (id) {
 				return shortcuts.describeShortcut(id, shortcuts.isMacPlatform());
 			},
 			notify: function (note) {
 				window.notify(note);
+			},
+			progress: function (cfg) {
+				return window.startProgress(cfg);
+			},
+			describeError: function (context, error) {
+				return window.describeError(context, error);
 			}
 		});
 

@@ -20,8 +20,13 @@ Keep this file in English, and update it when the behaviour it describes changes
 `/__browserfs__/apps/<id>/index.html`. `sw.js` strips the query string before *looking the
 file up*, but the iframe's document URL keeps it — so an app can read its own `?params`, and
 `treemap` (`?path=`), `media-player` (`?initPlaylist=`) and `transcriber` (`?audio=`) all do.
-A directory URL without a trailing slash gets a redirect first, so relative `../` references
-inside an app resolve either way.
+**The fragment is stripped too, and for years was not**: Chrome keeps it in the `request.url` a
+worker sees, as the Fetch standard now says, so any page opened with a `#` was looked up under
+that whole name and was a 404. Nothing opened one until phase 26's Pipes, whose look is
+`index.html#{"hideUI":true}`. `servedPath` in `sw.js` is the one place a request becomes a path,
+and `tests/sw-served-path.test.mjs` runs it. A directory URL without a trailing slash gets a
+redirect first (`withSlash`, which puts the slash before the query rather than after it), so
+relative `../` references inside an app resolve either way.
 
 **A file on a mount is read by asking a shell, and which shell is the whole question.** The
 worker has only IndexedDB; a zip, an iso, a local folder, a Files3 storage or a peer exists only
@@ -462,6 +467,44 @@ detection like the gallery does, and the click it is asked in is on Explorer's m
 Chrome counts a click in a frame as its parent's too, so the shell's request still carries it —
 checked in headless Chrome against a control, where the same request with no click is refused with
 *Must be handling a user gesture* and leaves the permission at *prompt*.
+
+**Matrix, Pipes and Desktop Habitats are downloaded the first time a look is chosen, and a look
+downloads only what it needs.** They are vendored in `apps/screensavers/` but not in `preinstall.json`:
+23 MB, most of it Reefscape's 15 MB of rock, for something most people will choose once or never. The
+generator writes `apps/screensavers/index.json` from the folders (`scripts/screensaver-index.js`), and
+a folder's `looks.json` — ours — names each look's page and query and **the files only it owns**; a
+file no look claims is shared. So Riverscape is 6.7 MB and not 24, and choosing Reefscape afterwards
+fetches only what Reefscape adds. The generator refuses a claim that matches nothing, because a typo
+there would silently download everything. `js/shell/screensaver-catalog.js` fetches what a look needs
+and BrowserFS does not have — *have* meaning the file exists, since a write is one IndexedDB value —
+one file at a time, **checks each is the size the index says** (a host's fallback page is a 200 too),
+and **writes the look's page last**. A download cut short then leaves a look whose page is missing,
+which fails to mount and says so, rather than one that starts and draws without its textures; choosing
+it again fetches the rest. The dialog puts a progress note over it that becomes the error on failure,
+and chooses the look when it is done — **unless something else was chosen since**, in the dialog or
+from Explorer, which wins (`choose` in `wallpaper-dialog.js` counts every choice). The screensaver tab
+still asks for idle detection first, in the click: the download would take the activation with it.
+`tests/screensaver-catalog.test.mjs` and `tests/screensaver-index.test.mjs`, which also rebuilds the
+index from disk and fails if it was not regenerated.
+
+**A folder chosen by its path alone opens the first of its looks that is here.** Explorer's *Preview*
+and *Set as…* and the file field name a folder, not a look, and Pipes' `index.html` shows a panel of
+controls unless its look's address hides it. So `wallpaper-page.js` reads the folder's `looks.json`
+through the worker and opens the first look whose page the worker serves (`firstLookEntry`) — with only
+Riverscape downloaded, Habitats is Riverscape, not a 404 for Reefscape. The gallery marks the same
+tile. **Offline there is no index**, so the gallery is what is on disk, and a folder's own `looks.json`
+still lists every look: only the looks whose page is here are offered. A look chosen for its entry
+carries `options.look` as well, which is what makes two looks of one folder two pictures.
+
+**Habitats in host mode draws nothing until it is given a frame rate.** Its `wallpaper.html` says
+`data-motion="host"`, which hands its motion to whoever embeds it. PixOS's
+`scenes/shared/pixos-host.js`, loaded after `start.js`, gives it 60 (the quality profile caps it at
+30) and maps `pixosPause` / `pixosResume` onto `habitatRate(0)` / `habitatRate(60)`: rate 0 stops the
+loop with no frame and no timer left, and the time stopped is not simulated afterwards. `start.js` keeps
+the last rate it is given until the scene has loaded, which is why the script can run first.
+`habitatPower`, which the plan once named for the pause, is its battery switch — pass 5's. Matrix and
+Pipes have no such hook and need none: both draw only from `requestAnimationFrame`, so holding their
+frames stops them entirely.
 
 ## Windows, desktops and sessions
 

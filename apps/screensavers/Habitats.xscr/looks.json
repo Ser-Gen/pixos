@@ -1,0 +1,16 @@
+{
+  "looks": [
+    {
+      "name": "Reefscape",
+      "entry": "scenes/reefscape/wallpaper.html",
+      "files": ["scenes/reefscape/"],
+      "tile": "radial-gradient(ellipse at 50% -10%, #3a7fc0, transparent 65%), linear-gradient(#0c2c4e, #04101d 68%, #7a705a)"
+    },
+    {
+      "name": "Riverscape",
+      "entry": "scenes/riverscape/wallpaper.html",
+      "files": ["scenes/riverscape/"],
+      "tile": "radial-gradient(ellipse at 50% -10%, #7da865, transparent 65%), linear-gradient(#20382a, #080e0c 66%, #5e4c33)"
+    }
+  ]
+}
