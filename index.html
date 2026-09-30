@@ -244,6 +244,7 @@ import * as screensaver from "./js/shell/screensaver.js";
 import * as wallpaperDialog from "./js/shell/wallpaper-dialog.js";
 import {createCatalog as createScreensaverCatalog, INDEX_PATH as SCREENSAVER_INDEX} from "./js/shell/screensaver-catalog.js";
 import {createMountTable, createHandleStore, FILE as MOUNT_TABLE_FILE} from "./js/shell/mount-table.js";
+import {createLocation, LOCATION_FILE} from "./js/shell/location.js";
 
 var winManager = new WM({
 	root: '#root',
@@ -252,6 +253,10 @@ var winManager = new WM({
 
 window.wm = winManager;
 window.desktop = desktop;
+
+// Where this machine is (js/shell/location.js): made in fsOnInit, once there is a filesystem to
+// keep it in and after that filesystem is wrapped.
+var shellLocation = null;
 
 // Set up before anything else in the boot sequence, so a failure *during* boot has
 // somewhere to be reported. The overlay layer already exists in the markup.
@@ -556,6 +561,58 @@ function fsOnInit () {
 	window.notifyFileChange = function (kind, paths, extra) {
 		return fsEvents.record(kind, paths, extra);
 	};
+
+	// --- watchLocation
+	// Where this machine is, for the Sky screensaver and anything else that draws the sky (phase 26).
+	// A settings file like desktop.json, so only the tab that owns the session writes it -- but it
+	// applies in this tab either way, which is why a page asks the shell for it (watchLocation, below)
+	// instead of reading the file. See js/shell/location.js.
+	shellLocation = createLocation({
+		readText: function (filePath) {
+			return new Promise(function (resolve, reject) {
+				window.fs.readFile(filePath, 'utf8', function (err, text) {
+					return err ? reject(err) : resolve(text);
+				});
+			});
+		},
+		writeText: function (filePath, text) {
+			return new Promise(function (resolve, reject) {
+				window.fs.writeFile(filePath, Buffer.from(text), function (err) {
+					return err ? reject(err) : resolve();
+				});
+			});
+		},
+		canWrite: function () { return tabs.isOwner(); },
+		geolocation: navigator.geolocation || null
+	});
+	window.getLocation = function () { return shellLocation.get(); };
+
+	// Where this machine is (js/shell/location.js), for a page that draws the sky: called at once
+	// and whenever the location changes. Tied to the page's own window like watchStorage, and
+	// dropped the first time that window's frame is found gone -- a background is unloaded 30 s
+	// after it is covered, and mounted again from the start.
+	window.watchLocation = function (win, handler) {
+		if (typeof win === 'function') { handler = win; win = null; }
+		if (typeof handler !== 'function') { return function () {}; }
+		var gone = false;
+		var stop = shellLocation.subscribe(function (where) {
+			if (gone || (win && !frameIsAlive(win))) {
+				gone = true;
+				if (stop) { stop(); }
+				return;
+			}
+			handler(where);
+		});
+		if (gone) { stop(); }
+		return stop;
+	};
+	// Another tab's write, or one made in Explorer, is the file changing under this one.
+	fsEvents.subscribe(function (detail) {
+		if (detail.touches(LOCATION_FILE)) {
+			shellLocation.load();
+		}
+	});
+	// --- end of watchLocation
 
 	window.mountManager = new MountManager(BrowserFS, window.fs);
 
@@ -1518,6 +1575,8 @@ function fsOnInit () {
 
 	async function initDesktop () {
 		var settings = await readJsonFile('/settings/desktop.json', {});
+		// Before the background is mounted, so a sky drawn at boot is drawn from here the first time.
+		await shellLocation.load();
 
 		// Everything PixOS holds lives in IndexedDB, which the browser is free to evict
 		// under storage pressure -- with no warning and no way back. This asks it not to.
@@ -1651,6 +1710,7 @@ function fsOnInit () {
 			setWallpaper: desktop.setWallpaper,
 			screensaver: screensaver,
 			catalog: screensaverCatalog,
+			location: shellLocation,
 			describeKey: function (id) {
 				return shortcuts.describeShortcut(id, shortcuts.isMacPlatform());
 			},

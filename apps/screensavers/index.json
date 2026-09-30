@@ -832,6 +832,119 @@
           ]
         }
       ]
+    },
+    {
+      "name": "Sky",
+      "path": "Sky.xscr",
+      "size": 104663,
+      "files": [
+        {
+          "path": "Sky.xscr/LICENSE",
+          "size": 1723,
+          "sha256": "sha256:6054982983b55d6916437544b4a2cb52b80393385e13976d7aa4b87a74f1a526"
+        },
+        {
+          "path": "Sky.xscr/README.md",
+          "size": 3869,
+          "sha256": "sha256:466ab874ddf4a97c8d2005f1b6778f055b16acfe39f159f37c45c6253a53698f"
+        },
+        {
+          "path": "Sky.xscr/data/stars.json",
+          "size": 26220,
+          "sha256": "sha256:7cb0a8517b07479a75bc5e86660af7508008a9379eb60dd5e85047aab929236c"
+        },
+        {
+          "path": "Sky.xscr/index.html",
+          "size": 5309,
+          "sha256": "sha256:1d24a2ee60d7662a9384e68a9e59f39dc495b0701531d63e4da88b8c0216de7a"
+        },
+        {
+          "path": "Sky.xscr/js/astro.js",
+          "size": 10513,
+          "sha256": "sha256:96bc7b3c9e321cceb0bd5698708d4e51389597ce2fe7178a7980d771fec7304e"
+        },
+        {
+          "path": "Sky.xscr/js/main.js",
+          "size": 14317,
+          "sha256": "sha256:f28cbf6984353aa35a83811c53564e25fde388e1fe82b63685acfc10beb547b5"
+        },
+        {
+          "path": "Sky.xscr/js/sky.js",
+          "size": 19285,
+          "sha256": "sha256:7d1c6948299188594e5b4495f5f378ebbb12e95d98197d69294f3c8962f9b665"
+        },
+        {
+          "path": "Sky.xscr/lib/suncalc-LICENSE",
+          "size": 1322,
+          "sha256": "sha256:e8881f5d09f1f3c5e0e6ad4c2120521bad1079246a2af84d756af8ab1a53da3c"
+        },
+        {
+          "path": "Sky.xscr/lib/suncalc.js",
+          "size": 21048,
+          "sha256": "sha256:50c9b9030c42e8cbb7e2e5d37c59e998a027ea50ccdedb23f94889e55bfabd47"
+        },
+        {
+          "path": "Sky.xscr/looks.json",
+          "size": 1057,
+          "sha256": "sha256:b1d76116efb9d123ba49c0f60be99dcf13d46b7fb67877a1391c28ea5bec622e"
+        }
+      ],
+      "looks": [
+        {
+          "name": "Now",
+          "entry": "index.html",
+          "tile": "radial-gradient(circle at 62% 30%, #fffef0 0 6%, rgba(255, 250, 210, .5) 16%, transparent 40%), linear-gradient(#6eafff, #d7fdfe 46%, #f9fbf0 50%, #3ea8dc 50%, #0e4775 78%, #00192d)",
+          "size": 104663,
+          "files": [
+            "Sky.xscr/LICENSE",
+            "Sky.xscr/README.md",
+            "Sky.xscr/data/stars.json",
+            "Sky.xscr/index.html",
+            "Sky.xscr/js/astro.js",
+            "Sky.xscr/js/main.js",
+            "Sky.xscr/js/sky.js",
+            "Sky.xscr/lib/suncalc-LICENSE",
+            "Sky.xscr/lib/suncalc.js",
+            "Sky.xscr/looks.json"
+          ]
+        },
+        {
+          "name": "One day",
+          "entry": "index.html?pace=day",
+          "tile": "radial-gradient(circle at 70% 50%, #fffff0 0 3%, #ecff00 7%, #fd3229 22%, transparent 45%), linear-gradient(#3a0a0a, #b8412c 30%, #f69534 49%, #184b6a 50%, #0e2f4a 75%, #00192d)",
+          "size": 104663,
+          "files": [
+            "Sky.xscr/LICENSE",
+            "Sky.xscr/README.md",
+            "Sky.xscr/data/stars.json",
+            "Sky.xscr/index.html",
+            "Sky.xscr/js/astro.js",
+            "Sky.xscr/js/main.js",
+            "Sky.xscr/js/sky.js",
+            "Sky.xscr/lib/suncalc-LICENSE",
+            "Sky.xscr/lib/suncalc.js",
+            "Sky.xscr/looks.json"
+          ]
+        },
+        {
+          "name": "One year",
+          "entry": "index.html?pace=year",
+          "tile": "radial-gradient(circle at 30% 22%, #f6f4e8 0 2.2px, transparent 3px), radial-gradient(circle at 70% 14%, #fff 0 .8px, transparent 1.3px), radial-gradient(circle at 52% 32%, #fff 0 .7px, transparent 1.2px), radial-gradient(circle at 85% 36%, #fff 0 .7px, transparent 1.2px), radial-gradient(circle at 14% 40%, #fff 0 .6px, transparent 1.1px), linear-gradient(#02080d, #081a38 36%, #0d62f5 50%, #00101d 50%, #000)",
+          "size": 104663,
+          "files": [
+            "Sky.xscr/LICENSE",
+            "Sky.xscr/README.md",
+            "Sky.xscr/data/stars.json",
+            "Sky.xscr/index.html",
+            "Sky.xscr/js/astro.js",
+            "Sky.xscr/js/main.js",
+            "Sky.xscr/js/sky.js",
+            "Sky.xscr/lib/suncalc-LICENSE",
+            "Sky.xscr/lib/suncalc.js",
+            "Sky.xscr/looks.json"
+          ]
+        }
+      ]
     }
   ]
 }

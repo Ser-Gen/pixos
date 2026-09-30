@@ -1,0 +1,19 @@
+{
+  "looks": [
+    {
+      "name": "Now",
+      "entry": "index.html",
+      "tile": "radial-gradient(circle at 62% 30%, #fffef0 0 6%, rgba(255, 250, 210, .5) 16%, transparent 40%), linear-gradient(#6eafff, #d7fdfe 46%, #f9fbf0 50%, #3ea8dc 50%, #0e4775 78%, #00192d)"
+    },
+    {
+      "name": "One day",
+      "entry": "index.html?pace=day",
+      "tile": "radial-gradient(circle at 70% 50%, #fffff0 0 3%, #ecff00 7%, #fd3229 22%, transparent 45%), linear-gradient(#3a0a0a, #b8412c 30%, #f69534 49%, #184b6a 50%, #0e2f4a 75%, #00192d)"
+    },
+    {
+      "name": "One year",
+      "entry": "index.html?pace=year",
+      "tile": "radial-gradient(circle at 30% 22%, #f6f4e8 0 2.2px, transparent 3px), radial-gradient(circle at 70% 14%, #fff 0 .8px, transparent 1.3px), radial-gradient(circle at 52% 32%, #fff 0 .7px, transparent 1.2px), radial-gradient(circle at 85% 36%, #fff 0 .7px, transparent 1.2px), radial-gradient(circle at 14% 40%, #fff 0 .6px, transparent 1.1px), linear-gradient(#02080d, #081a38 36%, #0d62f5 50%, #00101d 50%, #000)"
+    }
+  ]
+}

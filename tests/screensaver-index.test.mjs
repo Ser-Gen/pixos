@@ -24,10 +24,11 @@ check('the index on disk is the one the folders make -- run npm run generate-app
 check('the generator writes it', /writeScreensaverIndex\(\)/.test(fs.readFileSync(path.join(root, 'scripts/generate-apps-catalog.js'), 'utf8')), true);
 
 const names = committed.screensavers.map(entry => entry.path);
-check('Matrix, Pipes and Habitats are downloaded', names, ['Habitats.xscr', 'Matrix.xscr', 'Pipes.xscr']);
+check('Matrix, Pipes, Habitats and Sky are downloaded', names, ['Habitats.xscr', 'Matrix.xscr', 'Pipes.xscr', 'Sky.xscr']);
 check('and the slideshow, which preinstall copies in, is not', names.includes('Slideshow.xscr'), false);
 check('the looks, as the plan chose them', committed.screensavers.map(e => [e.name, e.looks.map(l => l.name)]),
-	[['Habitats', ['Reefscape', 'Riverscape']], ['Matrix', ['Classic', 'Resurrections', '3D']], ['Pipes', ['Pipes']]]);
+	[['Habitats', ['Reefscape', 'Riverscape']], ['Matrix', ['Classic', 'Resurrections', '3D']], ['Pipes', ['Pipes']],
+		['Sky', ['Now', 'One day', 'One year']]]);
 
 const shell = readIndex(committed);
 check('the shell takes every screensaver and every look the generator wrote',

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sky</title>
+<!--
+	The sky over one place, now: the sun, the moon with its phase, the five bright planets and the
+	stars down to magnitude 4, each where it really is, over a sea. Phase 26, the Sky pass;
+	docs/screensavers-plan.md, and README.md beside this file for where each part came from.
+
+	The layers below are msaetre's "CSS Sunset Sunrise" pen (https://codepen.io/msaetre/pen/JjqPby,
+	MIT), whose colours and gradients this keeps. The pen drew them all from how far down the screen
+	the mouse was; here that is where the sun is (js/sky.js, `depth` and `look`), and the gradients are
+	written in today's syntax rather than the -webkit- one the pen used. Its broken parts are gone: a
+	stars.jpg that was never there, star shapes that were never shown, a horizon that could not be
+	dragged, and clouds that did not exist.
+
+	The page takes where it is from PixOS (`parent.watchLocation`), and is Riga outside it. Its looks
+	are in looks.json: `?pace=day` and `?pace=year` are time-lapses, and `?at=<ISO date>` starts any of
+	them at another moment. It defines pixosPause and pixosResume.
+-->
+<style>
+	html, body {
+		margin: 0;
+		height: 100%;
+		overflow: hidden;
+		background: #000;
+	}
+
+	.layer {
+		position: absolute;
+		left: 0;
+		width: 100%;
+		pointer-events: none;
+	}
+
+	.sky {
+		top: 0;
+		height: 50%;
+	}
+
+	.sea {
+		top: 50%;
+		height: 50%;
+	}
+
+	#sky {
+		background: linear-gradient(to top, rgb(249, 251, 240) 10%, rgb(215, 253, 254) 20%, rgb(167, 222, 253) 40%, rgb(110, 175, 255) 100%);
+	}
+
+	#horizon {
+		background: linear-gradient(to top, rgba(212, 87, 43, 0.9) 0%, rgba(246, 149, 52, 0.8) 20%, rgba(24, 75, 106, 0) 100%);
+	}
+
+	/* #sun, #sunSet and #sunDay are centred on the sun by main.js. */
+	#sun {
+		--at: 50% 100%;
+		background: radial-gradient(circle at var(--at), rgb(242, 248, 247) 0%, rgb(249, 249, 28) 3%, rgb(247, 214, 46) 8%,
+			rgb(248, 200, 95) 12%, rgb(201, 165, 132) 30%, rgb(115, 130, 133) 51%, rgb(46, 97, 122) 85%, rgb(24, 75, 106) 100%);
+	}
+
+	#sunSet {
+		--at: 50% 100%;
+		background: radial-gradient(circle at var(--at), rgba(254, 255, 255, 0.8) 5%, rgb(236, 255, 0) 10%, rgb(253, 50, 41) 25%,
+			rgb(243, 0, 0) 40%, rgb(93, 0, 0) 100%);
+	}
+
+	#sunDay {
+		--at: 50% 100%;
+		background: radial-gradient(circle at var(--at), rgba(252, 255, 251, 0.9) 0%, rgba(253, 250, 219, 0.4) 30%,
+			rgba(226, 219, 197, 0.01) 70%, rgba(226, 219, 197, 0) 70%, rgba(201, 165, 132, 0) 100%);
+	}
+
+	#darknessSky, #darknessSea {
+		background: #000;
+	}
+
+	/* The pen's night sky, which it called the moon: centred on the moon when it is up. */
+	#night {
+		--at: 40% 55%;
+		background: radial-gradient(circle at var(--at), rgb(8, 49, 78) 0%, rgb(8, 26, 56) 10%, rgb(4, 16, 46) 40%, rgb(2, 8, 13) 70%);
+	}
+
+	#horizonNight {
+		background: linear-gradient(to top, rgb(57, 167, 255) 0%, rgb(13, 98, 245) 20%, rgba(0, 11, 22, 0.1) 60%);
+	}
+
+	#heavens {
+		display: block;
+	}
+
+	#water {
+		background: linear-gradient(to top, rgb(0, 25, 45) 0%, rgb(14, 71, 117) 35%, rgb(26, 126, 174) 70%, rgb(62, 168, 220) 100%);
+	}
+
+	#ripple {
+		opacity: 0.5;
+		background-image: repeating-linear-gradient(175deg, rgba(165, 165, 165, 0.08) 43%, rgba(175, 175, 175, 0.08) 45%,
+			rgba(235, 235, 235, 0.08) 49%, rgba(195, 195, 195, 0.08) 50%, rgba(165, 165, 165, 0.08) 54%);
+	}
+
+	#seaDistance {
+		background: linear-gradient(to top, rgba(0, 0, 0, 0) 10%, rgba(0, 0, 0, 0.2) 44%, rgba(0, 0, 0, 0.65) 95%, rgba(0, 0, 0, 0.62) 100%);
+	}
+
+	#label {
+		position: absolute;
+		z-index: 50;
+		max-width: 260px;
+		padding: 5px 9px 6px;
+		border-radius: 5px;
+		background: rgba(4, 12, 22, 0.78);
+		box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+		color: #dfe8f2;
+		font: 12px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.2s;
+	}
+
+	#label.shown {
+		opacity: 1;
+	}
+
+	#label b {
+		display: block;
+		color: #fff;
+		font-size: 13px;
+		font-weight: 600;
+	}
+
+	#caption {
+		position: absolute;
+		right: 18px;
+		bottom: 14px;
+		z-index: 50;
+		color: rgba(255, 255, 255, 0.6);
+		font: 13px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+		font-variant-numeric: tabular-nums;
+		letter-spacing: 0.02em;
+		text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+		pointer-events: none;
+	}
+
+	#note {
+		position: absolute;
+		left: 50%;
+		top: 40%;
+		z-index: 60;
+		transform: translateX(-50%);
+		color: #dfe8f2;
+		font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+		text-align: center;
+	}
+</style>
+</head>
+<body>
+<div class="layer sky" id="sky"></div>
+<div class="layer sky" id="horizon"></div>
+<div class="layer sky" id="sun"></div>
+<div class="layer sky" id="sunSet"></div>
+<div class="layer sky" id="sunDay"></div>
+<div class="layer sky" id="darknessSky"></div>
+<div class="layer sky" id="night"></div>
+<div class="layer sky" id="horizonNight"></div>
+<canvas class="layer sky" id="heavens"></canvas>
+
+<div class="layer sea" id="water"></div>
+<div class="layer sea" id="ripple"></div>
+<div class="layer sea" id="seaDistance"></div>
+<canvas class="layer sea" id="sunPath"></canvas>
+<div class="layer sea" id="darknessSea"></div>
+<canvas class="layer sea" id="moonPath"></canvas>
+
+<div id="label" role="status"></div>
+<div id="caption"></div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

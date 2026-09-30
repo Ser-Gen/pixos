@@ -341,4 +341,26 @@ check('the shell hands the dialog the catalog, the progress note and the error w
 	/describeError: function \(context, error\) \{\s*return window\.describeError\(context, error\);/.test(shellSource)
 ], [true, true, true]);
 
+// --- Sky's location (the Sky pass) -------------------------------------------------------------------
+
+check('Sky is the folder in /apps/screensavers', dialog.SKY, '/apps/screensavers/Sky.xscr');
+check('any of its looks is Sky', [dialog.isSky({type: 'page', value: dialog.SKY, options: {look: 'One year', entry: 'index.html?pace=year'}}),
+	dialog.isSky({type: 'page', value: dialog.SKY + '/'}), dialog.isSky({type: 'page', value: '/home/Sky.xscr'}),
+	dialog.isSky({type: 'shader', value: dialog.SKY}), dialog.isSky(null)], [true, true, false, false, false]);
+check('two typed fields are a location', dialog.readLocationFields(' 56,9496 ', '24.1052'), {location: {latitude: 56.9496, longitude: 24.1052}});
+check('south and west are negative', dialog.readLocationFields('-33.87', '-70.65'), {location: {latitude: -33.87, longitude: -70.65}});
+check('a latitude past the pole says which field and why', dialog.readLocationFields('91', '24'),
+	{error: 'Latitude is a number from -90 to 90, north positive.', field: 'latitude'});
+check('so does a longitude that is not a number', dialog.readLocationFields('56', 'east'),
+	{error: 'Longitude is a number from -180 to 180, east positive.', field: 'longitude'});
+check('an empty field is not zero', dialog.readLocationFields('', '0').field, 'latitude');
+check('both tabs draw the row while Sky is the choice, and only when there is a location to set',
+	(source.match(/if \(isSky\(chosen\) && place\) \{\s*body\.append\(locationRow\(\)\);/g) || []).length, 2);
+check('the row sets the location, and finds it only when asked in a click', [
+	/save\(read\.location\)/.test(source),
+	/find\.onclick = function \(\) \{[\s\S]{0,120}place\.locate\(\)\.then\(function \(where\) \{[\s\S]{0,40}return save\(where\);/.test(source)
+], [true, true]);
+check('a location shown but not saved says so', /say\('Shown, but not saved: '/.test(source), true);
+check('the shell hands the dialog its location', /location: shellLocation,/.test(shellSource), true);
+
 process.exit(report('wallpaper-dialog') ? 1 : 0);

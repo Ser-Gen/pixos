@@ -15,6 +15,9 @@
 // -- unless something else was chosen in the meantime, which wins. js/shell/screensaver-catalog.js
 // knows what is there and what can be fetched; this only asks it.
 //
+// **Sky asks where it is** (the Sky pass): while it is the choice, a row under the gallery sets the
+// one location PixOS keeps, typed or found by the browser. js/shell/location.js holds it.
+//
 // **Every choice applies at once, and the dialog stays.** A new background is visible behind it
 // on an empty desktop, and the screensaver tab has more than one thing to set.
 
@@ -24,10 +27,12 @@ import {isScreensaverPath, pageName} from './wallpaper-page.js';
 import * as screensaverModule from './screensaver.js';
 import {SCREENSAVERS_DIR} from './screensaver-catalog.js';
 import * as failure from './failure.js';
+import {parseCoordinate} from './location.js';
 
 export {SCREENSAVERS_DIR};
 export var SLIDESHOW = SCREENSAVERS_DIR + '/Slideshow.xscr';
 export var DEFAULT_PICTURES = '/home';
+export var SKY = SCREENSAVERS_DIR + '/Sky.xscr';
 
 var STYLE_ID = 'pixos-wallpaper-dialog-style';
 
@@ -472,6 +477,7 @@ var getWallpaper = function () { return null; };
 var setWallpaper = function () { return Promise.resolve(); };
 var saver = null;
 var catalog = null;
+var place = null;
 var describeKey = function () { return ''; };
 var notify = function () {};
 var progress = function () {
@@ -503,13 +509,15 @@ function ensureStyle () {
 // cfg: host, getWallpaper, setWallpaper(config), screensaver (the module's own functions),
 // catalog (screensaver-catalog.js's list and download), describeKey(id) -> the chord to print
 // beside *Start screensaver*, notify(note) for what Explorer's *Set as screensaver* says,
-// progress(cfg) for a download's note, and describeError(context, error) for its failure.
+// progress(cfg) for a download's note, describeError(context, error) for its failure, and location
+// (location.js's) for Sky's row.
 export function init (cfg) {
 	host = cfg.host;
 	getWallpaper = cfg.getWallpaper || getWallpaper;
 	setWallpaper = cfg.setWallpaper || setWallpaper;
 	saver = cfg.screensaver || null;
 	catalog = cfg.catalog || null;
+	place = cfg.location || null;
 	describeKey = cfg.describeKey || describeKey;
 	notify = cfg.notify || notify;
 	progress = cfg.progress || progress;
@@ -839,6 +847,98 @@ function picturesRow (folder, apply) {
 	return element;
 }
 
+// Whether a choice is Sky, in any of its looks.
+export function isSky (config) {
+	return !!config && config.type === 'page' && bare(config.value) === SKY;
+}
+
+// What the two fields of Sky's row say: a location, or which field is wrong and why.
+export function readLocationFields (latitudeText, longitudeText) {
+	var latitude = parseCoordinate(latitudeText, 90);
+	if (latitude === null) {
+		return {error: 'Latitude is a number from -90 to 90, north positive.', field: 'latitude'};
+	}
+	var longitude = parseCoordinate(longitudeText, 180);
+	if (longitude === null) {
+		return {error: 'Longitude is a number from -180 to 180, east positive.', field: 'longitude'};
+	}
+	return {location: {latitude: latitude, longitude: longitude}};
+}
+
+// Sky's one setting, drawn under the gallery while it is the choice: where the sky is seen from.
+// It is PixOS's, not the choice's -- set here, it is the background's and the screensaver's alike.
+function locationRow () {
+	var element = section('Sky over');
+	var row = document.createElement('div');
+	row.className = 'PixDialog__row';
+	var current = place.get();
+	var field = function (label, value, placeholder) {
+		var input = document.createElement('input');
+		input.type = 'text';
+		input.inputMode = 'decimal';
+		input.value = String(value);
+		input.placeholder = placeholder;
+		input.setAttribute('aria-label', label);
+		input.addEventListener('keydown', function (e) {
+			if (e.key === 'Enter') {
+				set.click();
+			}
+		});
+		return input;
+	};
+	var latitude = field('Latitude', current.latitude, 'Latitude');
+	var longitude = field('Longitude', current.longitude, 'Longitude');
+	var set = document.createElement('button');
+	set.className = 'PixButton';
+	set.textContent = 'Set';
+	var find = document.createElement('button');
+	find.className = 'PixButton';
+	find.textContent = 'Use my location';
+	var status = note('');
+	status.setAttribute('role', 'status');
+	status.hidden = true;
+	var say = function (text) {
+		status.textContent = text;
+		status.hidden = !text;
+	};
+	var show = function (where) {
+		latitude.value = String(where.latitude);
+		longitude.value = String(where.longitude);
+	};
+	var save = function (where) {
+		return place.set(where).then(show, function (err) {
+			show(place.get());
+			say('Shown, but not saved: ' + ((err && err.message) || err));
+		});
+	};
+	set.onclick = function () {
+		var read = readLocationFields(latitude.value, longitude.value);
+		latitude.setAttribute('aria-invalid', read.field === 'latitude' ? 'true' : 'false');
+		longitude.setAttribute('aria-invalid', read.field === 'longitude' ? 'true' : 'false');
+		say(read.error || '');
+		if (read.location) {
+			save(read.location);
+		}
+	};
+	// Asked in the click, which the browser's prompt needs.
+	find.onclick = function () {
+		find.disabled = true;
+		say('Finding where this is…');
+		place.locate().then(function (where) {
+			say('');
+			return save(where);
+		}, function (err) {
+			say((err && err.message) || String(err));
+		}).then(function () {
+			find.disabled = false;
+		});
+	};
+	row.append(latitude, longitude, set, find);
+	element.append(row, status, note('The sun, the moon, the planets and the stars as seen from there, for the background '
+		+ 'and the screensaver alike. North and east are positive; Riga until another place is set.'));
+	return element;
+}
+
 function fileRow (placeholder, chosen, apply) {
 	var element = section('A file from the filesystem');
 	element.insertAdjacentHTML('beforeend', '<div class="PixDialog__row">'
@@ -907,6 +1007,9 @@ function renderBackground (body, screensavers, render) {
 	if (folder !== null) {
 		body.append(picturesRow(folder, pick));
 	}
+	if (isSky(chosen) && place) {
+		body.append(locationRow());
+	}
 	var file = fileRow('/home/pictures/sea.jpg, /home/plasma.glsl or /home/Rain.xscr.html', chosen, pick);
 	file.append(note('Easier: right-click an image or a screensaver in Explorer and choose Set as wallpaper. A .glsl file '
 		+ '(Shadertoy-style mainImage()) or a screensaver page (Name.xscr.html, or a Name.xscr folder) works too.'));
@@ -938,6 +1041,9 @@ function renderScreensaver (body, screensavers, render) {
 	var folder = slideshowFolder(chosen);
 	if (folder !== null) {
 		body.append(picturesRow(folder, pick));
+	}
+	if (isSky(chosen) && place) {
+		body.append(locationRow());
 	}
 
 	var timing = section('Start after');

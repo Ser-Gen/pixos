@@ -468,9 +468,9 @@ Chrome counts a click in a frame as its parent's too, so the shell's request sti
 checked in headless Chrome against a control, where the same request with no click is refused with
 *Must be handling a user gesture* and leaves the permission at *prompt*.
 
-**Matrix, Pipes and Desktop Habitats are downloaded the first time a look is chosen, and a look
-downloads only what it needs.** They are vendored in `apps/screensavers/` but not in `preinstall.json`:
-23 MB, most of it Reefscape's 15 MB of rock, for something most people will choose once or never. The
+**Matrix, Pipes, Desktop Habitats and Sky are downloaded the first time a look is chosen, and a look
+downloads only what it needs.** They are in `apps/screensavers/` but not in `preinstall.json`: 23 MB,
+most of it Reefscape's 15 MB of rock, for something most people will choose once or never. The
 generator writes `apps/screensavers/index.json` from the folders (`scripts/screensaver-index.js`), and
 a folder's `looks.json` — ours — names each look's page and query and **the files only it owns**; a
 file no look claims is shared. So Riverscape is 6.7 MB and not 24, and choosing Reefscape afterwards
@@ -502,9 +502,41 @@ carries `options.look` as well, which is what makes two looks of one folder two 
 30) and maps `pixosPause` / `pixosResume` onto `habitatRate(0)` / `habitatRate(60)`: rate 0 stops the
 loop with no frame and no timer left, and the time stopped is not simulated afterwards. `start.js` keeps
 the last rate it is given until the scene has loaded, which is why the script can run first.
-`habitatPower`, which the plan once named for the pause, is its battery switch — pass 5's. Matrix and
+`habitatPower`, which the plan once named for the pause, is its battery switch — pass 6's. Matrix and
 Pipes have no such hook and need none: both draw only from `requestAnimationFrame`, so holding their
 frames stops them entirely.
+
+**Where this machine is belongs to the shell, and a page asks the shell, not the file.**
+`js/shell/location.js` keeps one location for all of PixOS in `/settings/location.json` — Riga until one
+is set, from the *Sky over* row the dialog draws while Sky is the choice. It is a settings file, so only
+the tab that owns the session writes it; but, like a wallpaper, a change applies in the tab it was made
+in either way — and a page reading the file in a tab that does not own the session would never see it.
+So a page calls `parent.watchLocation(window, handler)`, which calls back at once and on every change,
+and drops the page when its frame is gone (a background is unloaded and mounted again). The shell reads
+the file at boot, before the desktop mounts a background, and again whenever it changes — another tab's
+write arrives as a file change, not a call. *Use my location* keeps two decimals, about a kilometre; a
+typed location keeps four. The dialog draws itself twice as it opens — at once, and again when the
+catalog's list arrives — and anything typed into one of its rows in between is replaced; a person is
+not that fast, a test script is. `tests/location.test.mjs`, `tests/shell-watch-location.test.mjs`.
+
+**Sky's screen is a compass, exactly as wide as the year's widest day.** It faces the equator — south
+in the middle north of it, sunrise on the left — and runs from the widest sunrise to the widest sunset
+with 6° to spare: 35° to 325° at Riga, where the June sun rises at 41°. So December's arc is short and
+low in the middle and June's goes edge to edge, and a thing behind the view (north, at Riga) falls off
+an edge. South of the equator it faces north and sunrise is on the right; in the tropics, where the sun
+passes either side of the zenith, and inside the polar circles, it is the whole horizon. Up is the
+same degrees as across, more on a screen too tall for its width. **The pen drew everything from one
+number, how far down the screen the mouse was**; `depth` in `js/sky.js` is that number worked out from
+the sun: a half on the horizon, 1 at −18°. Mapped onto the real sun, the pen's colours made a June night
+at −9° brown-red, so its red goes by −7°, its orange band by −12°, a blue hour peaks between −8° and −12°,
+and its glow sinks four times as fast as the sun. **The moon's lit side is worked out from the sun**, as
+the direction of the great circle toward it put onto the screen, not from SunCalc's bright-limb angle,
+which the panorama's stretch would bend; the two agree within 3°, and the test holds them to it. Stars
+and planets show by a limiting magnitude that follows the sun's depth and the moon, dimmed by the air
+near the horizon. *One year* keeps the clock time across a clock change and draws between two days'
+positions — the stars at the moment that has turned the sky as far — so nothing jumps once a second.
+Its date is in the browser's language, as the taskbar clock is. `tests/sky.test.mjs` holds the stars'
+and planets' places against JPL Horizons.
 
 ## Windows, desktops and sessions
 
