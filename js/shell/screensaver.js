@@ -24,11 +24,19 @@
 // which index.html does by calling init first: a Ctrl+K that wakes it should not also open the
 // palette. The launchers are closed as it starts (`onStart`) for the same reason -- their own
 // Escape handlers were registered earlier still.
+//
+// **With a PIN, waking asks for it** (pass 6). A start that was not a preview -- by itself, from
+// *Start screensaver* or a hot corner -- locks, and the input that would have ended it opens a pad
+// on the layer instead; the right PIN ends it. The lock is written down where every tab and a
+// reload find it (js/shell/pin.js), so another PixOS tab locks too, and unlocking one unlocks them
+// all. The pad takes keys as a text field does, and nothing else below it gets them.
 
 import * as wallpaper from './wallpaper.js';
 // For their side effect, as in desktop.js: what it shows may be a shader or a page.
 import './wallpaper-shader.js';
 import './wallpaper-page.js';
+import {normalizeCorners} from './hot-corners.js';
+import * as pin from './pin.js';
 
 var STYLE_ID = 'pixos-screensaver-style';
 
@@ -52,6 +60,63 @@ var CSS = `
 .PixScreensaver__stage {
 	position: absolute;
 	inset: 0;
+}
+
+.PixScreensaver--asking {
+	cursor: default;
+}
+
+/* The PIN pad, over what the screensaver shows, which goes on moving behind it. */
+.PixScreensaver__pad {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
+	gap: 10px;
+	width: 220px;
+	padding: 18px;
+	background: rgba(20, 22, 27, .86);
+	border: 1px solid rgba(255, 255, 255, .14);
+	box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+	font: 13px/1.4 Arial, Helvetica, sans-serif;
+	color: #e9ecf1;
+	text-align: center;
+}
+
+.PixScreensaver__pad input {
+	background: #101216;
+	border: 1px solid #4b515b;
+	color: #fff;
+	padding: 8px;
+	font: 18px/1 Arial, Helvetica, sans-serif;
+	letter-spacing: .3em;
+	text-align: center;
+}
+
+.PixScreensaver__pad input:focus-visible,
+.PixScreensaver__pad button:focus-visible {
+	outline: 2px solid #4f9dff;
+	outline-offset: 1px;
+}
+
+.PixScreensaver__pad button {
+	background: #333840;
+	border: 1px solid #4b515b;
+	color: #e4e4e4;
+	padding: 6px 12px;
+	font: 12px Arial, Helvetica, sans-serif;
+	cursor: pointer;
+}
+
+.PixScreensaver__padNote {
+	margin: 0;
+	min-height: 1.4em;
+	font-size: 12px;
+	color: #f0b8b8;
 }
 
 @keyframes pixos-screensaver-in {
@@ -79,12 +144,14 @@ export var TICK_MS = 5000;
 export var MOVE_GRACE_MS = 1000;
 export var MOVE_SLOP = 6;
 var FADE_MS = 180;
+// The pad goes away, and the screensaver goes on, after this long with nothing typed in it.
+export var PAD_IDLE_MS = 30000;
 // However the press that woke it ends -- or does not, if it was dragged out of the window -- the
 // layer is gone by then.
 var RELEASE_WAIT_MS = 1500;
 
 // What /settings/desktop.json holds under `screensaver`: what to show (null is off, which is
-// how a fresh system starts) and after how many minutes.
+// how a fresh system starts), after how many minutes, the hot corners and the PIN (pass 6).
 export function normalizeSettings (value) {
 	var input = value && typeof value === 'object' ? value : {};
 	var minutes = Math.round(Number(input.minutes));
@@ -95,7 +162,7 @@ export function normalizeSettings (value) {
 	if (input.show && typeof input.show === 'object' && wallpaper.listTypes().indexOf(input.show.type) > -1) {
 		show = wallpaper.normalize(input.show);
 	}
-	return {show: show, minutes: Math.min(minutes, 24 * 60)};
+	return {show: show, minutes: Math.min(minutes, 24 * 60), corners: normalizeCorners(input.corners), pin: pin.normalizePin(input.pin)};
 }
 
 function ask (value) {
@@ -136,6 +203,10 @@ export function decide (s) {
 	}
 	if (s.now - last < wait) {
 		return 'waiting';
+	}
+	// The pointer resting in a hot corner that says never.
+	if (s.held) {
+		return 'corner';
 	}
 	if (ask(s.media)) {
 		return 'media';
@@ -262,6 +333,19 @@ var userIdle = false;
 var idleAt = 0;
 var locked = false;
 
+// Held still on battery (pass 6), and held off by a hot corner.
+var still = false;
+var cornerHeld = false;
+
+// The PIN's lock: whether this tab is locked, the record it opens with, and the pad asking for it.
+var storage = null;
+var crypto = null;
+var pinLocked = false;
+var lockRecord = null;
+var pad = null;
+var padTimer = null;
+var checking = false;
+
 var listeners = [];
 
 function ensureStyle () {
@@ -299,6 +383,12 @@ export function init (cfg) {
 		onError: cfg.onError || null
 	};
 	now = cfg.now || Date.now;
+	storage = 'storage' in cfg ? cfg.storage : localStore(env);
+	crypto = 'crypto' in cfg ? cfg.crypto : env.crypto || null;
+	pinLocked = false;
+	lockRecord = null;
+	checking = false;
+	cornerHeld = false;
 	settings = normalizeSettings(cfg.settings);
 	lastSeen = now();
 	permission = env.IdleDetector ? 'prompt' : 'unsupported';
@@ -315,6 +405,8 @@ export function init (cfg) {
 	if (env.document && env.document.addEventListener) {
 		env.document.addEventListener('visibilitychange', onVisibility);
 	}
+	// Another tab locking or unlocking.
+	env.addEventListener('storage', onStorage);
 	if (wm) {
 		wm.on('activity', onSeen);
 		// A key pressed in an app that took the focus back while it ran.
@@ -328,6 +420,27 @@ export function init (cfg) {
 
 	readPermission().then(schedule);
 	schedule();
+}
+
+// Locked when this tab was reloaded, or opened while another was locked: shown locked at once.
+// Called by index.html straight after desktop.init, because starting tells the desktop it is
+// covered; true when it locked.
+export function restoreLock () {
+	var found = pin.readLock(storage);
+	if (found) {
+		lockFromElsewhere(found);
+	}
+	return pinLocked;
+}
+
+// Reading `localStorage` itself can throw, where the site's data is blocked.
+function localStore (win) {
+	try {
+		return win.localStorage || null;
+	}
+	catch (err) {
+		return null;
+	}
 }
 
 function emitChange () {
@@ -351,8 +464,11 @@ export function onChange (listener) {
 	};
 }
 
+// What to show, after how long, and the hot corners. Whether there is a PIN is `hasPin`: nothing
+// outside needs its hash.
 export function getSettings () {
-	return {show: settings.show ? Object.assign({}, settings.show) : null, minutes: settings.minutes};
+	return {show: settings.show ? Object.assign({}, settings.show) : null, minutes: settings.minutes,
+		corners: Object.assign({}, settings.corners)};
 }
 
 // A change is someone at the machine, so the wait starts again from it.
@@ -369,6 +485,43 @@ export function setSettings (patch) {
 
 export function isRunning () {
 	return running;
+}
+
+export function hasPin () {
+	return !!settings.pin;
+}
+
+// Whether a PIN can be set and checked in this page at all: not without https or localhost.
+export function canUsePin () {
+	return pin.canHash(crypto);
+}
+
+// Sets the PIN, or rejects with what is wrong with it.
+export function setPin (text) {
+	return pin.makePin(text, crypto).then(function (record) {
+		return setSettings({pin: record});
+	});
+}
+
+export function removePin () {
+	return setSettings({pin: null});
+}
+
+export function isLocked () {
+	return pinLocked;
+}
+
+// On battery: what it shows moves for a moment and then holds still (wallpaper.js).
+export function setStill (on) {
+	still = !!on;
+	if (handle) {
+		handle.setStill(still);
+	}
+}
+
+// The pointer resting in a hot corner that keeps it from starting.
+export function setHeld (on) {
+	cornerHeld = !!on;
 }
 
 // {mode, permission}: whether the whole computer is being watched, and if not, whether it could be.
@@ -415,6 +568,7 @@ export function check () {
 		running: running || closing,
 		hidden: !!env.document.hidden,
 		locked: locked,
+		held: cornerHeld,
 		mode: mode,
 		userIdle: userIdle,
 		idleAt: idleAt,
@@ -429,7 +583,7 @@ export function check () {
 			return opaqueFocus(env.document);
 		}
 	});
-	if (verdict === 'media' || verdict === 'opaque') {
+	if (verdict === 'media' || verdict === 'opaque' || verdict === 'corner') {
 		lastBlocked = now();
 	}
 	else if (verdict === 'start') {
@@ -562,13 +716,25 @@ function refreshVisibility () {
 	}
 }
 
-// Shows `show`, or what was chosen. A preview passes its own. False when there is nothing to show
-// or it is already showing.
+// Shows `show`, or what was chosen. A preview passes its own and is never locked; anything else is,
+// when there is a PIN. False when there is nothing to show or it is already showing.
 export function start (show) {
 	var config = show || settings.show;
 	if (running || closing || !config || !host) {
 		return false;
 	}
+	if (!show && settings.pin && pin.canHash(crypto)) {
+		// A lock already written down keeps its wrong tries: a reload does not start them again.
+		var kept = pin.readLock(storage);
+		lockRecord = kept && kept.hash === settings.pin.hash ? kept : pin.normalizeLock(settings.pin);
+		pinLocked = true;
+		pin.writeLock(storage, lockRecord);
+	}
+	openLayer(config);
+	return true;
+}
+
+function openLayer (config) {
 	var doc = env.document;
 	hooks.onStart();
 
@@ -592,14 +758,204 @@ export function start (show) {
 	if (typeof layer.focus === 'function') {
 		layer.focus({preventScroll: true});
 	}
-	handle = wallpaper.mount(stage, config, {onError: hooks.onError});
+	// On this module's clock, which the tests move by hand.
+	handle = wallpaper.mount(stage, config, {
+		onError: hooks.onError,
+		setTimeout: function (fn, ms) { return env.setTimeout(fn, ms); },
+		clearTimeout: function (id) { env.clearTimeout(id); }
+	});
+	handle.setStill(still);
 	refreshVisibility();
 	emitChange();
-	return true;
+}
+
+// Another tab locked, or this one was locked when it was reloaded: shown at once, locked, with what
+// was chosen or a blank screen. A tab that cannot check a PIN is not locked by one.
+function lockFromElsewhere (record) {
+	if (!pin.canHash(crypto) || !host) {
+		return;
+	}
+	lockRecord = record;
+	if (pinLocked && (running || closing)) {
+		return;
+	}
+	pinLocked = true;
+	if (closing) {
+		finish();
+	}
+	if (!running) {
+		openLayer(settings.show || BLANK);
+	}
+}
+
+function onStorage (e) {
+	if (!e || e.key !== pin.LOCK_KEY) {
+		return;
+	}
+	var record = pin.readLock(storage);
+	if (record) {
+		lockFromElsewhere(record);
+	}
+	else if (pinLocked) {
+		// Unlocked in another tab: the person is back, and this tab is theirs too.
+		pinLocked = false;
+		lockRecord = null;
+		hidePad();
+		wake();
+	}
+}
+
+// --- the PIN pad -------------------------------------------------------------------------------------
+
+function padElement (tag, className) {
+	var element = env.document.createElement(tag);
+	if (className) {
+		element.className = className;
+	}
+	return element;
+}
+
+function armPad () {
+	if (padTimer !== null) {
+		env.clearTimeout(padTimer);
+	}
+	padTimer = env.setTimeout(hidePad, PAD_IDLE_MS);
+}
+
+function sayOnPad (text) {
+	if (pad) {
+		pad.note.textContent = text;
+	}
+}
+
+function waitText (ms) {
+	return 'Too many wrong PINs. Try again in ' + Math.ceil(ms / 1000) + ' s.';
+}
+
+function showPad () {
+	if (!pad) {
+		var box = padElement('div', 'PixScreensaver__pad');
+		box.setAttribute('role', 'dialog');
+		box.setAttribute('aria-label', 'Locked');
+		var title = padElement('div', 'PixScreensaver__padTitle');
+		title.textContent = 'Locked. Type the PIN.';
+		var input = padElement('input');
+		input.type = 'password';
+		input.inputMode = 'numeric';
+		input.autocomplete = 'off';
+		input.maxLength = 8;
+		input.setAttribute('aria-label', 'PIN');
+		var button = padElement('button');
+		button.type = 'button';
+		button.textContent = 'Unlock';
+		button.addEventListener('click', submitPin);
+		var note = padElement('p', 'PixScreensaver__padNote');
+		note.setAttribute('role', 'status');
+		box.append(title, input, button, note);
+		layer.append(box);
+		layer.classList.add('PixScreensaver--asking');
+		pad = {box: box, input: input, note: note};
+		var left = pin.waitLeft(lockRecord, now());
+		sayOnPad(left ? waitText(left) : '');
+	}
+	if (typeof pad.input.focus === 'function') {
+		pad.input.focus({preventScroll: true});
+	}
+	armPad();
+}
+
+function hidePad () {
+	if (padTimer !== null) {
+		env.clearTimeout(padTimer);
+		padTimer = null;
+	}
+	if (!pad) {
+		return;
+	}
+	pad.box.remove();
+	pad = null;
+	if (layer) {
+		layer.classList.remove('PixScreensaver--asking');
+		// The keys come back to the layer, not to the page under it.
+		if (typeof layer.focus === 'function') {
+			layer.focus({preventScroll: true});
+		}
+	}
+}
+
+function submitPin () {
+	if (!pad || checking) {
+		return;
+	}
+	armPad();
+	// Another tab may have counted a wrong try since.
+	var current = pin.readLock(storage) || lockRecord;
+	var left = pin.waitLeft(current, now());
+	if (left) {
+		sayOnPad(waitText(left));
+		return;
+	}
+	var typed = pad.input.value;
+	checking = true;
+	pin.checkPin(typed, current, crypto).then(function (right) {
+		checking = false;
+		if (!pinLocked) {
+			return;
+		}
+		if (right) {
+			pin.clearLock(storage);
+			pinLocked = false;
+			lockRecord = null;
+			hidePad();
+			wake();
+			return;
+		}
+		lockRecord = pin.afterWrong(current, now());
+		pin.writeLock(storage, lockRecord);
+		if (pad) {
+			pad.input.value = '';
+		}
+		var wait = pin.waitLeft(lockRecord, now());
+		sayOnPad(wait ? waitText(wait) : 'That is not the PIN.');
+	}, function (err) {
+		checking = false;
+		console.error('Screensaver: the PIN could not be checked', err);
+		sayOnPad('The PIN could not be checked.');
+	});
+}
+
+// Keys while the pad is up: typed into it, Enter to try, Escape to put it away. None goes further.
+function onPadKey (e) {
+	e.stopImmediatePropagation();
+	var typing = e.target === pad.input;
+	if (e.type === 'keydown') {
+		armPad();
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			hidePad();
+			return;
+		}
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			submitPin();
+			return;
+		}
+	}
+	// Tab would take the focus out of the pad and into the page under it.
+	if (!typing || e.key === 'Tab') {
+		e.preventDefault();
+		if (typeof pad.input.focus === 'function') {
+			pad.input.focus({preventScroll: true});
+		}
+	}
 }
 
 function onKey (e) {
 	if (!running && !closing) {
+		return;
+	}
+	if (running && pad) {
+		onPadKey(e);
 		return;
 	}
 	e.preventDefault();
@@ -610,6 +966,11 @@ function onKey (e) {
 }
 
 function onLayerInput (e) {
+	// The pad is a small form: its field and its button take the pointer as any would.
+	if (pad && pad.box.contains(e.target)) {
+		armPad();
+		return;
+	}
 	e.preventDefault();
 	e.stopPropagation();
 	if (e.type === 'pointerdown' || e.type === 'touchstart') {
@@ -641,9 +1002,13 @@ function later (fn, ms) {
 }
 
 // Ends it: the layer fades and keeps catching input while it does, and is gone once the fade is
-// over and nothing is still pressed.
+// over and nothing is still pressed. Locked, it asks for the PIN instead.
 function wake () {
 	if (!running) {
+		return;
+	}
+	if (pinLocked) {
+		showPad();
 		return;
 	}
 	running = false;
@@ -681,6 +1046,7 @@ function finish () {
 }
 
 function teardown () {
+	hidePad();
 	if (handle) {
 		handle.unmount();
 		handle = null;
@@ -697,6 +1063,8 @@ export function stop () {
 		return;
 	}
 	var wasRunning = running;
+	// Whatever stops it at once is not someone at the pad: the lock stays written down.
+	pinLocked = false;
 	running = false;
 	closing = true;
 	finish();

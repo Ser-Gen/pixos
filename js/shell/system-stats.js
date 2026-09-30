@@ -362,6 +362,13 @@ export function formatDate (date) {
 	return date.toLocaleDateString(undefined, {weekday: 'short', day: 'numeric', month: 'short'});
 }
 
+// Whether the machine is running on its battery: a battery reading that says it is not charging.
+// A desktop computer reports a full battery, charging, and a browser with no Battery API reports
+// nothing -- neither is on battery.
+export function isOnBattery (battery) {
+	return !!(battery && battery.supported && battery.charging === false);
+}
+
 // dischargingTime is Infinity until the browser has an estimate, and often stays there.
 export function formatDuration (seconds) {
 	if (!isFinite(seconds) || seconds <= 0) {

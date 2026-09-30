@@ -451,6 +451,46 @@ first second and only a few pixels from where the pointer stood — the hand lea
 *Start screensaver*, and a desk being bumped, are not someone back. A repeating key never ends it:
 that is the chord that started it, still held.
 
+**With a PIN, the lock is in localStorage, and every tab has it.** `js/shell/pin.js` keeps the PIN as a
+salted SHA-256 under `screensaver.pin` in `/settings/desktop.json`, but *locked* is `pixos:screensaver-lock`
+in localStorage: settings are written only by the tab that owns the session, and a lock another tab
+ignored would be opened by switching to it. Any tab writes the key, and every other tab hears it at once
+through the `storage` event, so all of them lock, and unlocking one unlocks them all; a reload finds it,
+and `index.html` calls `screensaver.restoreLock()` straight after `desktop.init`, because starting tells the
+desktop it is covered. The record carries the hash it was locked with, so a tab that booted before the PIN
+was set can check it, and the wrong tries, so neither a reload nor another tab starts the count of five
+again. A start locks unless it was a preview — `start()` with a config of its own is one, `start()` without
+is the real thing, from the wait, the key or a corner. The waking input opens a pad on the layer instead of
+ending it; while the pad is up, the capture listener lets a key's default through only into the pad's
+field, and stops every key from going further — Tab too, which would carry the focus out into the page
+under it. SubtleCrypto exists only on https or localhost; elsewhere nothing locks, a lock found written
+down included, rather than one nobody can open. A forgotten PIN is DevTools: delete the key, reload, and
+*Remove* the PIN. `tests/pin.test.mjs`, and the screensaver's own test.
+
+**A hot corner is three pixels of its own, and a press on one is passed on.** `js/shell/hot-corners.js`
+puts an element in `#overlays` at each chosen corner, because the pointer over a window's frame never
+reaches the shell. It waits `DWELL_MS` (300 ms) before it starts anything: outside full screen the top
+corners are on the way to the browser's tabs, and leaving the page is a `pointerleave` that cancels the
+wait. *Never start* holds the screensaver off through `setHeld`, and `decide` answers `'corner'`, which
+counts like a video. A press cancels the wait, cancels its own `pointerdown` — no `mousedown` follows,
+which is what the start menu closes on — and clicks `elementFromPoint` underneath, unless that is a frame.
+**Then it stays out of the way until a `pointermove` is seen in the shell's document more than a corner's
+width off**, not for a set time: Chrome tells an element that comes back under a resting pointer that the
+pointer has just arrived, and the first build, which came back after 1.5 s, started the screensaver for
+someone who had only clicked there. A pointer that leaves over a window is not seen, and the corner waits
+for it to cross the shell. The screensaver says every change it has through `onChange`, and `update` with
+what it drew already does nothing, or a rest under way would be cancelled by a permission changing.
+
+**On battery, what moves is held still after eight seconds.** `stats.isOnBattery` — supported and not
+charging; a desktop computer says it is charging — reaches `desktop.setStill` and `screensaver.setStill`
+unless *Hold still on battery* (`stillOnBattery`) was turned off, and each passes it to its handle. The
+handle lets the instance run `STILL_AFTER_MS` each time it can be seen, counted only while it can, and
+then pauses it, **without the clock that unloads a covered one** — a still background is still being
+looked at, and an unloaded one would be an empty desktop. Covered while held it is unloaded as usual, and
+mounted afresh it moves for eight seconds again. Not the first frame, as planned: Pipes' first frame is
+black and a page still loading has none. A paused shader's canvas and a page whose frames are held keep
+showing their last picture.
+
 **Explorer shows a screensaver rather than opening it, and keeps its own copy of which names are
 one.** Double-click or Enter on `Name.xscr.html` or a `Name.xscr` folder previews it — the menu calls
 that entry *Preview* — so a folder one is no longer gone into by double-click: *Show contents* does

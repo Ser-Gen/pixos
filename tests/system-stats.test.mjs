@@ -200,4 +200,13 @@ check('and telling it the same thing twice does nothing',
 // re-arm. It must not throw on the way to finding that out.
 check('nor does it need a poller to be running', stats.setDesktopVisible(false), undefined);
 
+// --- on battery (phase 26, pass 6) ------------------------------------------------------------------
+
+check('a battery not charging is on battery', stats.isOnBattery({supported: true, charging: false, level: 0.5}), true);
+check('one charging is not', stats.isOnBattery({supported: true, charging: true, level: 0.5}), false);
+check('nor is a desktop computer, which says it is full and charging', stats.isOnBattery({supported: true, charging: true, level: 1}), false);
+check('nor a browser that cannot say, or has not yet', [stats.isOnBattery({supported: false}), stats.isOnBattery(null)], [false, false]);
+check('nor one the browser could not read, whatever else it says', stats.isOnBattery({supported: false, charging: false}), false);
+check('nor a reading with no charging in it', stats.isOnBattery({supported: true}), false);
+
 process.exit(report('system-stats') ? 1 : 0);

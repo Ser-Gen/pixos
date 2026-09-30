@@ -175,6 +175,99 @@ check('each its own', [background.isPaused(), saver.isPaused()], [true, false]);
 background.unmount();
 saver.unmount();
 
+// --- held still on battery (pass 6) -----------------------------------------------------------
+
+const pending = t => t.timers.filter(x => !x.cleared);
+time = clock();
+handle = wallpaper.mount(fakeElement(), {type: 'fake', value: 's'}, time);
+mark = log.length;
+handle.setStill(true);
+check('on battery it moves for a while first', [since(mark), pending(time).map(t => t.ms)], [[], [wallpaper.STILL_AFTER_MS]]);
+check('which is eight seconds', wallpaper.STILL_AFTER_MS, 8000);
+handle.setStill(true);
+check('told again, still one clock', pending(time).length, 1);
+time.elapse();
+check('and then holds still, paused where it is', [since(mark), handle.isHeld()], [['s pause'], true]);
+check('with no clock to unload it: it is still being looked at', pending(time).length, 0);
+mark = log.length;
+handle.forward({type: 'pointermove'});
+check('a still one takes no input', since(mark), []);
+
+handle.pause();
+check('covered, it is paused already, and only the clock to unload it starts', [since(mark), pending(time).map(t => t.ms)], [[], [wallpaper.UNLOAD_AFTER_MS]]);
+handle.resume();
+check('seen again before that, it is the same still picture', [since(mark), handle.isHeld(), pending(time).length], [[], true, 0]);
+
+handle.pause();
+time.elapse();
+check('covered long enough, it is unloaded like any other', [since(mark), handle.isUnloaded(), handle.isHeld()], [['s unmount'], true, false]);
+mark = log.length;
+handle.resume();
+check('seen again, mounted afresh, and it moves again for a while', [since(mark), pending(time).map(t => t.ms)], [['s mount'], [wallpaper.STILL_AFTER_MS]]);
+handle.pause();
+check('covered before it held, the clock to hold it stops', pending(time).map(t => t.ms), [wallpaper.UNLOAD_AFTER_MS]);
+mark = log.length;
+handle.resume();
+check('and starts again from nothing when it is seen', [since(mark), pending(time).map(t => t.ms)], [['s resume'], [wallpaper.STILL_AFTER_MS]]);
+time.elapse();
+mark = log.length;
+handle.setStill(false);
+check('plugged in, it moves again', [since(mark), handle.isHeld()], [['s resume'], false]);
+handle.setStill(true);
+handle.pause();
+time.elapse();
+handle.setStill(true);
+mark = log.length;
+handle.setStill(false);
+check('plugged in while covered and unloaded, nothing is resumed that is not there', since(mark), []);
+handle.unmount();
+
+time = clock();
+handle = wallpaper.mount(fakeElement(), {type: 'fake', value: 'h'}, time);
+handle.setStill(true);
+time.elapse();
+handle.pause();
+mark = log.length;
+handle.setStill(false);
+check('plugged in while held and covered, it is not resumed behind the window', [since(mark), handle.isHeld()], [[], false]);
+handle.resume();
+check('but when it is seen', since(mark), ['h resume']);
+handle.unmount();
+
+time = clock();
+handle = wallpaper.mount(fakeElement(), {type: 'fake', value: 'u'}, time);
+handle.setStill(true);
+handle.pause();
+mark = log.length;
+handle.setStill(false);
+check('plugged in while covered before it held, it stays paused', [since(mark), handle.isPaused()], [[], true]);
+handle.setStill(true);
+handle.unmount();
+check('unmounted, no clock is left', pending(time).length, 0);
+time = clock();
+handle = wallpaper.mount(fakeElement(), {type: 'fake', value: 'w'}, time);
+handle.pause();
+handle.setStill(true);
+check('told it is on battery while covered, only the clock to unload it runs', pending(time).map(t => t.ms), [wallpaper.UNLOAD_AFTER_MS]);
+handle.resume();
+check('and the one to hold it starts when it is seen', pending(time).map(t => t.ms), [wallpaper.STILL_AFTER_MS]);
+handle.unmount();
+check('unmounted while it moves toward holding, that clock stops too', pending(time).length, 0);
+handle.setStill(false);
+handle.setStill(true);
+check('and nothing is started for it after', pending(time).length, 0);
+
+time = clock();
+plain = wallpaper.mount(fakeElement(), {type: 'color', value: '#000'}, time);
+plain.setStill(true);
+check('a colour has nothing to hold', pending(time).length, 0);
+
+time = clock();
+handle = wallpaper.mount(fakeElement(), {type: 'fake', value: 'v'}, Object.assign({stillAfter: 50}, time));
+handle.setStill(true);
+check('how long it moves is a parameter', pending(time).map(t => t.ms), [50]);
+handle.unmount();
+
 // --- failing -------------------------------------------------------------------------------
 
 // A provider that fails after it has mounted -- a shader that will not compile, a page that
@@ -211,6 +304,12 @@ check('nothing reaches the instance after it failed', since(mark), []);
 check('and no clock starts for it', time.timers.length, 1);
 handle.unmount();
 check('not even an unmount: it already took itself away', since(mark), []);
+
+time = clock();
+handle = wallpaper.mount(fakeElement(), {type: 'fake-late', value: 'late'}, Object.assign({onError () {}}, time));
+handle.setStill(true);
+failLate('broke while moving');
+check('failing while it moves toward holding still stops that clock too', time.timers.every(t => t.cleared), true);
 
 errors.length = 0;
 failNext = 'sync';

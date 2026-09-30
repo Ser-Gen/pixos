@@ -17,13 +17,17 @@ const {decide, wakes, mediaPlaying, opaqueFocus, normalizeSettings, MOVE_GRACE_M
 
 wallpaper.register('fake', {mount: fakeMount});
 
-check('a fresh system has no screensaver, and five minutes ready for when it has', normalizeSettings(undefined), {show: null, minutes: 5});
+const NO_CORNERS = {topLeft: null, topRight: null, bottomLeft: null, bottomRight: null};
+check('a fresh system has no screensaver, and five minutes ready for when it has; no hot corners and no PIN',
+	normalizeSettings(undefined), {show: null, minutes: 5, corners: NO_CORNERS, pin: null});
 check('minutes as written in a file', normalizeSettings({minutes: '10'}).minutes, 10);
 check('nothing under a minute, which is also all idle detection can do',
 	[normalizeSettings({minutes: 0}).minutes, normalizeSettings({minutes: -3}).minutes, normalizeSettings({minutes: 'soon'}).minutes], [5, 5, 5]);
 check('whole minutes', normalizeSettings({minutes: 2.6}).minutes, 3);
 check('and at most a day', normalizeSettings({minutes: 99999}).minutes, 1440);
 check('a choice of a type nobody draws is no choice', normalizeSettings({show: {type: 'teapot', value: 1}}).show, null);
+check('the hot corners are kept', normalizeSettings({corners: {topLeft: 'start', topRight: 'teapot'}}).corners,
+	{topLeft: 'start', topRight: null, bottomLeft: null, bottomRight: null});
 check('a real one is kept, filled in', normalizeSettings({show: {type: 'shader', value: 'aurora'}}).show,
 	{type: 'shader', value: 'aurora', options: {}});
 
@@ -249,7 +253,8 @@ const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 	// Chosen after ten quiet minutes: the choosing is someone at the machine, and the wait starts from it.
 	t.advance(10 * MIN);
 	const saved = await saver.setSettings({show: FAKE});
-	check('choosing one writes it beside the wallpaper', persisted, [{screensaver: {show: {type: 'fake', value: 'waves', options: {}}, minutes: 5}}]);
+	check('choosing one writes it beside the wallpaper', persisted,
+		[{screensaver: {show: {type: 'fake', value: 'waves', options: {}}, minutes: 5, corners: NO_CORNERS, pin: null}}]);
 	check('and says what it now is', saved.show.value, 'waves');
 	check('and keeps a clock', t.timers.size, 1);
 
@@ -505,6 +510,273 @@ function makeDetectorWorld (initial) {
 	saver.stop();
 }
 
+// --- held off by a hot corner, and still on battery (pass 6) --------------------------------------
+
+check('a pointer resting in a never corner holds it off once the wait is over', decide(state({held: true})), 'corner');
+check('and says nothing before', decide(state({held: true, lastSeen: 9 * MIN})), 'waiting');
+
+{
+	const t = makeEnv();
+	saver.init({env: t.env, host: t.host, settings: {show: FAKE}, now: t.now, storage: null});
+	saver.setHeld(true);
+	t.advance(20 * MIN);
+	check('held by a corner, it does not start', saver.isRunning(), false);
+	saver.setHeld(false);
+	t.advance(5 * MIN - TICK_MS);
+	check('let go, it waits the whole time from the last moment it was held', saver.isRunning(), false);
+	t.advance(2 * TICK_MS);
+	check('and then starts', saver.isRunning(), true);
+	saver.stop();
+}
+
+{
+	// A provider whose handle says what still did: wallpaper.js's own handle, around the fake.
+	const t = makeEnv();
+	saver.init({env: t.env, host: t.host, settings: {show: FAKE}, now: t.now, storage: null});
+	saver.setStill(true);
+	saver.start();
+	const shown = mounted[mounted.length - 1];
+	check('on battery, what it shows moves at first', shown.log, []);
+	t.advance(wallpaper.STILL_AFTER_MS);
+	check('and then holds still', shown.log, ['pause']);
+	saver.setStill(false);
+	check('plugged in, it moves again', shown.log, ['pause', 'resume']);
+	saver.stop();
+	saver.setStill(true);
+	saver.start();
+	saver.setStill(false);
+	t.advance(wallpaper.STILL_AFTER_MS);
+	check('one started on battery and plugged in before it held never holds', mounted[mounted.length - 1].log, []);
+	saver.stop();
+}
+
+// --- the PIN (pass 6) -----------------------------------------------------------------------------
+
+function memory () {
+	const items = {};
+	const store = {
+		items,
+		getItem (key) { return key in items ? items[key] : null; },
+		setItem (key, value) { items[key] = String(value); },
+		removeItem (key) { delete items[key]; }
+	};
+	return store;
+}
+
+const pinModule = await import('../js/shell/pin.js');
+const PIN = await pinModule.makePin('2468', globalThis.crypto);
+const settle = async () => { for (let i = 0; i < 5; i++) { await flush(); } };
+
+function padOf (t) {
+	const layer = t.host.children.find(c => c.className.indexOf('PixScreensaver') === 0);
+	const box = layer && layer.children.find(c => c.className === 'PixScreensaver__pad');
+	if (!box) {
+		return null;
+	}
+	return {layer, box, input: box.children.find(c => c.tagName === 'INPUT'), button: box.children.find(c => c.tagName === 'BUTTON'),
+		note: box.children.find(c => c.className === 'PixScreensaver__padNote')};
+}
+
+{
+	const t = makeEnv();
+	const store = memory();
+	const persisted = [];
+	saver.init({env: t.env, host: t.host, settings: {show: FAKE}, now: t.now, storage: store, crypto: globalThis.crypto,
+		persist: patch => { persisted.push(patch); return Promise.resolve(); }});
+	check('no PIN at first', saver.hasPin(), false);
+	check('one can be set here', saver.canUsePin(), true);
+	await saver.setPin('2468');
+	check('set, it is kept as its hash beside the rest', [saver.hasPin(), persisted[0].screensaver.pin.hash.length], [true, 64]);
+	check('and not handed out', 'pin' in saver.getSettings(), false);
+
+	check('a preview is not locked', [saver.start(FAKE), saver.isLocked()], [true, false]);
+	t.key('keydown', {key: 'a'});
+	check('and ends at a key as before', saver.isRunning(), false);
+	t.advance(200);
+
+	check('Start screensaver, a corner or the wait: locked', [saver.start(), saver.isLocked()], [true, true]);
+	check('and written down for the other tabs and a reload', pinModule.readLock(store).hash, persisted[0].screensaver.pin.hash);
+	const woke = t.key('keydown', {key: 'x'});
+	check('a key does not end it', saver.isRunning(), true);
+	check('it goes nowhere', [woke.prevented, woke.stopped], [true, true]);
+	let pad = padOf(t);
+	check('it asks for the PIN', !!pad, true);
+	check('with the field ready to type in', t.doc.activeElement === pad.input, true);
+	check('and the pointer shown', pad.layer.classList.contains('PixScreensaver--asking'), true);
+
+	const typed = t.key('keydown', {key: '2', target: pad.input});
+	check('a digit is typed into the field: nothing stops it there', typed.prevented, false);
+	check('but it reaches nothing past the screensaver', typed.stopped, true);
+	const tab = t.key('keydown', {key: 'Tab', target: pad.input});
+	check('Tab does not take the focus out to the page under it', tab.prevented, true);
+	const stray = t.key('keydown', {key: '5', target: pad.layer});
+	check('a key with the focus elsewhere is not typed, and the field gets the focus back',
+		[stray.prevented, t.doc.activeElement === pad.input], [true, true]);
+
+	const onPad = event('pointerdown', {target: pad.button});
+	pad.layer.listeners.pointerdown[0](onPad);
+	check('a press on the pad is the pad\'s: its button and field take it as any would', [onPad.prevented, onPad.stopped], [false, false]);
+
+	pad.input.value = '1111';
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	await settle();
+	check('a wrong PIN does not end it', saver.isRunning(), true);
+	check('it says so, and empties the field', [pad.note.textContent, pad.input.value], ['That is not the PIN.', '']);
+	check('and the try is written down', pinModule.readLock(store).failures, 1);
+
+	t.key('keydown', {key: 'Escape', target: pad.input});
+	check('Escape puts the pad away and the screensaver goes on', [padOf(t), saver.isRunning()], [null, true]);
+	check('with the keys back on the layer, and the pointer hidden again',
+		[t.doc.activeElement === pad.layer, pad.layer.classList.contains('PixScreensaver--asking')], [true, false]);
+	pad.layer.listeners.pointerdown[0](event('pointerdown', {target: pad.layer}));
+	pad.layer.listeners.pointerup[0](event('pointerup', {target: pad.layer}));
+	pad = padOf(t);
+	check('a press asks again', !!pad, true);
+	t.advance(saver.PAD_IDLE_MS - 1);
+	check('typed in or not, the pad stays a while', !!padOf(t), true);
+	t.advance(1);
+	check('left alone half a minute, it goes away', [padOf(t), saver.PAD_IDLE_MS], [null, 30000]);
+
+	t.key('keydown', {key: ' '});
+	pad = padOf(t);
+	for (let i = 0; i < 4; i++) {
+		pad.input.value = '0000';
+		t.key('keydown', {key: 'Enter', target: pad.input});
+		await settle();
+	}
+	check('the fifth wrong PIN costs half a minute', pad.note.textContent, 'Too many wrong PINs. Try again in 30 s.');
+	pad.input.value = '2468';
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	await settle();
+	check('in which not even the right one is taken', [saver.isRunning(), pad.note.textContent], [true, 'Too many wrong PINs. Try again in 30 s.']);
+	t.advance(10000);
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	check('it counts down', pad.note.textContent, 'Too many wrong PINs. Try again in 20 s.');
+	t.advance(20000);
+	pad = padOf(t) || (t.key('keydown', {key: ' '}), padOf(t));
+	pad.input.value = '2468';
+	pad.button.listeners.click[0](event('click'));
+	await settle();
+	check('then the right PIN, by the button, ends it', [saver.isRunning(), saver.isLocked()], [false, false]);
+	check('and the lock is gone for every tab', pinModule.readLock(store), null);
+	t.advance(200);
+	check('the layer with it', t.host.children.filter(c => c.className.indexOf('PixScreensaver') === 0).length, 0);
+
+	// A reload while locked, and another tab.
+	saver.start();
+	const written = pinModule.readLock(store);
+	// Since changed, somewhere, to 1357.
+	const NEWER = await pinModule.makePin('1357', globalThis.crypto);
+	saver.init({env: t.env, host: t.host, settings: {show: FAKE, pin: NEWER}, now: t.now, storage: store, crypto: globalThis.crypto});
+	check('set up again, not locked until told to', saver.isRunning(), false);
+	check('reloaded while locked, it comes back locked', [saver.restoreLock(), saver.isRunning(), saver.isLocked()], [true, true, true]);
+	t.key('keydown', {key: 'x'});
+	pad = padOf(t);
+	pad.input.value = '1357';
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	await settle();
+	check('the PIN set since does not open a lock made before it', [saver.isRunning(), written.failures], [true, 0]);
+	pad.input.value = '2468';
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	await settle();
+	check('the one it was locked with does', saver.isRunning(), false);
+	t.advance(200);
+	saver.init({env: t.env, host: t.host, settings: {show: FAKE, pin: PIN}, now: t.now, storage: store, crypto: globalThis.crypto});
+	const storageEvent = value => { t.listeners.storage.forEach(l => l.fn({key: pinModule.LOCK_KEY, newValue: value})); };
+	saver.start();
+	check('locked again', saver.isLocked(), true);
+	store.removeItem(pinModule.LOCK_KEY);
+	storageEvent(null);
+	check('unlocked in another tab, it ends here too', [saver.isLocked(), saver.isRunning()], [false, false]);
+	t.advance(200);
+
+	pinModule.writeLock(store, pinModule.normalizeLock(PIN));
+	t.listeners.storage.forEach(l => l.fn({key: 'something-else', newValue: '1'}));
+	check('another key changing is nothing', saver.isRunning(), false);
+	storageEvent('x');
+	check('locked in another tab, it is shown here at once, locked', [saver.isRunning(), saver.isLocked()], [true, true]);
+	t.key('keydown', {key: 'x'});
+	pad = padOf(t);
+	pad.input.value = '2468';
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	await settle();
+	check('and opened with that lock\'s PIN', saver.isRunning(), false);
+	t.advance(200);
+	await saver.removePin();
+	check('removed, there is none', saver.hasPin(), false);
+	saver.start();
+	check('and starting it locks nothing', saver.isLocked(), false);
+	saver.stop();
+}
+
+{
+	// A lock left written down -- stopped at once rather than opened -- is taken up again by the next
+	// start if it is for the same PIN, with its wrong tries; one for a PIN since changed is not.
+	const t = makeEnv();
+	const store = memory();
+	const OLD = await pinModule.makePin('1357', globalThis.crypto);
+	pinModule.writeLock(store, Object.assign(pinModule.normalizeLock(OLD), {failures: 3}));
+	saver.init({env: t.env, host: t.host, settings: {show: FAKE, pin: PIN}, now: t.now, storage: store, crypto: globalThis.crypto});
+	saver.start();
+	check('a lock for another PIN is replaced, its tries with it', [pinModule.readLock(store).hash === PIN.hash, pinModule.readLock(store).failures], [true, 0]);
+	pinModule.writeLock(store, Object.assign(pinModule.readLock(store), {failures: 3}));
+	// Stopped at once: not someone at the pad, so the lock stays written down.
+	saver.stop();
+	check('stopped at once, the lock stays written down', pinModule.readLock(store).failures, 3);
+	check('but this tab is not locked while nothing shows', saver.isLocked(), false);
+	check('so a preview after it is not locked either', [saver.start(FAKE), saver.isLocked()], [true, false]);
+	saver.stop();
+	saver.start();
+	check('a lock for the same PIN keeps its wrong tries', pinModule.readLock(store).failures, 3);
+
+	// Another tab counted one more meanwhile: the fifth, here, costs the wait.
+	pinModule.writeLock(store, Object.assign(pinModule.readLock(store), {failures: 4}));
+	t.key('keydown', {key: 'x'});
+	let pad = padOf(t);
+	pad.input.value = '0000';
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	await settle();
+	check('the tries another tab counted count here', [pinModule.readLock(store).failures, pad.note.textContent],
+		[5, 'Too many wrong PINs. Try again in 30 s.']);
+
+	// Stopped with the pad up: the next start draws its own.
+	saver.stop();
+	saver.start();
+	t.key('keydown', {key: 'x'});
+	pad = padOf(t);
+	check('stopped with the pad up, the next start asks on a pad of its own', !!pad, true);
+	// Half a minute: the wait is over, and the pad, left alone that long, has gone.
+	t.advance(30000);
+	t.key('keydown', {key: 'x'});
+	pad = padOf(t);
+	pad.input.value = '2468';
+	t.key('keydown', {key: 'Enter', target: pad.input});
+	await settle();
+	check('and opens', saver.isRunning(), false);
+	t.advance(200);
+}
+
+{
+	// Locked from another tab with nothing chosen here: a blank screen, locked.
+	const t = makeEnv();
+	const store = memory();
+	pinModule.writeLock(store, pinModule.normalizeLock(PIN));
+	saver.init({env: t.env, host: t.host, settings: {}, now: t.now, storage: store, crypto: globalThis.crypto});
+	saver.restoreLock();
+	const blank = t.host.children[0];
+	check('nothing chosen, it locks on a blank screen', [saver.isLocked(), t.host.children.length, blank.children[0].style.background], [true, 1, '#000000']);
+	saver.stop();
+
+	// Where nothing can hash -- http, not localhost -- nothing locks, rather than lock someone out.
+	const t2 = makeEnv();
+	saver.init({env: t2.env, host: t2.host, settings: {show: FAKE, pin: PIN}, now: t2.now, storage: store, crypto: {}});
+	check('with no way to check a PIN, a lock written down is not honoured', [saver.restoreLock(), saver.isRunning()], [false, false]);
+	check('and a PIN cannot be set', saver.canUsePin(), false);
+	saver.start();
+	check('and starting it locks nothing', saver.isLocked(), false);
+	saver.stop();
+}
+
 // --- the wiring ------------------------------------------------------------------------------------
 
 const shell = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -513,5 +785,10 @@ check('index.html sets it up before the desktop, so its key listener is first on
 check('and closes every launcher as it starts, whose Escape handlers come earlier still',
 	/onStart: function \(\) \{\s*startMenu\.close\(\);\s*palette\.close\(\);\s*overview\.close\(\);\s*shortcuts\.close\(\);\s*contextMenu\.close\(\);\s*desktop\.setObscured\(true\);/.test(shell), true);
 check('its key is one of the shell\'s', /shortcuts\.matchesAny\(e, shortcuts\.shellKeys\('screensaver'\)\)/.test(shell), true);
+check('a lock written down is shown straight after the desktop is set up, which starting tells it is covered',
+	shell.indexOf('screensaver.restoreLock();') > shell.indexOf('desktop.init({') && shell.indexOf('screensaver.restoreLock();') < shell.indexOf('hotCorners.init({'), true);
+check('on battery it is held still, if that was not turned off',
+	/var still = power\.still && power\.onBattery;\s*desktop\.setStill\(still\);\s*screensaver\.setStill\(still\);/.test(shell)
+	&& /still: settings\.stillOnBattery !== false/.test(shell), true);
 
 process.exit(report('screensaver') ? 1 : 0);

@@ -60,6 +60,8 @@ var current = null;
 var peeking = false;
 // Something drawn over the whole desktop: the screensaver.
 var obscured = false;
+// On battery: the background moves for a moment each time it is seen, then holds still.
+var still = false;
 
 function ensureStyle () {
 	if (document.getElementById(STYLE_ID)) {
@@ -198,6 +200,14 @@ export function setObscured (on) {
 	refresh();
 }
 
+// Told by the shell, which reads the battery (pass 6). A background mounted later is told too.
+export function setStill (on) {
+	still = !!on;
+	if (current) {
+		current.setStill(still);
+	}
+}
+
 // Nothing above the fold decides this: the wallpaper renders only when it can actually
 // be seen. Phase 2's shader provider turns this into real battery savings, and the handle
 // unloads an animated one that stays out of sight (see wallpaper.js).
@@ -257,6 +267,7 @@ function apply (next) {
 		current.unmount();
 	}
 	current = wallpaper.mount(wallpaperEl, next, {onError: onWallpaperError});
+	current.setStill(still);
 	refreshWallpaperActivity();
 	return current.config;
 }

@@ -241,6 +241,7 @@ import * as bookmarks from "./js/shell/bookmarks.js";
 import * as fsEvents from "./js/shell/fs-events.js";
 import {pageName} from "./js/shell/wallpaper-page.js";
 import * as screensaver from "./js/shell/screensaver.js";
+import * as hotCorners from "./js/shell/hot-corners.js";
 import * as wallpaperDialog from "./js/shell/wallpaper-dialog.js";
 import {createCatalog as createScreensaverCatalog, INDEX_PATH as SCREENSAVER_INDEX} from "./js/shell/screensaver-catalog.js";
 import {createMountTable, createHandleStore, FILE as MOUNT_TABLE_FILE} from "./js/shell/mount-table.js";
@@ -1628,9 +1629,11 @@ function fsOnInit () {
 				shortcuts.close();
 				contextMenu.close();
 				desktop.setObscured(true);
+				hotCorners.setEnabled(false);
 			},
 			onStop: function () {
 				desktop.setObscured(false);
+				hotCorners.setEnabled(!!screensaver.getSettings().show);
 			},
 			onError: function (message, failed) {
 				window.notify(desktop.wallpaperErrorNote(message, failed, 'screensaver'));
@@ -1648,6 +1651,44 @@ function fsOnInit () {
 			persist: persistDesktopSettings,
 			onPeekChange: function (peeking) {
 				taskbar.setPeeking(peeking);
+			}
+		});
+		// Locked when this tab was reloaded, or opened while another PixOS tab is (pass 6). After
+		// desktop.init, because starting tells the desktop it is covered.
+		screensaver.restoreLock();
+
+		// A pointer resting in a corner starts the screensaver, or keeps it off (pass 6). Drawn while
+		// a screensaver is chosen and not running; the screensaver says when either changes.
+		hotCorners.init({
+			host: document.getElementById('overlays'),
+			corners: screensaver.getSettings().corners,
+			enabled: !!screensaver.getSettings().show && !screensaver.isRunning(),
+			onStart: function () {
+				screensaver.start();
+			},
+			onHold: screensaver.setHeld
+		});
+		screensaver.onChange(function () {
+			var chosen = screensaver.getSettings();
+			hotCorners.update(chosen.corners, !!chosen.show && !screensaver.isRunning());
+		});
+
+		// On battery, a background or a screensaver moves for a moment each time it is seen and then
+		// holds still (pass 6), unless that was turned off. The reading is system-stats.js's.
+		var power = {still: settings.stillOnBattery !== false, onBattery: false, known: false};
+		var applyPower = function () {
+			var still = power.still && power.onBattery;
+			desktop.setStill(still);
+			screensaver.setStill(still);
+		};
+		stats.subscribe(function (state) {
+			var onBattery = stats.isOnBattery(state.battery);
+			var known = !!(state.battery && state.battery.supported);
+			if (onBattery !== power.onBattery || known !== power.known) {
+				power.onBattery = onBattery;
+				power.known = known;
+				applyPower();
+				wallpaperDialog.refresh();
 			}
 		});
 		// What the gallery offers and downloads (phase 26, pass 4). The index and the files come
@@ -1711,6 +1752,16 @@ function fsOnInit () {
 			screensaver: screensaver,
 			catalog: screensaverCatalog,
 			location: shellLocation,
+			power: {
+				get: function () {
+					return {still: power.still, onBattery: power.onBattery, known: power.known};
+				},
+				set: function (still) {
+					power.still = !!still;
+					applyPower();
+					return persistDesktopSettings({stillOnBattery: power.still});
+				}
+			},
 			describeKey: function (id) {
 				return shortcuts.describeShortcut(id, shortcuts.isMacPlatform());
 			},

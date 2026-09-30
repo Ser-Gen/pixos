@@ -15,7 +15,10 @@ run in iframes. Pure static site — no build step, no backend.
   colour, gradient, image, shader or screensaver page; each mount is a handle that pauses and
   unloads it), `wallpaper-dialog.js` the dialog that chooses the background and the screensaver
   (two tabs, one gallery; Explorer's *Preview* and *Set as…* go through it too), `screensaver.js` (when nobody is there — Chrome's idle detection or the
-  input PixOS sees — and the layer that shows one and swallows the input that ends it), `screensaver-catalog.js`
+  input PixOS sees — and the layer that shows one and swallows the input that ends it, and the PIN pad on it),
+  `hot-corners.js` (a few pixels at each chosen corner of the page: resting there starts the screensaver or
+  keeps it off, and a press there is passed on), `pin.js` (the PIN's salted hash, and the lock written in
+  localStorage so that every tab and a reload find it), `screensaver-catalog.js`
   (which screensavers there are and which looks each has — on disk, or downloadable from the served repo —
   and downloading a look, the files it still needs one at a time, its page last), `location.js` (where this
 machine is, one place for all of PixOS in `/settings/location.json`, Riga until set — a page asks the
@@ -195,7 +198,7 @@ shell for it with `parent.watchLocation(window, handler)` rather than reading th
 - `docs/ux-improvements-plan.md` (phases 1–5, built), `docs/reliability-plan.md`
   (phases 6–20, all built), `docs/explorer-plan.md` (phases 21–24, all built),
   `docs/shortcuts-plan.md` (phase 25, keyboard shortcuts shown, built) and
-  `docs/screensavers-plan.md` (phase 26, animated backgrounds and screensavers, being built) are the
+  `docs/screensavers-plan.md` (phase 26, animated backgrounds and screensavers, built) are the
   scheduled work, each phase with a browser checklist beside it
   (`docs/shell-phase<n>-checklist.md`).
 - `files3/` — remote storage backend, mountable via `mount-manager`.
@@ -236,7 +239,9 @@ sections, and the kind of thing each one will catch:
   opens by its path, and what the gallery offers offline. Where this machine is, and why a page asks
   the shell for it; Sky's compass view and its twilights. The
   screensaver: whose idle counts, what holds it off, the permission asked in a click, and why its
-  key listener has to be registered first. Explorer previewing one, and its copy of which names are
+  key listener has to be registered first. The PIN's lock in localStorage and every tab having it, a
+  hot corner's three pixels and why a pressed one waits for the pointer to leave, and a background held
+  still on battery rather than unloaded. Explorer previewing one, and its copy of which names are
   screensavers.
 - *Windows, desktops and sessions* — the five layers, why an iframe is never reparented,
   one windows container for every desktop, and what a session actually persists.

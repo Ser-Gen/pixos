@@ -363,4 +363,37 @@ check('the row sets the location, and finds it only when asked in a click', [
 check('a location shown but not saved says so', /say\('Shown, but not saved: '/.test(source), true);
 check('the shell hands the dialog its location', /location: shellLocation,/.test(shellSource), true);
 
+// --- the extras (pass 6) -------------------------------------------------------------------------
+
+const corners = {topLeft: 'start', topRight: null, bottomLeft: null, bottomRight: 'never'};
+check('a corner set, the others as they were', dialog.cornersWith(corners, 'topRight', 'never'),
+	{topLeft: 'start', topRight: 'never', bottomLeft: null, bottomRight: 'never'});
+check('Nothing is null', dialog.cornersWith(corners, 'topLeft', '').topLeft, null);
+check('and the corners given are not changed', corners.topRight, null);
+check('the menu offers nothing, starting and never starting',
+	dialog.CORNER_ACTIONS.map(pair => pair[0]), ['', 'start', 'never']);
+check('every corner has a name', Object.keys(dialog.CORNER_NAMES), ['topLeft', 'topRight', 'bottomLeft', 'bottomRight']);
+
+check('a PIN typed twice is a PIN', dialog.readPinFields(' 2468 ', '2468'), {pin: '2468'});
+check('three digits are not one', dialog.readPinFields('246', '246'), {error: 'A PIN is four to eight digits.'});
+check('nor letters', dialog.readPinFields('24a8', '24a8').error, 'A PIN is four to eight digits.');
+check('two that differ are refused before anything is set', dialog.readPinFields('2468', '2486'),
+	{error: 'The two do not match. Type the same PIN twice.'});
+check('and so is one typed once', dialog.readPinFields('2468', '').error, 'The two do not match. Type the same PIN twice.');
+
+check('a browser that cannot say says so', dialog.powerNote({still: true, known: false}),
+	'This browser does not say whether the computer is on battery, so here it always moves.');
+check('nor before it has', dialog.powerNote(null).indexOf('This browser'), 0);
+check('plugged in, it moves', dialog.powerNote({still: true, onBattery: false, known: true}), 'Plugged in now: it moves.');
+check('on battery, it says what it does', dialog.powerNote({still: true, onBattery: true, known: true}),
+	'On battery now: it moves for a few seconds each time it is seen, then holds still.');
+check('and when that was turned off', dialog.powerNote({still: false, onBattery: true, known: true}), 'On battery now, and moving.');
+
+check('a redraw is not held back by a checkbox with the focus, only by a field being typed in',
+	/active\.tagName === 'INPUT' && active\.type !== 'checkbox'/.test(source), true);
+check('the corners and the PIN are offered only while a screensaver is chosen',
+	/if \(chosen\) \{\s*body\.append\(cornersRow\(/.test(source), true);
+check('the battery row is in both tabs', (source.match(/body\.append\(powerRow\(\)\);/g) || []).length, 2);
+check('refreshing a dialog that was never opened is nothing', dialog.refresh(), undefined);
+
 process.exit(report('wallpaper-dialog') ? 1 : 0);

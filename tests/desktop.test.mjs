@@ -36,6 +36,9 @@ check('the desktop listens for exactly the events the page is handed',
 check('the right-click is still the desktop\'s menu', /desktopEl\.addEventListener\('contextmenu', onContextMenu\)/.test(source), true);
 check('the screensaver covers the background as a window does',
 	/var covered = \(.*\) \|\| obscured;/.test(source), true);
+check('on battery the background is held still, and so is one mounted later (pass 6)',
+	/export function setStill \(on\) \{\s*still = !!on;\s*if \(current\) \{\s*current\.setStill\(still\);/.test(source)
+	&& /current = wallpaper\.mount\(wallpaperEl, next, \{onError: onWallpaperError\}\);\s*current\.setStill\(still\);/.test(source), true);
 check('and hides the widgets, so their readings slow down', /widgets\.setVisible\(\(empty \|\| peeking\) && !obscured\)/.test(source), true);
 
 // --- saying what failed -------------------------------------------------------------------------

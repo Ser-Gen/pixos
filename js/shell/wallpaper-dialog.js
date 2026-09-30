@@ -18,6 +18,10 @@
 // **Sky asks where it is** (the Sky pass): while it is the choice, a row under the gallery sets the
 // one location PixOS keeps, typed or found by the browser. js/shell/location.js holds it.
 //
+// **The extras** (pass 6): the Screensaver tab sets the hot corners and the PIN while a screensaver
+// is chosen, and both tabs carry the one battery setting, since it holds the background and the
+// screensaver still alike. js/shell/hot-corners.js and js/shell/pin.js do the work.
+//
 // **Every choice applies at once, and the dialog stays.** A new background is visible behind it
 // on an empty desktop, and the screensaver tab has more than one thing to set.
 
@@ -28,6 +32,8 @@ import * as screensaverModule from './screensaver.js';
 import {SCREENSAVERS_DIR} from './screensaver-catalog.js';
 import * as failure from './failure.js';
 import {parseCoordinate} from './location.js';
+import {CORNERS} from './hot-corners.js';
+import {isValidPin} from './pin.js';
 
 export {SCREENSAVERS_DIR};
 export var SLIDESHOW = SCREENSAVERS_DIR + '/Slideshow.xscr';
@@ -238,6 +244,54 @@ var CSS = `
 	font-size: 11px;
 	color: #8a919c;
 	line-height: 1.6;
+}
+
+.PixDialog__check {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	cursor: pointer;
+}
+
+.PixDialog__check input {
+	margin: 0;
+	accent-color: #4f9dff;
+}
+
+/* The four corners where they are: top left in the top left. */
+.PixDialog__corners {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 8px 24px;
+	padding: 10px;
+	border: 1px solid #383c44;
+}
+
+.PixDialog__corners label {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: 11px;
+	color: #8a919c;
+}
+
+.PixDialog__corners label:nth-child(even) {
+	text-align: right;
+}
+
+.PixDialog__corners select,
+.PixDialog__row input[type="password"] {
+	background: #1b1e23;
+	border: 1px solid #434850;
+	color: #e4e4e4;
+	padding: 6px 8px;
+	font-size: 12px;
+	font-family: inherit;
+	min-width: 0;
+}
+
+.PixDialog__row input[type="password"] {
+	flex: 1;
 }
 
 .PixDialog__note .PixButton {
@@ -470,6 +524,41 @@ export function idleNote (status) {
 	return {text: 'Only input in PixOS counts for now. The browser can count the whole computer, and asks first. ' + always, allow: true};
 }
 
+// What each hot corner can do, as the Screensaver tab offers it.
+export var CORNER_NAMES = {topLeft: 'Top left', topRight: 'Top right', bottomLeft: 'Bottom left', bottomRight: 'Bottom right'};
+export var CORNER_ACTIONS = [['', 'Nothing'], ['start', 'Start screensaver'], ['never', 'Never start']];
+
+// The corners after one of them is set to `action` ('' for nothing).
+export function cornersWith (corners, corner, action) {
+	var next = Object.assign({}, corners);
+	next[corner] = action || null;
+	return next;
+}
+
+// What the two PIN fields say: a PIN, or what is wrong.
+export function readPinFields (first, again) {
+	var pin = String(first || '').trim();
+	if (!isValidPin(pin)) {
+		return {error: 'A PIN is four to eight digits.'};
+	}
+	if (String(again || '').trim() !== pin) {
+		return {error: 'The two do not match. Type the same PIN twice.'};
+	}
+	return {pin: pin};
+}
+
+// What the battery row says under its checkbox. `power` is {still, onBattery, known}.
+export function powerNote (power) {
+	if (!power || !power.known) {
+		return 'This browser does not say whether the computer is on battery, so here it always moves.';
+	}
+	if (!power.onBattery) {
+		return 'Plugged in now: it moves.';
+	}
+	return power.still ? 'On battery now: it moves for a few seconds each time it is seen, then holds still.'
+		: 'On battery now, and moving.';
+}
+
 // --- the dialog ------------------------------------------------------------------------------------
 
 var host = null;
@@ -478,6 +567,7 @@ var setWallpaper = function () { return Promise.resolve(); };
 var saver = null;
 var catalog = null;
 var place = null;
+var power = null;
 var describeKey = function () { return ''; };
 var notify = function () {};
 var progress = function () {
@@ -509,8 +599,8 @@ function ensureStyle () {
 // cfg: host, getWallpaper, setWallpaper(config), screensaver (the module's own functions),
 // catalog (screensaver-catalog.js's list and download), describeKey(id) -> the chord to print
 // beside *Start screensaver*, notify(note) for what Explorer's *Set as screensaver* says,
-// progress(cfg) for a download's note, describeError(context, error) for its failure, and location
-// (location.js's) for Sky's row.
+// progress(cfg) for a download's note, describeError(context, error) for its failure, location
+// (location.js's) for Sky's row, and power {get, set(still)} for the battery row.
 export function init (cfg) {
 	host = cfg.host;
 	getWallpaper = cfg.getWallpaper || getWallpaper;
@@ -518,6 +608,7 @@ export function init (cfg) {
 	saver = cfg.screensaver || null;
 	catalog = cfg.catalog || null;
 	place = cfg.location || null;
+	power = cfg.power || null;
 	describeKey = cfg.describeKey || describeKey;
 	notify = cfg.notify || notify;
 	progress = cfg.progress || progress;
@@ -526,6 +617,11 @@ export function init (cfg) {
 
 export function isOpen () {
 	return !!dialog;
+}
+
+// Drawn again, if it is open: the battery reading changed.
+export function refresh () {
+	redraw();
 }
 
 function downloadKey (config) {
@@ -701,7 +797,8 @@ export function open (tab) {
 	// A choice made somewhere else -- Explorer's menu -- is drawn, unless that would wipe out a path
 	// being typed.
 	redraw = function () {
-		var typing = dialog && dialog.contains(document.activeElement) && document.activeElement.tagName === 'INPUT';
+		var active = document.activeElement;
+		var typing = dialog && dialog.contains(active) && active.tagName === 'INPUT' && active.type !== 'checkbox';
 		if (dialog && !typing) {
 			render();
 		}
@@ -939,6 +1036,125 @@ function locationRow () {
 	return element;
 }
 
+// The one battery setting, drawn in both tabs.
+function powerRow () {
+	var element = section('On battery');
+	var label = document.createElement('label');
+	label.className = 'PixDialog__check';
+	var box = document.createElement('input');
+	box.type = 'checkbox';
+	var state = power.get();
+	box.checked = !!state.still;
+	box.onchange = function () {
+		Promise.resolve(power.set(box.checked)).catch(function (err) {
+			console.error('The battery setting could not be saved', err);
+		}).then(function () {
+			redraw();
+		});
+	};
+	label.append(box, 'Hold still on battery');
+	element.append(label, note(powerNote(state)));
+	return element;
+}
+
+// The four corners, laid out as the corners they are.
+function cornersRow (current, apply) {
+	var element = section('Hot corners');
+	var grid = document.createElement('div');
+	grid.className = 'PixDialog__corners';
+	CORNERS.forEach(function (corner) {
+		var label = document.createElement('label');
+		label.append(CORNER_NAMES[corner]);
+		var select = document.createElement('select');
+		select.setAttribute('aria-label', CORNER_NAMES[corner] + ' corner');
+		CORNER_ACTIONS.forEach(function (pair) {
+			var option = document.createElement('option');
+			option.value = pair[0];
+			option.textContent = pair[1];
+			select.append(option);
+		});
+		select.value = current.corners[corner] || '';
+		select.onchange = function () {
+			apply(cornersWith(current.corners, corner, select.value));
+		};
+		label.append(select);
+		grid.append(label);
+	});
+	element.append(grid, note('The pointer resting a moment in a corner of the page. Never start keeps it away while the '
+		+ 'pointer is there, as for a film in a window PixOS cannot see into.'));
+	return element;
+}
+
+function pinRow () {
+	var element = section('PIN to wake');
+	if (!saver.canUsePin()) {
+		element.append(note('A PIN needs PixOS on https or localhost: on a plain http page the browser will not hash one.'));
+		return element;
+	}
+	var row = document.createElement('div');
+	row.className = 'PixDialog__row';
+	var field = function (label) {
+		var input = document.createElement('input');
+		input.type = 'password';
+		input.inputMode = 'numeric';
+		input.autocomplete = 'new-password';
+		input.maxLength = 8;
+		input.placeholder = label;
+		input.setAttribute('aria-label', label);
+		input.addEventListener('keydown', function (e) {
+			if (e.key === 'Enter') {
+				set.click();
+			}
+		});
+		return input;
+	};
+	var has = saver.hasPin();
+	var first = field(has ? 'New PIN' : 'PIN');
+	var again = field('Again');
+	var set = document.createElement('button');
+	set.className = 'PixButton';
+	set.textContent = has ? 'Change' : 'Set';
+	var status = note(has ? 'A PIN is set.' : '');
+	status.setAttribute('role', 'status');
+	var say = function (text) {
+		status.textContent = text;
+	};
+	var done = function () {
+		first.value = '';
+		again.value = '';
+		redraw();
+	};
+	set.onclick = function () {
+		var read = readPinFields(first.value, again.value);
+		if (read.error) {
+			say(read.error);
+			return;
+		}
+		// Blurred first: a redraw leaves alone a dialog with a field that has the focus.
+		first.blur();
+		again.blur();
+		saver.setPin(read.pin).then(done, function (err) {
+			say((err && err.message) || String(err));
+		});
+	};
+	row.append(first, again, set);
+	if (has) {
+		var remove = document.createElement('button');
+		remove.className = 'PixButton';
+		remove.textContent = 'Remove';
+		remove.onclick = function () {
+			saver.removePin().then(done, function (err) {
+				say((err && err.message) || String(err));
+			});
+		};
+		row.append(remove);
+	}
+	element.append(row, status, note('Asked for when it ends, after it started by itself, from a hot corner or from Start '
+		+ 'screensaver; not after Preview. Every PixOS tab locks with it. It keeps out someone walking past, not someone '
+		+ 'who opens the browser\'s developer tools, and those are also the one way back in if it is forgotten.'));
+	return element;
+}
+
 function fileRow (placeholder, chosen, apply) {
 	var element = section('A file from the filesystem');
 	element.insertAdjacentHTML('beforeend', '<div class="PixDialog__row">'
@@ -1003,6 +1219,9 @@ function renderBackground (body, screensavers, render) {
 	}
 
 	body.append(gradients, colours, moving);
+	if (power) {
+		body.append(powerRow());
+	}
 	var folder = slideshowFolder(chosen);
 	if (folder !== null) {
 		body.append(picturesRow(folder, pick));
@@ -1095,6 +1314,18 @@ function renderScreensaver (body, screensavers, render) {
 			+ (key ? ', or ' + key : '') + '.'));
 	}
 	body.append(timing);
+
+	if (chosen) {
+		body.append(cornersRow(current, function (corners) {
+			Promise.resolve(saver.setSettings({corners: corners})).then(render, render);
+		}));
+		if (typeof saver.hasPin === 'function') {
+			body.append(pinRow());
+		}
+	}
+	if (power) {
+		body.append(powerRow());
+	}
 
 	var file = fileRow('/home/pictures/sea.jpg, /home/plasma.glsl or /home/Rain.xscr.html', chosen, pick);
 	file.append(note('Or right-click a screensaver in Explorer and choose Set as screensaver.'));
