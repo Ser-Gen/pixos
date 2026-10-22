@@ -1,5 +1,6 @@
 // A DOM just big enough for the shell's settings pages: elements as plain objects, a document with a
-// focus, keydown that bubbles. Installed as `globalThis.document` on import. Not a test of its own.
+// focus and listeners of its own, keydown that bubbles, and a rect a test sets by hand (`node.rect`).
+// Installed as `globalThis.document` on import. Not a test of its own.
 
 export function element (tag) {
 	const node = {
@@ -12,6 +13,8 @@ export function element (tag) {
 		className: '',
 		textContent: '',
 		type: '',
+		style: {},
+		rect: null,
 		append (...nodes) {
 			nodes.forEach(child => {
 				if (typeof child === 'string') {
@@ -43,6 +46,7 @@ export function element (tag) {
 		setAttribute (name, value) { node.attributes[name] = String(value); },
 		getAttribute (name) { return name in node.attributes ? node.attributes[name] : null; },
 		addEventListener (type, fn) { (node.listeners[type] = node.listeners[type] || []).push(fn); },
+		getBoundingClientRect () { return node.rect || {left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0}; },
 		focus () { doc.activeElement = node; },
 		blur () { if (doc.activeElement === node) { doc.activeElement = doc.body; } },
 		click () { if (node.onclick) { node.onclick(); } },
@@ -65,7 +69,15 @@ export const doc = {
 	body: element('body'),
 	activeElement: null,
 	createElement: element,
-	getElementById: id => doc.head.children.find(node => node.id === id) || null
+	getElementById: id => doc.head.children.find(node => node.id === id) || null,
+	// type -> [{fn, capture}]: a listener is removed only with the capture it was added with, as in a browser.
+	listeners: {},
+	addEventListener (type, fn, capture) { (doc.listeners[type] = doc.listeners[type] || []).push({fn, capture: !!capture}); },
+	removeEventListener (type, fn, capture) {
+		doc.listeners[type] = (doc.listeners[type] || []).filter(other => other.fn !== fn || other.capture !== !!capture);
+	},
+	// A pointer pressed on `target`, as the document's listeners hear it.
+	press (target) { (doc.listeners.pointerdown || []).slice().forEach(other => other.fn({target})); }
 };
 doc.activeElement = doc.body;
 globalThis.document = doc;

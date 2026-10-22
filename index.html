@@ -72,10 +72,11 @@
 	}
 	/* The bottom inset is the taskbar's height, published by taskbar.js so the number
 	   lives in one place. GoldenLayout lays windows out inside this box and the iframe
-	   rects follow from it, so nothing ends up underneath the bar. */
+	   rects follow from it, so nothing ends up underneath the bar. The taskbar is zoomed
+	   by the interface scale and this is not, so here it is multiplied (js/shell/display.js). */
 	#root {
 		position: absolute;
-		inset: 0 0 var(--pixos-taskbar-height, 38px) 0;
+		inset: 0 0 calc(var(--pixos-taskbar-height, 38px) * var(--pixos-scale, 1)) 0;
 		z-index: 10;
 	}
 	#windows {
@@ -246,6 +247,8 @@ import * as wallpaperDialog from "./js/shell/wallpaper-dialog.js";
 import * as settingsWindow from "./js/shell/settings.js";
 import {addLocationPage} from "./js/shell/location-page.js";
 import {createSystemSettings, SYSTEM_FILE} from "./js/shell/system-settings.js";
+import {createDisplay} from "./js/shell/display.js";
+import {addDisplayPage, createQuickPanel} from "./js/shell/display-page.js";
 import {createCatalog as createScreensaverCatalog, INDEX_PATH as SCREENSAVER_INDEX} from "./js/shell/screensaver-catalog.js";
 import {createMountTable, createHandleStore, FILE as MOUNT_TABLE_FILE} from "./js/shell/mount-table.js";
 import {createLocation, LOCATION_FILE} from "./js/shell/location.js";
@@ -1610,6 +1613,24 @@ function fsOnInit () {
 		// Before the background is mounted, so a sky drawn at boot is drawn from here the first time.
 		await shellLocation.load();
 		await systemSettings.load();
+		// Brightness, scale and reduce motion (phase 27 pass 2), drawn before anything else is, and
+		// again whenever the settings change. Reduced motion also holds backgrounds still, below.
+		var applyPower = null;
+		var display = createDisplay({
+			root: document.documentElement,
+			shell: document.getElementById('shell'),
+			media: typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null,
+			setHeaderHeight: function (px) {
+				winManager.setHeaderHeight(px);
+			},
+			onMotion: function () {
+				if (applyPower) {
+					applyPower();
+				}
+				settingsWindow.refresh();
+			}
+		});
+		systemSettings.subscribe(display.apply);
 		// Follow me (phase 27): found again, and only if the browser would answer without asking.
 		// Not awaited -- it can take seconds, and a sky already drawn moves when it arrives. Not
 		// before the tabs have settled who writes, either: the browser can answer from its cache
@@ -1725,12 +1746,15 @@ function fsOnInit () {
 
 		// On battery, a background or a screensaver moves for a moment each time it is seen and then
 		// holds still (pass 6), unless that was turned off. The reading is system-stats.js's.
+		// Reduce motion holds them still the same way, battery or not (phase 27, js/shell/display.js).
 		var power = {still: settings.stillOnBattery !== false, onBattery: false, known: false};
-		var applyPower = function () {
-			var still = power.still && power.onBattery;
+		applyPower = function () {
+			var still = (power.still && power.onBattery) || display.reduced();
 			desktop.setStill(still);
 			screensaver.setStill(still);
 		};
+		// Now, for a reduced motion that was on before there was anything to hold.
+		applyPower();
 		stats.subscribe(function (state) {
 			var onBattery = stats.isOnBattery(state.battery);
 			var known = !!(state.battery && state.battery.supported);
@@ -1798,6 +1822,16 @@ function fsOnInit () {
 		// The Settings window (phase 27), and its pages: each module that owns a setting adds its own.
 		settingsWindow.init({host: document.getElementById('overlays')});
 		addLocationPage({settings: settingsWindow, location: shellLocation});
+		addDisplayPage({settings: settingsWindow, system: systemSettings, display: display});
+		// The taskbar's quick panel: the three sliders, a click from anywhere.
+		var quickPanel = createQuickPanel({
+			host: document.getElementById('overlays'),
+			system: systemSettings,
+			display: display,
+			openSettings: function () {
+				settingsWindow.open('display');
+			}
+		});
 		wallpaperDialog.init({
 			settings: settingsWindow,
 			getWallpaper: desktop.getWallpaper,
@@ -2195,6 +2229,9 @@ function fsOnInit () {
 			onPeers: function () {
 				peersPanel.toggle();
 			},
+			onDisplay: function (anchorRect, anchorElement) {
+				quickPanel.toggle(anchorRect, anchorElement);
+			},
 			// Clicking a window button is a request to *see* that window, which is more
 			// than selecting its tab: revealWindow also ends a peek and brings the
 			// window's desktop forward.
@@ -2217,6 +2254,7 @@ function fsOnInit () {
 		winManager.on('mousedown', function () {
 			startMenu.close();
 			palette.close();
+			quickPanel.close();
 		});
 	}
 

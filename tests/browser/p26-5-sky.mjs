@@ -30,7 +30,7 @@ const walk = dir => b.evaluate(`(function walk (d) { return new Promise(function
 	Promise.all(names.map(function (n) { var p = d + '/' + n; return new Promise(function (r2) { fs.stat(p, function (e2, s) {
 		r2(s && s.isDirectory() ? walk(p) : [p]); }); }); })).then(function (lists) { r([].concat.apply([], lists)); });
 }); }); })(${JSON.stringify(dir)})`);
-const settings = () => b.evaluate(`new Promise(function (r) { fs.readFile('/settings/desktop.json', 'utf8', function (e, t) { r(e ? null : JSON.parse(t)); }); })`);
+const settings = () => b.evaluate(`new Promise(function (r) { fs.readFile('/settings/desktop.json', 'utf8', function (e, t) { try { r(e ? null : JSON.parse(t)); } catch (err) { r(null); } }); })`);
 const tiles = () => b.evaluate(`Array.from(document.querySelectorAll('.PixSettings .PixSwatch')).map(function (t) {
 	var r = t.getBoundingClientRect(); var size = t.querySelector('.PixSwatch__size');
 	return {key: t.dataset.key.replace('\\n', '/'), tip: t.title, size: size ? size.textContent : '', active: t.getAttribute('aria-pressed') === 'true',

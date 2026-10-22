@@ -45,7 +45,13 @@ try {
 	}
 	if (MODE === 'hard' || MODE === 'stay') {
 		if (MODE === 'stay') {
-			await b.evaluate(`(sessionStorage.setItem('pixos-sw-reload', '1'), true)`);
+			// The reload already spent, written into the page the hard reload makes, before the shell's
+			// script reads it. Set on this page instead, it never arrived: the shell here is
+			// cross-origin isolated and the page a hard reload fetches is not, and Chrome gave that page
+			// a sessionStorage of its own (seen 2026-10-23), so the shell spent its reload and was
+			// controlled again. A browser that bypasses the worker every time keeps one sessionStorage,
+			// both pages being uncontrolled, which is the case the flag is for.
+			await b.send('Page.addScriptToEvaluateOnNewDocument', {source: `if (window === top) { sessionStorage.setItem('pixos-sw-reload', '1'); }`});
 		}
 		await b.evaluate(`(window.__old = true)`);
 		console.log('  before the hard reload: ' + await b.evaluate(`JSON.stringify({start: window.__start, sw: sessionStorage.getItem('pixos-sw-reload')})`));

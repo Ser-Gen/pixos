@@ -787,8 +787,10 @@ check('and closes every launcher as it starts, whose Escape handlers come earlie
 check('its key is one of the shell\'s', /shortcuts\.matchesAny\(e, shortcuts\.shellKeys\('screensaver'\)\)/.test(shell), true);
 check('a lock written down is shown straight after the desktop is set up, which starting tells it is covered',
 	shell.indexOf('screensaver.restoreLock();') > shell.indexOf('desktop.init({') && shell.indexOf('screensaver.restoreLock();') < shell.indexOf('hotCorners.init({'), true);
-check('on battery it is held still, if that was not turned off',
-	/var still = power\.still && power\.onBattery;\s*desktop\.setStill\(still\);\s*screensaver\.setStill\(still\);/.test(shell)
+check('on battery it is held still, if that was not turned off, and with motion reduced either way',
+	/var still = \(power\.still && power\.onBattery\) \|\| display\.reduced\(\);\s*desktop\.setStill\(still\);\s*screensaver\.setStill\(still\);/.test(shell)
 	&& /still: settings\.stillOnBattery !== false/.test(shell), true);
+check('and that is applied once as soon as it is defined, for a reduced motion already on',
+	/screensaver\.setStill\(still\);\s*\};\s*(\/\/[^\n]*\n\s*)*applyPower\(\);/.test(shell), true);
 
 process.exit(report('screensaver') ? 1 : 0);

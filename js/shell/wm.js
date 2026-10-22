@@ -77,6 +77,8 @@ export default class WM {
 		this.workspaceID = 0;
 		this.windows = new Map();
 		this.workspaces = new Map();
+		// Golden Layout's own until the interface scale says otherwise (setHeaderHeight).
+		this.headerHeight = null;
 		this.handlers = {};
 		this.activeWindowId = null;
 		this.activeWorkspaceId = null;
@@ -154,7 +156,14 @@ export default class WM {
 			workspace.element.replaceChildren();
 		}
 
-		var layout = new GoldenLayout(layoutConfig || emptyLayoutConfig(), $(workspace.element));
+		var config = layoutConfig || emptyLayoutConfig();
+		if (this.headerHeight) {
+			// A saved layout carries the header it was saved with; the scale now is what counts.
+			config = Object.assign({}, config, {
+				dimensions: Object.assign({}, config.dimensions, {headerHeight: this.headerHeight})
+			});
+		}
+		var layout = new GoldenLayout(config, $(workspace.element));
 
 		layout.registerComponent('PixOS', function (container, state) {
 			container.getElement().html(state.html);
@@ -332,6 +341,24 @@ export default class WM {
 				winID: record.id
 			}
 		});
+	}
+
+	// The tabs' strip, taller with the interface scale (phase 27, js/shell/display.js). Golden Layout
+	// reads the height from its config each time it lays out, and lays a window out below the height it
+	// was given, not the one its tabs are drawn at -- so every layout is told, and the hidden ones lay
+	// out again when they are shown (switchTo).
+	setHeaderHeight (px) {
+		if (px === this.headerHeight) {
+			return;
+		}
+		this.headerHeight = px;
+		this.workspaces.forEach(function (workspace) {
+			if (workspace.layout && workspace.layout.config && workspace.layout.config.dimensions) {
+				workspace.layout.config.dimensions.headerHeight = px;
+			}
+		});
+		this.updateSize();
+		this.syncGeometry();
 	}
 
 	updateSize () {

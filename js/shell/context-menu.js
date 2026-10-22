@@ -74,7 +74,7 @@ var CSS = `
 	left: calc(100% - 6px);
 	top: -6px;
 	min-width: 220px;
-	max-height: 70vh;
+	max-height: calc(70vh / var(--pixos-scale, 1));
 	overflow-y: auto;
 	background: #23262b;
 	border: 1px solid #434850;
@@ -142,8 +142,6 @@ export function open (items, x, y, options) {
 
 	var menu = document.createElement('div');
 	menu.className = 'PixMenu';
-	menu.style.left = x + 'px';
-	menu.style.top = y + 'px';
 	menu.onclick = function (e) {
 		e.stopPropagation();
 	};
@@ -153,6 +151,9 @@ export function open (items, x, y, options) {
 	menu.append(buildList(items));
 
 	host.append(menu);
+	var zoom = zoomOf(menu);
+	menu.style.left = x / zoom + 'px';
+	menu.style.top = y / zoom + 'px';
 	current = menu;
 	reposition(menu, x, y);
 	return menu;
@@ -164,10 +165,18 @@ function reposition (menu, x, y) {
 			return;
 		}
 		var margin = 6;
+		var zoom = zoomOf(menu);
 		var rect = menu.getBoundingClientRect();
-		menu.style.left = Math.min(x, Math.max(margin, window.innerWidth - rect.width - margin)) + 'px';
-		menu.style.top = Math.min(y, Math.max(margin, window.innerHeight - rect.height - margin)) + 'px';
+		menu.style.left = Math.min(x, Math.max(margin, window.innerWidth - rect.width - margin)) / zoom + 'px';
+		menu.style.top = Math.min(y, Math.max(margin, window.innerHeight - rect.height - margin)) / zoom + 'px';
 	});
+}
+
+// The interface scale zooms the layer a menu is drawn in (js/shell/display.js), and a zoomed box's
+// `left` is drawn that many times further along. Where the pointer was is in the screen's pixels, so
+// it is divided by the zoom before it is written; a rect is in the screen's pixels already.
+function zoomOf (element) {
+	return element.currentCSSZoom || 1;
 }
 
 function buildList (items) {
@@ -246,8 +255,10 @@ function positionSubmenu (submenu, parentItem) {
 	var maxTop = window.innerHeight - margin - itemRect.top - submenuRect.height;
 	var top = Math.max(minTop, Math.min(-6, maxTop));
 
-	submenu.style.left = opensLeft ? (-(submenuRect.width - 6)) + 'px' : (parentItem.offsetWidth - 6) + 'px';
-	submenu.style.top = top + 'px';
+	// offsetWidth is in the menu's own pixels already; the rects are the screen's.
+	var zoom = zoomOf(submenu);
+	submenu.style.left = opensLeft ? (-(submenuRect.width - 6) / zoom) + 'px' : (parentItem.offsetWidth - 6) + 'px';
+	submenu.style.top = top / zoom + 'px';
 	submenu.style.right = 'auto';
 	submenu.style.display = previousDisplay;
 	submenu.style.visibility = previousVisibility;

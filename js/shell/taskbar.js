@@ -195,6 +195,18 @@ var CSS = `
 	font-variant-numeric: tabular-nums;
 }
 
+.PixTray__display {
+	background: none;
+	border: none;
+	font: inherit;
+	font-size: 15px;
+}
+
+.PixTray__display:focus-visible {
+	outline: 2px solid #4f9dff;
+	outline-offset: -2px;
+}
+
 /* Only ever drawn while offline, so it can afford to be loud: it is the answer to every
    "why did that fail" the system is about to be asked. */
 .PixTaskbar__dirty {
@@ -587,13 +599,27 @@ function buildTray () {
 	elements.clock = document.createElement('div');
 	elements.clock.className = 'PixTray__item PixTray__clock';
 
+	// Brightness and the other two, a click from anywhere (phase 27): the one control that has to
+	// stay reachable on a screen made too dim to find Settings on.
+	elements.display = document.createElement('button');
+	elements.display.className = 'PixTray__item PixTray__item--open PixTray__display';
+	elements.display.textContent = '\u263c';
+	elements.display.title = 'Display: brightness, contrast, saturation';
+	elements.display.setAttribute('aria-label', 'Display');
+	elements.display.onclick = function (e) {
+		e.stopPropagation();
+		if (options.onDisplay) {
+			options.onDisplay(elements.display.getBoundingClientRect(), elements.display);
+		}
+	};
+
 	// First in the tray, and hidden whenever there is nothing to say.
 	elements.network = document.createElement('div');
 	elements.network.className = 'PixTray__item PixTray__offline PixTray__item--hidden';
 	elements.network.textContent = 'Offline';
 
 	tray.append(elements.network, elements.peers, elements.storage, elements.battery,
-		elements.clock);
+		elements.display, elements.clock);
 
 	// The same destinations as the desktop widgets, and deliberately the same handler:
 	// widgets.openHandler ends a peek and reports a failure through window.notify, and

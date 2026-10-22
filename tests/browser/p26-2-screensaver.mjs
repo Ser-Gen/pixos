@@ -27,7 +27,7 @@ const tileAt = title => b.evaluate(`(function () {
 	var r = tile.getBoundingClientRect();
 	return {x: r.left + r.width / 2, y: r.top + r.height / 2, active: tile.classList.contains('PixSwatch--active')};
 })()`);
-const settingsFile = () => b.evaluate(`new Promise(function (r) { fs.readFile('/settings/desktop.json', 'utf8', function (e, t) { r(e ? null : JSON.parse(t)); }); })`);
+const settingsFile = () => b.evaluate(`new Promise(function (r) { fs.readFile('/settings/desktop.json', 'utf8', function (e, t) { try { r(e ? null : JSON.parse(t)); } catch (err) { r(null); } }); })`);
 
 try {
 	await b.send('Page.navigate', {url: ORIGIN + '/'});

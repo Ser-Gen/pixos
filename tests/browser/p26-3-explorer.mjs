@@ -18,7 +18,7 @@ const clickAt = async (x, y, button, count) => {
 	await b.mouse('mouseReleased', x, y, button || 'left', count || 1);
 };
 const dblclickAt = async (x, y) => { await clickAt(x, y, 'left', 1); await clickAt(x, y, 'left', 2); };
-const settingsFile = () => b.evaluate(`new Promise(function (r) { fs.readFile('/settings/desktop.json', 'utf8', function (e, t) { r(e ? null : JSON.parse(t)); }); })`);
+const settingsFile = () => b.evaluate(`new Promise(function (r) { fs.readFile('/settings/desktop.json', 'utf8', function (e, t) { try { r(e ? null : JSON.parse(t)); } catch (err) { r(null); } }); })`);
 const put = (target, url) => b.evaluate(`fetch(${JSON.stringify(url)}).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
 	return new Promise(function (resolve) { fs.writeFile(${JSON.stringify(target)}, Buffer.from(buf), function (e) { resolve(!e); }); });
 })`);

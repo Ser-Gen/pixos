@@ -35,6 +35,15 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGPIPE']) {
 	process.once(signal, () => process.exit(130));
 }
 
+// The most a harness may take. Past it the process ends, and the exit hook above kills its server and
+// its Chrome: a harness stuck on something is a Chrome left running on someone's machine.
+export function limit (ms, name) {
+	setTimeout(() => {
+		console.log((name || 'the harness') + ' took longer than ' + ms / 1000 + ' s, and was stopped');
+		process.exit(1);
+	}, ms).unref();
+}
+
 export function out (name) {
 	fs.mkdirSync(OUT, {recursive: true});
 	return path.join(OUT, name);
@@ -178,8 +187,15 @@ function makePage (browser, sessionId, targetId) {
 		async goto (url) {
 			await page.send('Page.navigate', {url});
 		},
-		async eval (expression) {
-			const result = await page.send('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true});
+		// An expression the page never answers -- a promise that never settles, a page stuck in a loop --
+		// fails after `ms` and names itself, rather than holding the harness, and its Chrome, for ever.
+		async eval (expression, ms = 30000) {
+			let timer;
+			const silent = new Promise((resolve, reject) => {
+				timer = setTimeout(() => reject(new Error('no answer in ' + ms / 1000 + ' s to ' + expression.slice(0, 100))), ms);
+			});
+			const result = await Promise.race([page.send('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true}), silent])
+				.finally(() => clearTimeout(timer));
 			if (result.exceptionDetails) {
 				throw new Error('eval failed: ' + (result.exceptionDetails.exception ? result.exceptionDetails.exception.description : result.exceptionDetails.text));
 			}
@@ -253,8 +269,14 @@ export async function launchPage (profile) {
 		waiting.set(n, resolve);
 		ws.send(JSON.stringify({id: n, method, params: params || {}}));
 	});
-	const evaluate = async expression => {
-		const r = await send('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true});
+	// As `eval` in the client above: an expression never answered fails after `ms`, naming itself.
+	const evaluate = async (expression, ms = 30000) => {
+		let timer;
+		const silent = new Promise((resolve, reject) => {
+			timer = setTimeout(() => reject(new Error('no answer in ' + ms / 1000 + ' s to ' + expression.slice(0, 100))), ms);
+		});
+		const r = await Promise.race([send('Runtime.evaluate', {expression, awaitPromise: true, returnByValue: true}), silent])
+			.finally(() => clearTimeout(timer));
 		if (r.result && r.result.exceptionDetails) {
 			throw new Error(JSON.stringify(r.result.exceptionDetails).slice(0, 500));
 		}

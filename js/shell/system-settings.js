@@ -1,8 +1,9 @@
 // The settings that belong to no other file: `/settings/system.json`. Phase 27; docs/settings-plan.md.
 //
-// Display, date and time, startup and notifications land here as their passes are built; pass 1 made
-// the file's owner and nothing to keep in it yet. What exists already stays where it is: the wallpaper
-// and the screensaver in desktop.json, the place in location.json, the network in peers.json.
+// Display, date and time, startup and notifications land here as their passes are built: pass 1 made
+// the file's owner, pass 2 the display's five fields (js/shell/display.js applies them). What exists
+// already stays where it is: the wallpaper and the screensaver in desktop.json, the place in
+// location.json, the network in peers.json.
 //
 // **location.js's rules, for the same reasons.** The shell holds the one current value, read at boot
 // and again whenever the file changes (another tab's write arrives as a change); a change applies at
@@ -20,8 +21,32 @@
 
 export var SYSTEM_FILE = '/settings/system.json';
 
+// The display's ranges, in percent (pass 2). Brightness is a filter, not the backlight: below 100 it
+// dims and above it washes white out, and its floor keeps the quick panel readable on a screen dimmed
+// as far as it goes. Saturation from 0 is grey. The scales are the ones offered, not a range.
+export var DISPLAY = {
+	brightness: {min: 30, max: 150},
+	contrast: {min: 50, max: 150},
+	saturation: {min: 0, max: 200}
+};
+export var SCALES = [80, 90, 100, 110, 125, 150];
+// Reduce motion: what the browser says the system wants, or on, or off whatever it says.
+export var MOTION = ['system', 'on', 'off'];
+
+function percent (name) {
+	return {value: 100, valid: function (v) {
+		return typeof v === 'number' && Math.round(v) === v && v >= DISPLAY[name].min && v <= DISPLAY[name].max;
+	}};
+}
+
 // name -> {value: the default, valid(value) -> boolean}. Filled in by the passes that use them.
-export var FIELDS = {};
+export var FIELDS = {
+	brightness: percent('brightness'),
+	contrast: percent('contrast'),
+	saturation: percent('saturation'),
+	scale: {value: 100, valid: function (v) { return SCALES.indexOf(v) > -1; }},
+	reduceMotion: {value: 'system', valid: function (v) { return MOTION.indexOf(v) > -1; }}
+};
 
 // What a stored document means: every field in FIELDS, valid or its default, and anything else as it was.
 export function readSystem (doc, fields) {

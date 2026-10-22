@@ -30,8 +30,8 @@ var CSS = `
 	left: 50%;
 	top: 50%;
 	transform: translate(-50%, -50%);
-	width: min(860px, calc(100vw - 32px));
-	height: min(640px, calc(100vh - 48px));
+	width: min(860px, calc(100vw / var(--pixos-scale, 1) - 32px));
+	height: min(640px, calc(100vh / var(--pixos-scale, 1) - 48px));
 	box-sizing: border-box;
 	display: grid;
 	grid-template-columns: 180px minmax(0, 1fr);

@@ -280,7 +280,7 @@ var CSS = `
 	display: flex;
 	align-items: flex-start;
 	justify-content: center;
-	padding: 10vh 16px 16px;
+	padding: calc(10vh / var(--pixos-scale, 1)) 16px 16px;
 	box-sizing: border-box;
 	font-family: Arial, Helvetica, sans-serif;
 	color: #e4e4e4;

@@ -20,7 +20,9 @@ try {
 	await a.until(ready, 60000);
 	await sleep(1500);
 
-	const readJson = file => `new Promise(r => window.fs.readFile('${file}', 'utf8', (e, t) => r(e ? null : JSON.parse(t))))`;
+	// A file read while it is being written is empty, and JSON.parse throwing inside BrowserFS's callback
+	// would leave the promise unsettled for ever: read as nothing, and the caller tries again.
+	const readJson = file => `new Promise(r => window.fs.readFile('${file}', 'utf8', (e, t) => { try { r(e ? null : JSON.parse(t)); } catch (err) { r(null); } }))`;
 	const startAction = async label => {
 		await a.eval("document.querySelector('.PixTaskbar__start').click()");
 		await a.until("!!document.querySelector('.PixStart__action')");
@@ -35,8 +37,11 @@ try {
 	await a.eval("document.querySelector('.PixStart__action') && [...document.querySelectorAll('.PixStart__action')].find(b => b.textContent.trim() === 'Settings...').click()");
 	await a.until("!!document.querySelector('.PixSettings')");
 	await sleep(800);
+	// Display is first since pass 2 (tests/browser/p27-2-display.mjs checks that page).
 	check('Settings opens on its first page, the tab focused', await a.eval(state),
-		{pages: ['Background', 'Screensaver', 'Location'], selected: 'Background', heading: 'Background', focus: 'PixSettings__page'});
+		{pages: ['Display', 'Background', 'Screensaver', 'Location'], selected: 'Display', heading: 'Display', focus: 'PixSettings__page'});
+	await a.eval("document.querySelector('.PixSettings__page[data-page=\"background\"]').click(), true");
+	await sleep(300);
 	check('the Background page is the gallery it was', await a.eval("[...document.querySelectorAll('.PixSettings__body .PixDialog__label')].map(l => l.textContent)"),
 		['Gradients', 'Solid colours', 'Animated', 'On battery', 'A file from the filesystem']);
 	await a.screenshot(out('p27-1-background.png'));
@@ -55,13 +60,13 @@ try {
 	await a.key('ArrowDown', {code: 'ArrowDown', windowsVirtualKeyCode: 40});
 	await sleep(300);
 	check('ArrowDown goes to the next page, the focus with it', await a.eval(state),
-		{pages: ['Background', 'Screensaver', 'Location'], selected: 'Screensaver', heading: 'Screensaver', focus: 'PixSettings__page'});
+		{pages: ['Display', 'Background', 'Screensaver', 'Location'], selected: 'Screensaver', heading: 'Screensaver', focus: 'PixSettings__page'});
 	await a.key('End', {code: 'End', windowsVirtualKeyCode: 35});
 	await sleep(200);
 	check('End goes to the last', (await a.eval(state)).selected, 'Location');
 	await a.key('ArrowDown', {code: 'ArrowDown', windowsVirtualKeyCode: 40});
 	await sleep(200);
-	check('and past it, round to the first', (await a.eval(state)).selected, 'Background');
+	check('and past it, round to the first', (await a.eval(state)).selected, 'Display');
 
 	await a.key('Escape', {code: 'Escape', windowsVirtualKeyCode: 27});
 	await sleep(200);
@@ -71,7 +76,7 @@ try {
 	const comma = () => a.key(',', {code: 'Comma', windowsVirtualKeyCode: 188, modifiers: 4});
 	await comma();
 	await a.until("!!document.querySelector('.PixSettings')");
-	check('Cmd+, opens it, where it was left', (await a.eval(state)).selected, 'Background');
+	check('Cmd+, opens it, where it was left', (await a.eval(state)).selected, 'Display');
 	await comma();
 	await sleep(200);
 	check('and closes it', await a.eval("!!document.querySelector('.PixSettings')"), false);

@@ -34,13 +34,15 @@ Named by the phase and pass whose checklist they cover (`docs/shell-phase<n>-che
 | Harness | What it checks | Last run |
 |---|---|---|
 | `served-from-folder.mjs` | PixOS served from a folder (`/repo/`, not `/`): Slideshow and a downloaded Riverscape load as the background inside the worker's scope, and no `/__browserfs__` request reaches the server | 2026-10-23: 5 of 5 |
-| `p27-1-settings.mjs` | The Settings window: opened from Start, its pages and keys, Escape, `⌘,`; a background chosen on its page and Explorer's route redrawing it; Location typed, then *Follow me* with the permission granted, a reload finding the place again, a reload with it gone asking nothing; a phone's width | 2026-10-23: 29 of 29 |
+| `p27-1-settings.mjs` | The Settings window: opened from Start, its pages and keys, Escape, `⌘,`; a background chosen on its page and Explorer's route redrawing it; Location typed, then *Follow me* with the permission granted, a reload finding the place again, a reload with it gone asking nothing; a phone's width | 2026-10-23: 29 of 29, before pass 2. Its page order has since been updated for Display coming first, and its JSON read guarded; not run since |
+| `p27-2-display.mjs` | Display: the taskbar's ☼ and its panel, a slider dragged then let go, Reset, Escape; the interface scale at 125% with the taskbar, the window area, Golden Layout's header, a window's frame, a context menu, the Start menu and the panel each where they should be; reduce motion holding Aurora still, *As the system says* following an emulated system setting both ways, *Off*; a reload keeping it all | 2026-10-23: 32 of 32 |
+| `p27-2-display-measure.mjs` | The measurements pass 2 was built on, printed rather than counted: `docs/checks/zoom-and-filter.html` (where `zoom` and a filter put a box), the shell's frame rate with Aurora under a filter, a backdrop-filter layer and neither, and Golden Layout given a taller header at run time | 2026-10-23: 7 of 7 |
 | `p26-2-screensaver.mjs` | The screensaver: started from the key with nothing chosen, its gallery, the idle permission asked in a click, previews, Slideshow, a page from another origin. `--quick` skips the last check, a minute of doing nothing (it waits 50 s, then up to 20 s more) | 2026-10-23: 45 of 45 with `--quick` |
 | `p26-3-explorer.mjs` | Explorer and screensavers: the mark on a page and a folder, a double-click previewing in the layer, the menus' *Preview*, *Show contents*, *Set as…*, the note a choice raises, the grid view | 2026-10-23: 46 of 46 |
-| `p26-4-downloads.mjs` | Matrix, Pipes and Habitats downloaded on first use: sizes on the tiles, a look downloading only its own files, the progress note, a choice made mid-download winning, **offline** (the harness stops its server and reloads), and a deleted folder becoming a download again | 2026-10-23: 37 of 38 — *the note counts bytes* is unconfirmed, see the comment above it |
+| `p26-4-downloads.mjs` | Matrix, Pipes and Habitats downloaded on first use: sizes on the tiles, a look downloading only its own files, the progress note, a choice made mid-download winning, **offline** (the harness stops its server and reloads), and a deleted folder becoming a download again | 2026-10-23: 38 of 38 |
 | `p26-5-sky.mjs` | Sky: the gallery, Now as the background, a typed location and a wrong one, *Use my location* (overridden to Tallinn), a known full moon over Riga to point at, covered and uncovered, One year and One day, a reload keeping the place, Sydney facing north. Where things should be is worked out in node from the pure `sky.js` and SunCalc | 2026-10-23: 35 of 35 |
 | `p26-6-corners-pin.mjs` | Pass 6: the Screensaver page's three rows, a PIN set and refused, a hot corner starting it locked, the pad, a reload coming back locked, a press on a corner passed on, a *never* corner holding idle off, two tabs locking together, a background held still on battery | 2026-10-23: 40 of 40 |
-| `mount-native-folder.mjs` | A real folder on disk, dropped on the shell and mounted, a file in it opened and read from an app's frame — `plain`, with a same-origin file `tab` focused after the shell, after a `hard` reload (the shell reloads itself under the worker), and `stay` (that reload already spent, so it stays uncontrolled). Give a mode, or none for all four | **not run since it was written** (phase 26); expect it to need updating |
+| `mount-native-folder.mjs` | A real folder on disk, dropped on the shell and mounted, a file in it opened and read from an app's frame — `plain`, with a same-origin file `tab` focused after the shell, after a `hard` reload (the shell reloads itself under the worker), and `stay` (that reload already spent, so it stays uncontrolled). Give a mode, or none for all four | 2026-10-23: 15 of 15 across the four modes (`stay` after its setup was fixed) |
 
 "Last run" is the last time each was run against the code as it then was. A harness that fails is
 first a question about the harness: most failures after a change are checks written for what the UI
@@ -49,13 +51,20 @@ used to be.
 ## Writing one
 
 `cdp.mjs` is all of it: `serve()` (with `stop` and `start`, for a harness that takes the network away),
-`profileDir(name)` and `removeProfile`, `out(file)` for a screenshot, and two clients:
+`profileDir(name)` and `removeProfile`, `out(file)` for a screenshot, `limit(ms)` for the most a run may
+take, and two clients:
 
 - `launch({profile})` — one browser, any number of pages (`await browser.page(url)`), each with
   `eval`, `until(expression, ms)`, `key`, `mouse`, `click`, `type`, `screenshot` and the `errors` it
   threw. Use this one; `p27-1-settings.mjs` is the model.
 - `launchPage(profile)` — one page with `evaluate`, `mouse`, `send`, `screenshot` and its raw
   `events`, and `until(what, test, ms)` beside it. The phase 26 harnesses are written on it.
+
+**Nothing in a harness may wait for ever.** Each client's `eval` / `evaluate` fails after 30 s, naming
+the expression, and `limit(ms)` at the top of a harness ends the whole run, its Chrome and server
+with it. A settings file read with `fs.readFile` can be caught mid-write and come back empty: parse it
+inside a `try` and answer `null`, or `JSON.parse` throws inside BrowserFS's callback, the promise never
+settles, and the harness hangs. That hang once held a Chrome for seven minutes, which is why both guards exist.
 
 Read a value the code owns from the code rather than copying it into the harness — the precache's
 name is read from `sw.js`, for one — or the harness goes stale with the next change.

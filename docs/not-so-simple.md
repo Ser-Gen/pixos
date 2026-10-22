@@ -33,7 +33,9 @@ Find the section for what you are about to change here, then read that section, 
   first use: what a look needs, the page written last, which look a folder opens by its path, and what
   the gallery offers offline. Where this machine is, and why a page asks the shell for it; Follow me,
   and why a boot never asks and waits for the tabs; the Settings window, a page's late redraw, and
-  refresh versus render; Sky's compass view and its twilights. The screensaver: whose idle counts, what
+  refresh versus render; the display settings — one filter on `#shell`, the interface scale as `zoom`
+  on the chrome and why a menu placed from the pointer divides by it, reduce motion holding backgrounds
+  still; Sky's compass view and its twilights. The screensaver: whose idle counts, what
   holds it off, the permission asked in a click, and why its key listener has to be registered first.
   The PIN's lock in localStorage and every tab having it, a hot corner's three pixels and why a pressed
   one waits for the pointer to leave, and a background held still on battery rather than unloaded.
@@ -119,7 +121,12 @@ does that while the worker is active, and such a page stays uncontrolled: its ow
 reloads before BrowserFS is configured, so a page about to be replaced writes nothing, and
 `pixos-sw-reload` in `sessionStorage` stops a browser that bypasses the worker every time from
 looping. It is not the isolation reload's flag, which a browser that is never isolated never
-clears. `tests/sw-mount-reads.test.mjs`.
+clears. `tests/sw-mount-reads.test.mjs`. **The flag does not cross a hard reload made from an
+isolated shell**: the page that reload fetches is not isolated, and Chrome gave it a `sessionStorage`
+of its own, so a flag set on the shell before it was gone (seen in headless Chrome, 2026-10-23). That
+costs nothing — that page sets the flag itself before its one reload — but a test that wants the
+reload already spent has to write the flag into the new page, as `tests/browser/mount-native-folder.mjs`
+does.
 
 **Failures have one surface, and it is not the console.** `js/shell/notifications.js`
 renders into `#overlays`; `window.notify({level, title, message, actions, source})` is
@@ -552,7 +559,8 @@ what it drew already does nothing, or a rest under way would be cancelled by a p
 
 **On battery, what moves is held still after eight seconds.** `stats.isOnBattery` — supported and not
 charging; a desktop computer says it is charging — reaches `desktop.setStill` and `screensaver.setStill`
-unless *Hold still on battery* (`stillOnBattery`) was turned off, and each passes it to its handle. The
+unless *Hold still on battery* (`stillOnBattery`) was turned off, and each passes it to its handle.
+Reduce motion holds them the same way, battery or not (phase 27, `applyPower` in `index.html`). The
 handle lets the instance run `STILL_AFTER_MS` each time it can be seen, counted only while it can, and
 then pauses it, **without the clock that unloads a covered one** — a still background is still being
 looked at, and an unloaded one would be an empty desktop. Covered while held it is unloaded as usual, and
@@ -655,6 +663,38 @@ page underneath, which would take Escape with it. The Background and Screensaver
 26 dialog's two tabs, still in `wallpaper-dialog.js` because Explorer's commands come through it.
 `Ctrl/Cmd+,` opens and closes it; whether Chrome on a Mac hands a page `⌘,` is on the phase 27
 checklist. `tests/settings.test.mjs`.
+
+**The display is one filter on `#shell`, and the scale is `zoom` on the chrome, never on the windows.**
+`js/shell/display.js` draws `/settings/system.json`'s five display fields.
+- **Brightness, contrast and saturation are a CSS `filter` on `#shell`.** A filter makes its element
+  the containing block of every fixed box inside it. `#shell` is itself fixed at the viewport's origin
+  and full-screen, so nothing moved: a window's frame stayed on its placeholder to the pixel, measured
+  before it was built. With all three at 100% there is no filter at all.
+- **The interface scale is `zoom: var(--pixos-scale)` on `#taskbar`, `#overlays`, the widgets, a web
+  view's bar and Golden Layout's tabs.** Since Chrome 128 `zoom` scales a box's own `left` and `top`
+  and the `vw` and `vh` it is given (`docs/checks/zoom-and-filter.html`). So:
+  - anything placed in `#overlays` from a pointer or a rect divides by its `currentCSSZoom`:
+    `context-menu.js`, `start-menu.js`, the quick panel;
+  - a `vw` or `vh` inside the layer divides by `--pixos-scale`;
+  - a new surface in that layer has to do the same, or it lands 1.25 times too far out.
+- **`--pixos-taskbar-height` stays the taskbar's unzoomed 38 px.** That is right inside `#overlays`,
+  which is zoomed as the taskbar is. `#root` is not zoomed, so it multiplies the height by the scale.
+- **Golden Layout is told a taller header** (`wm.setHeaderHeight`, which also overrides the height a
+  saved layout carries). It lays a window out below the height it was given, not the one its zoomed
+  tabs are drawn at. It also measures a zoomed tab at its unzoomed width, so a long row of tabs at a
+  large scale can be clipped before it moves into the list.
+- **`#windows` is never zoomed**: it is placed from the placeholders' rects, and an app keeps its own
+  size.
+- **Reduce motion** is a class on `<html>` that takes every transition and animation out of the shell's
+  own document, and `display.reduced()` joins the battery in `applyPower`. That reaches the background
+  and the screensaver the same way, eight seconds of movement and then still. The screensaver's own
+  `prefers-reduced-motion` rule went into that class, so *Off* is off.
+- **A slider is drawn while it is dragged and set when it is let go**: `input` goes to
+  `display.preview`, which keeps nothing, and `change` to the settings, which write once.
+- **A failed write is kept on the page, not on the node it was drawn in.** The settings apply a change
+  before writing it, so the page has been drawn again by then.
+
+`tests/display.test.mjs`, `tests/display-page.test.mjs`, `tests/browser/p27-2-display.mjs`.
 
 **Sky's screen is a compass, exactly as wide as the year's widest day.** It faces the equator — south
 in the middle north of it, sunrise on the left — and runs from the widest sunrise to the widest sunset

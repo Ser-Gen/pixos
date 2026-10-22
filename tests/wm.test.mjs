@@ -573,6 +573,44 @@ twoDesks.switchTo(spare.id);
 check('an empty desktop reports empty even when another has windows',
 	twoDesks.count(twoDesks.getActiveWorkspace()), 0);
 
+// --- the tabs' strip, taller with the interface scale (phase 27) -------------------------------
+//
+// Golden Layout lays a window out below the header height in its config, not below the height its
+// tabs are drawn at, so the interface scale tells every layout, and a saved one is given the height
+// of now rather than the one it was saved with.
+{
+	const scaled = new WM({root: '#root', windowsRoot: '#windows'});
+	const first = scaled.workspaces.get(scaled.getActiveWorkspace());
+	check('Golden Layout\'s own header until told otherwise', [scaled.headerHeight, first.layout.config.dimensions], [null, undefined]);
+	// The real layout's config always has its dimensions, merged from its defaults.
+	first.layout.config.dimensions = {headerHeight: 20, borderWidth: 5};
+	let sized = 0;
+	let swept = 0;
+	first.layout.updateSize = () => { sized++; };
+	const sync = scaled.syncGeometry;
+	scaled.syncGeometry = function () { swept++; return sync.apply(this, arguments); };
+	scaled.setHeaderHeight(25);
+	check('told: a layout already built has it, and the rest of its dimensions', first.layout.config.dimensions, {headerHeight: 25, borderWidth: 5});
+	check('and is laid out again, the windows following', [sized, swept], [1, 1]);
+	scaled.setHeaderHeight(25);
+	check('the same height again does nothing', [sized, swept], [1, 1]);
+
+	const later = scaled.createWorkspace({name: 'Later'});
+	check('a desktop made afterwards is built with it', later.layout.config.dimensions, {headerHeight: 25});
+	const saved = {dimensions: {headerHeight: 20, borderWidth: 3}, content: [{type: 'row', content: []}]};
+	scaled.buildLayout(later, saved);
+	check('a saved layout gets the height of now, keeping the rest', later.layout.config.dimensions, {headerHeight: 25, borderWidth: 3});
+	check('without the saved config being changed', saved.dimensions, {headerHeight: 20, borderWidth: 3});
+	check('nor losing what is in it', later.layout.config.content, saved.content);
+}
+{
+	// A layout with no dimensions in its config (none of Golden Layout's own): told nothing, and no throw.
+	const bare = new WM({root: '#root', windowsRoot: '#windows'});
+	const thrown = (() => { try { bare.setHeaderHeight(22); return null; } catch (err) { return err.message; } })();
+	check('a layout with no dimensions to change is left as it is', [thrown, bare.workspaces.get(bare.getActiveWorkspace()).layout.config.dimensions],
+		[null, undefined]);
+}
+
 // --- a window title is a filename, and a filename is markup ---------------------------------
 //
 // Reported by somebody walking a checklist with a file called `<img src=x onerror=alert(1)>`

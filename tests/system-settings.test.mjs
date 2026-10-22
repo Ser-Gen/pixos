@@ -1,5 +1,6 @@
 // /settings/system.json (phase 27): js/shell/system-settings.js, with the file made of plain objects.
-// Pass 1 gives it no fields of its own, so these tests hand it two. What it has to get right: every
+// Most of these hand it two fields of their own, so that what it does is not tied to what is kept in
+// it; pass 2's display fields are checked at their edges first. What it has to get right: every
 // default until something is set, a field that is not valid read as its default, a field it does not
 // know kept and written back, a change applied here even in a tab that may not write it, and every
 // subscriber told once per change and only then.
@@ -9,7 +10,21 @@ import {check, report} from './assert.mjs';
 const sys = await import('../js/shell/system-settings.js');
 
 check('the file', sys.SYSTEM_FILE, '/settings/system.json');
-check('pass 1 keeps nothing in it yet', sys.FIELDS, {});
+// Pass 2: the display. Each range at its edges and one past them, and what is not a whole number.
+const valid = (name, values) => values.map(v => sys.FIELDS[name].valid(v));
+check('the display\'s fields, and nothing else yet', Object.keys(sys.FIELDS), ['brightness', 'contrast', 'saturation', 'scale', 'reduceMotion']);
+check('every default leaves the screen as it was', sys.readSystem(null),
+	{brightness: 100, contrast: 100, saturation: 100, scale: 100, reduceMotion: 'system'});
+check('brightness: 30 to 150', valid('brightness', [29, 30, 150, 151]), [false, true, true, false]);
+check('contrast: 50 to 150', valid('contrast', [49, 50, 150, 151]), [false, true, true, false]);
+check('saturation: 0 (grey) to 200', valid('saturation', [-1, 0, 200, 201]), [false, true, true, false]);
+check('a percentage is a whole number, and a number', valid('brightness', [80.5, '80', null, NaN]), [false, false, false, false]);
+check('the scales offered, and only those', [sys.SCALES, valid('scale', [80, 150, 85, 175, '100'])],
+	[[80, 90, 100, 110, 125, 150], [true, true, false, false, false]]);
+check('reduce motion: as the system says, on, or off', [sys.MOTION, valid('reduceMotion', ['system', 'on', 'off', 'auto', true])],
+	[['system', 'on', 'off'], [true, true, true, false, false]]);
+check('a hand-edited file is read for what can be used', sys.readSystem({brightness: 20, contrast: 120, scale: 125, reduceMotion: 'yes'}),
+	{brightness: 100, contrast: 120, saturation: 100, scale: 125, reduceMotion: 'system'});
 
 const fields = {
 	clock: {value: '24', valid: v => v === '12' || v === '24'},
@@ -115,12 +130,15 @@ function world (file, options) {
 	check('an unsubscribed listener is not told', w.told.length, 2);
 }
 {
-	// With the module's own FIELDS, which pass 1 leaves empty: anything set is refused.
-	const w = {file: '{"later": 1}'};
-	const own = sys.createSystemSettings({readText: () => Promise.resolve(w.file), writeText: () => Promise.resolve(), canWrite: () => true});
+	// With the module's own FIELDS: a field it does not know is kept, and cannot be set.
+	const w = {file: '{"later": 1, "brightness": 70}', written: null};
+	const own = sys.createSystemSettings({readText: () => Promise.resolve(w.file), writeText: (path, text) => { w.written = JSON.parse(text); }, canWrite: () => true});
 	await own.load();
-	check('with no fields of its own it keeps what it finds', own.get(), {later: 1});
-	check('and sets nothing', await own.set({later: 2}).then(() => 'set', err => err.message), 'Not a system setting: later');
+	check('with its own fields it reads them and keeps what it does not know', own.get(),
+		{brightness: 70, contrast: 100, saturation: 100, scale: 100, reduceMotion: 'system', later: 1});
+	check('a field it does not know is not set', await own.set({later: 2}).then(() => 'set', err => err.message), 'Not a system setting: later');
+	await own.set({scale: 110});
+	check('one it knows is, and the unknown one is written back', [w.written.scale, w.written.later], [110, 1]);
 }
 
 process.exit(report('system-settings') ? 1 : 0);

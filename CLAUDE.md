@@ -21,7 +21,7 @@ run in iframes. Pure static site — no build step, no backend.
 | `docs/explorer-modules.md` | you touch `apps/explorer/`: its modules, the late-bound cycles, the construction order |
 | `docs/not-so-simple.md` | you change behaviour: its first section lists what each section covers |
 | `docs/backlog.md` | before proposing work: every open idea, including what was rejected and why |
-| `docs/settings-plan.md` | phase 27, the Settings window: pass 1 of 5 built (earlier plans: `docs/structure.md`) |
+| `docs/settings-plan.md` | phase 27, the Settings window: passes 1 and 2 of 5 built (earlier plans: `docs/structure.md`) |
 | `docs/shell-phase<n>-checklist.md` | a phase's browser checklist, for the user to walk |
 | `tests/browser/README.md` | you want to see a change work in a real browser |
 

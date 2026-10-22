@@ -22,9 +22,9 @@ var CSS = `
 .PixOpenWith {
 	position: absolute;
 	left: 50%;
-	top: 16vh;
+	top: calc(16vh / var(--pixos-scale, 1));
 	transform: translateX(-50%);
-	width: min(520px, calc(100vw - 32px));
+	width: min(520px, calc(100vw / var(--pixos-scale, 1) - 32px));
 	background: #23262b;
 	border: 1px solid #434850;
 	box-shadow: 0 30px 80px rgba(0, 0, 0, .6);
@@ -32,7 +32,7 @@ var CSS = `
 	color: #e4e4e4;
 	display: flex;
 	flex-direction: column;
-	max-height: 70vh;
+	max-height: calc(70vh / var(--pixos-scale, 1));
 	outline: none;
 }
 

@@ -123,12 +123,6 @@ var CSS = `
 	from { opacity: 0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-	.PixScreensaver {
-		animation: none;
-		transition: none;
-	}
-}
 `;
 
 export var MINUTES = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60];

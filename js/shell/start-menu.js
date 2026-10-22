@@ -12,7 +12,7 @@ var CSS = `
 .PixStart {
 	position: absolute;
 	width: 380px;
-	max-height: 60vh;
+	max-height: calc(60vh / var(--pixos-scale, 1));
 	display: flex;
 	flex-direction: column;
 	background: #23262b;
@@ -266,14 +266,17 @@ export function open (anchorRect, anchor) {
 	return element;
 }
 
-// Anchored above the button that opened it, clamped to stay on screen.
+// Anchored above the button that opened it, clamped to stay on screen. The rects are the screen's
+// pixels and the menu's layer is zoomed by the interface scale (js/shell/display.js), so a place is
+// divided by that zoom before it is written.
 function position (anchorRect) {
 	var margin = 6;
+	var zoom = element.currentCSSZoom || 1;
 	var rect = element.getBoundingClientRect();
 	var left = anchorRect ? anchorRect.left : margin;
 	var bottom = anchorRect ? anchorRect.top : window.innerHeight - margin;
-	element.style.left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin)) + 'px';
-	element.style.top = Math.max(margin, bottom - rect.height - 4) + 'px';
+	element.style.left = Math.max(margin, Math.min(left, window.innerWidth - rect.width - margin)) / zoom + 'px';
+	element.style.top = Math.max(margin, bottom - rect.height - 4) / zoom + 'px';
 }
 
 function launch (appId) {

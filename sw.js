@@ -251,7 +251,7 @@ function fetchAudioProxy(request) {
 // The version in the cache name is the whole risk: skipWaiting() + clients.claim() means a
 // new worker takes over immediately, and without a versioned name that would be a new
 // worker serving a previous worker's assets. `activate` deletes every cache but this one.
-var SHELL_CACHE = 'pixos-shell-v38';
+var SHELL_CACHE = 'pixos-shell-v39';
 
 // --- an app that dies before its own code runs ---------------------------------------------
 //
@@ -328,6 +328,8 @@ var PRECACHE = [
 	'./js/shell/command-palette.js',
 	'./js/shell/context-menu.js',
 	'./js/shell/desktop.js',
+	'./js/shell/display.js',
+	'./js/shell/display-page.js',
 	'./js/shell/failure.js',
 	'./js/shell/file-search.js',
 	'./js/shell/fs-events.js',

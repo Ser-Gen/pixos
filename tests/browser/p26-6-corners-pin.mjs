@@ -64,7 +64,7 @@ try {
 	await a.screenshot(out('pass6-dialog.png'));
 	check('set: the row says so and offers Change and Remove',
 		await a.eval("[...document.querySelector('input[aria-label=\"Again\"]').parentNode.querySelectorAll('button')].map(b => b.textContent)"), ['Change', 'Remove']);
-	const settings = "new Promise(r => window.fs.readFile('/settings/desktop.json', 'utf8', (e, t) => r(e ? null : JSON.parse(t))))";
+	const settings = "new Promise(r => window.fs.readFile('/settings/desktop.json', 'utf8', (e, t) => { try { r(e ? null : JSON.parse(t)); } catch (err) { r(null); } }))";
 	const saved = await a.until(`${settings}.then(s => s && s.screensaver && s.screensaver.pin ? s.screensaver : null)`);
 	check('written as a salt and a hash, never the PIN', [saved.pin.salt.length, saved.pin.hash.length, JSON.stringify(saved).includes('2468')], [32, 64, false]);
 

@@ -51,7 +51,7 @@ var CSS = `
 	font-family: Arial, Helvetica, sans-serif;
 	font-size: 12px;
 	color: #e4e4e4;
-	max-width: min(680px, calc(100vw - 24px));
+	max-width: min(680px, calc(100vw / var(--pixos-scale, 1) - 24px));
 }
 
 .PixCall__dot {
