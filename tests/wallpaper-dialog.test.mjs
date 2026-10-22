@@ -102,7 +102,7 @@ check('every one says media and a hidden tab hold it off',
 // --- the click that turns it on ------------------------------------------------------------------
 
 check('turning it on asks for idle detection in the same click, before anything is awaited or downloaded',
-	/if \(config && !chosen\) \{\s*saver\.askForIdle\(\);\s*\}\s*var again = redrawIfSame\(render\);\s*choose\(tile, config/.test(source), true);
+	/if \(config && !chosen\) \{\s*saver\.askForIdle\(\);\s*\}\s*var again = render;\s*choose\(tile, config/.test(source), true);
 check('the background goes through the same choose', /choose\(tile, config, setWallpaper\)\.then\(again, again\)/.test(source), true);
 
 // --- Explorer's commands (pass 3) ----------------------------------------------------------------
@@ -354,13 +354,16 @@ check('a latitude past the pole says which field and why', dialog.readLocationFi
 check('so does a longitude that is not a number', dialog.readLocationFields('56', 'east'),
 	{error: 'Longitude is a number from -180 to 180, east positive.', field: 'longitude'});
 check('an empty field is not zero', dialog.readLocationFields('', '0').field, 'latitude');
-check('both tabs draw the row while Sky is the choice, and only when there is a location to set',
-	(source.match(/if \(isSky\(chosen\) && place\) \{\s*body\.append\(locationRow\(\)\);/g) || []).length, 2);
+// Phase 27: the row is js/shell/location-page.js's, drawn here and on the Location page of Settings.
+const rowSource = fs.readFileSync(new URL('../js/shell/location-page.js', import.meta.url), 'utf8');
+check('both pages draw the row while Sky is the choice, and only when there is a location to set',
+	(source.match(/if \(isSky\(chosen\) && place\) \{\s*body\.append\(skyRow\(\)\);/g) || []).length, 2);
+check('it is the Location page\'s row', /function skyRow \(\) \{\s*var element = locationRow\(place, 'Sky over', null\);/.test(source), true);
 check('the row sets the location, and finds it only when asked in a click', [
-	/save\(read\.location\)/.test(source),
-	/find\.onclick = function \(\) \{[\s\S]{0,120}place\.locate\(\)\.then\(function \(where\) \{[\s\S]{0,40}return save\(where\);/.test(source)
+	/save\(read\.location, \{follow: false\}\)/.test(rowSource),
+	/find\.onclick = function \(\) \{[\s\S]{0,120}place\.locate\(\)\.then\(function \(where\) \{[\s\S]{0,40}return save\(where\);/.test(rowSource)
 ], [true, true]);
-check('a location shown but not saved says so', /say\('Shown, but not saved: '/.test(source), true);
+check('a location shown but not saved says so', /say\('Shown, but not saved: '/.test(rowSource), true);
 check('the shell hands the dialog its location', /location: shellLocation,/.test(shellSource), true);
 
 // --- the extras (pass 6) -------------------------------------------------------------------------
@@ -389,11 +392,54 @@ check('on battery, it says what it does', dialog.powerNote({still: true, onBatte
 	'On battery now: it moves for a few seconds each time it is seen, then holds still.');
 check('and when that was turned off', dialog.powerNote({still: false, onBattery: true, known: true}), 'On battery now, and moving.');
 
-check('a redraw is not held back by a checkbox with the focus, only by a field being typed in',
-	/active\.tagName === 'INPUT' && active\.type !== 'checkbox'/.test(source), true);
 check('the corners and the PIN are offered only while a screensaver is chosen',
 	/if \(chosen\) \{\s*body\.append\(cornersRow\(/.test(source), true);
-check('the battery row is in both tabs', (source.match(/body\.append\(powerRow\(\)\);/g) || []).length, 2);
+check('the battery row is on both pages', (source.match(/body\.append\(powerRow\(\)\);/g) || []).length, 2);
 check('refreshing a dialog that was never opened is nothing', dialog.refresh(), undefined);
+
+// --- pages of Settings (phase 27) ----------------------------------------------------------------
+
+{
+	const added = [];
+	const opened = [];
+	let current = null;
+	let refreshed = 0;
+	const fakeSettings = {
+		addPage: page => added.push(page),
+		open: id => { opened.push(id); current = id; return 'window'; },
+		currentPage: () => current,
+		refresh: () => { refreshed++; },
+		close: () => { current = null; }
+	};
+	dialog.init({settings: fakeSettings, screensaver: null, getWallpaper: () => null});
+	check('with no screensaver, only the Background page is added', added.map(p => [p.id, p.label]), [['background', 'Background']]);
+	dialog.open('screensaver');
+	check('and Screensaver... opens it there', opened, ['background']);
+
+	added.length = 0;
+	opened.length = 0;
+	const unsubscribed = [];
+	const saverStub = {onChange: fn => () => unsubscribed.push(fn), getSettings: () => ({show: null, minutes: 5})};
+	dialog.init({settings: fakeSettings, screensaver: saverStub, getWallpaper: () => null});
+	check('with one, both, in that order', added.map(p => p.id), ['background', 'screensaver']);
+	dialog.open('screensaver');
+	dialog.open('background');
+	dialog.open();
+	check('each menu entry opens its page, and anything else the background', opened, ['screensaver', 'background', 'background']);
+	const leave = added[1].enter({refresh () {}, render () {}});
+	leave();
+	check('the Screensaver page lets the screensaver go when it stops being shown', unsubscribed.length, 1);
+	check('isOpen is Settings open on one of these two', [dialog.isOpen(), (current = 'location', dialog.isOpen())], [true, false]);
+	dialog.refresh();
+	check('so a refresh while another page is shown draws nothing', refreshed, 0);
+	current = 'screensaver';
+	dialog.refresh();
+	check('and while one of these is, draws it', refreshed, 1);
+	dialog.close();
+	check('close closes Settings on one of these', current, null);
+	current = 'location';
+	dialog.close();
+	check('and not on another page', current, 'location');
+}
 
 process.exit(report('wallpaper-dialog') ? 1 : 0);

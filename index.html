@@ -243,6 +243,9 @@ import {pageName} from "./js/shell/wallpaper-page.js";
 import * as screensaver from "./js/shell/screensaver.js";
 import * as hotCorners from "./js/shell/hot-corners.js";
 import * as wallpaperDialog from "./js/shell/wallpaper-dialog.js";
+import * as settingsWindow from "./js/shell/settings.js";
+import {addLocationPage} from "./js/shell/location-page.js";
+import {createSystemSettings, SYSTEM_FILE} from "./js/shell/system-settings.js";
 import {createCatalog as createScreensaverCatalog, INDEX_PATH as SCREENSAVER_INDEX} from "./js/shell/screensaver-catalog.js";
 import {createMountTable, createHandleStore, FILE as MOUNT_TABLE_FILE} from "./js/shell/mount-table.js";
 import {createLocation, LOCATION_FILE} from "./js/shell/location.js";
@@ -258,6 +261,8 @@ window.desktop = desktop;
 // Where this machine is (js/shell/location.js): made in fsOnInit, once there is a filesystem to
 // keep it in and after that filesystem is wrapped.
 var shellLocation = null;
+// The settings with no other file (js/shell/system-settings.js), made beside it for the same reason.
+var systemSettings = null;
 
 // Set up before anything else in the boot sequence, so a failure *during* boot has
 // somewhere to be reported. The overlay layer already exists in the markup.
@@ -584,7 +589,8 @@ function fsOnInit () {
 			});
 		},
 		canWrite: function () { return tabs.isOwner(); },
-		geolocation: navigator.geolocation || null
+		geolocation: navigator.geolocation || null,
+		permissions: navigator.permissions || null
 	});
 	window.getLocation = function () { return shellLocation.get(); };
 
@@ -614,6 +620,31 @@ function fsOnInit () {
 		}
 	});
 	// --- end of watchLocation
+
+	// /settings/system.json, with location.json's rules: one value here, read at boot and when the
+	// file changes, written only by the tab that owns the session. Phase 27.
+	systemSettings = createSystemSettings({
+		readText: function (filePath) {
+			return new Promise(function (resolve, reject) {
+				window.fs.readFile(filePath, 'utf8', function (err, text) {
+					return err ? reject(err) : resolve(text);
+				});
+			});
+		},
+		writeText: function (filePath, text) {
+			return new Promise(function (resolve, reject) {
+				window.fs.writeFile(filePath, Buffer.from(text), function (err) {
+					return err ? reject(err) : resolve();
+				});
+			});
+		},
+		canWrite: function () { return tabs.isOwner(); }
+	});
+	fsEvents.subscribe(function (detail) {
+		if (detail.touches(SYSTEM_FILE)) {
+			systemSettings.load();
+		}
+	});
 
 	window.mountManager = new MountManager(BrowserFS, window.fs);
 
@@ -1578,6 +1609,25 @@ function fsOnInit () {
 		var settings = await readJsonFile('/settings/desktop.json', {});
 		// Before the background is mounted, so a sky drawn at boot is drawn from here the first time.
 		await shellLocation.load();
+		await systemSettings.load();
+		// Follow me (phase 27): found again, and only if the browser would answer without asking.
+		// Not awaited -- it can take seconds, and a sky already drawn moves when it arrives. Not
+		// before the tabs have settled who writes, either: the browser can answer from its cache
+		// inside the election's quarter second, and the place would be applied but never written.
+		var refound = false;
+		var stopWaiting = tabs.subscribe(function (isOwner, ownerId) {
+			if (refound || ownerId === null) {
+				return;
+			}
+			refound = true;
+			shellLocation.refind();
+			if (stopWaiting) {
+				stopWaiting();
+			}
+		});
+		if (refound) {
+			stopWaiting();
+		}
 
 		// Everything PixOS holds lives in IndexedDB, which the browser is free to evict
 		// under storage pressure -- with no warning and no way back. This asks it not to.
@@ -1745,8 +1795,11 @@ function fsOnInit () {
 				});
 			}
 		});
+		// The Settings window (phase 27), and its pages: each module that owns a setting adds its own.
+		settingsWindow.init({host: document.getElementById('overlays')});
+		addLocationPage({settings: settingsWindow, location: shellLocation});
 		wallpaperDialog.init({
-			host: document.getElementById('overlays'),
+			settings: settingsWindow,
 			getWallpaper: desktop.getWallpaper,
 			setWallpaper: desktop.setWallpaper,
 			screensaver: screensaver,
@@ -1782,8 +1835,9 @@ function fsOnInit () {
 			openRecentFile: openRecentFile,
 			actions: [
 				{label: 'App Manager', run: function () { openApp('app-manager'); }},
-				{label: 'Wallpaper...', run: function () { wallpaperDialog.open('background'); }},
-				{label: 'Screensaver...', run: function () { wallpaperDialog.open('screensaver'); }},
+				{label: 'Settings...', run: function () { settingsWindow.open(); }},
+				{label: 'Wallpaper...', run: function () { settingsWindow.open('background'); }},
+				{label: 'Screensaver...', run: function () { settingsWindow.open('screensaver'); }},
 				{label: 'Show desktop', run: function () { desktop.togglePeek(); }},
 				{label: 'Fullscreen', run: function () { toggleFullscreen(); }},
 				{label: 'Keyboard shortcuts', run: function () { shortcuts.open(); }}
@@ -2483,8 +2537,10 @@ function fsOnInit () {
 				run: function () { window.startCleanSession(); }
 			},
 			{title: 'Show desktop', subtitle: 'Hide every window without closing it', keys: shortcuts.describeShortcut('peek', mac), run: function () { desktop.togglePeek(); }},
-			{title: 'Wallpaper...', subtitle: 'Change the desktop background', run: function () { wallpaperDialog.open('background'); }},
-			{title: 'Screensaver...', subtitle: 'Choose one, and how long before it starts', run: function () { wallpaperDialog.open('screensaver'); }},
+			{title: 'Settings...', subtitle: 'The background, the screensaver and where this machine is', keys: shortcuts.describeShortcut('settings', mac), run: function () { settingsWindow.open(); }},
+			{title: 'Wallpaper...', subtitle: 'Change the desktop background', run: function () { settingsWindow.open('background'); }},
+			{title: 'Screensaver...', subtitle: 'Choose one, and how long before it starts', run: function () { settingsWindow.open('screensaver'); }},
+			{title: 'Location...', subtitle: 'Where this machine is, for the sky. Typed, or found by the browser', run: function () { settingsWindow.open('location'); }},
 			{title: 'Start screensaver', subtitle: 'Show it now. Any key or the mouse ends it', keys: shortcuts.describeShortcut('screensaver', mac), run: startScreensaver},
 			{title: 'New Explorer', subtitle: 'Open a file manager window', run: function () { openApp('explorer'); }},
 			{title: 'App Manager', subtitle: 'Install and update applications', run: function () { openApp('app-manager'); }},
@@ -2598,6 +2654,22 @@ function fsOnInit () {
 			e.preventDefault();
 			e.stopPropagation();
 			startScreensaver();
+			return;
+		}
+		// Ctrl/Cmd+, opens Settings, as it does in most programs, and closes it again.
+		if (shortcuts.matchesAny(e, shortcuts.shellKeys('settings'))) {
+			e.preventDefault();
+			e.stopPropagation();
+			startMenu.close();
+			palette.close();
+			overview.close();
+			shortcuts.close();
+			if (settingsWindow.isOpen()) {
+				settingsWindow.close();
+			}
+			else {
+				settingsWindow.open();
+			}
 			return;
 		}
 		// Ctrl/Cmd+W. Only reachable at all while fullscreen *and* the keyboard lock was
@@ -3698,7 +3770,8 @@ async function compatibleAppsForFile (filePath) {
 // worker like everything else, so a pdf or a video gets the viewer the browser already
 // has and PixOS does not. Reachable from any app, since Explorer offers it too.
 function openInBrowserTab (filePath) {
-	var address = new URL('/__browserfs__' + filePath, location.href).href;
+	// Relative to the shell, so a PixOS served from a folder opens it inside the worker's scope.
+	var address = new URL('__browserfs__' + filePath, location.href).href;
 	var tab = window.open(address, '_blank');
 	if (!tab) {
 		notifications.notify({
@@ -3749,7 +3822,7 @@ async function openPath (dirPath, appId) {
 function startScreensaver () {
 	if (!screensaver.start()) {
 		if (!screensaver.getSettings().show) {
-			wallpaperDialog.open('screensaver');
+			settingsWindow.open('screensaver');
 		}
 	}
 }
@@ -3790,8 +3863,9 @@ function buildDesktopMenu () {
 		{label: 'New Explorer', action: function () { openApp('explorer'); }},
 		{label: 'App Manager', action: function () { openApp('app-manager'); }},
 		{separator: true},
-		{label: 'Wallpaper...', action: function () { wallpaperDialog.open('background'); }},
-		{label: 'Screensaver...', action: function () { wallpaperDialog.open('screensaver'); }},
+		{label: 'Settings...', hint: shortcuts.describeShortcut('settings', shortcuts.isMacPlatform()), action: function () { settingsWindow.open(); }},
+		{label: 'Wallpaper...', action: function () { settingsWindow.open('background'); }},
+		{label: 'Screensaver...', action: function () { settingsWindow.open('screensaver'); }},
 		{
 			label: 'Start screensaver',
 			hint: shortcuts.describeShortcut('screensaver', shortcuts.isMacPlatform()),
@@ -3885,7 +3959,7 @@ function buildBrowserFsAbsoluteUrl (fsPath) {
 	if (!normalized.startsWith('/')) {
 		normalized = '/' + normalized;
 	}
-	return new URL('/__browserfs__' + normalized, location.href).href;
+	return new URL('__browserfs__' + normalized, location.href).href;
 }
 
 function guessMediaPlayerMimeType (ext) {

@@ -54,8 +54,10 @@ var decorated = [];
 const desktop = {isPeeking: () => false, togglePeek () {}};
 const palette = {open () {}, toggle () {}};
 // Phase 26: the dialog moved out of desktop.js, and the screensaver is a command of its own.
+// Phase 27: the dialog is two pages of the Settings window, and the menus open the window.
 const dialogOpened = [];
-const wallpaperDialog = {open: tab => dialogOpened.push(tab)};
+const wallpaperDialog = {open: tab => dialogOpened.push('dialog:' + tab)};
+const settingsWindow = {open: page => dialogOpened.push(page === undefined ? 'settings' : page)};
 const screensaverCalls = [];
 let screensaverChoice = null;
 const screensaver = {
@@ -159,20 +161,21 @@ const notifications = {notify: note => notes.push(note)};
 globalThis.location = {href: 'http://localhost:8000/'};
 globalThis.fetch = async () => ({blob: async () => 'BLOB', arrayBuffer: async () => 'AB'});
 // Absolute in, absolute out -- the shell resolves relative paths against the page but
-// hands openUrl() whole addresses, and a stub that prefixed both would hide that.
+// hands openUrl() whole addresses, and a stub that prefixed both would hide that. A relative
+// one is resolved as the browser does, against the base given, so a shell served from a
+// folder can be asked about.
+const RealURL = URL;
 globalThis.URL = class {
 	static createObjectURL () { return 'blob:tic'; }
-	constructor (path) {
-		this.href = /^[a-z][a-z0-9+.-]*:\/\//i.test(String(path))
-			? String(path)
-			: 'http://localhost:8000' + path;
+	constructor (path, base) {
+		this.href = new RealURL(String(path), base || 'http://localhost:8000/').href;
 	}
 };
 
 const api = new Function('window', 'winManager', 'desktop', 'appsModel', 'palette', 'openWith', 'notifications', 'bookmarks', 'shortcuts',
-	'wallpaperDialog', 'screensaver',
+	'wallpaperDialog', 'screensaver', 'settingsWindow',
 	region + '\n; return {launch, openApp, openFile, openFiles, openPath, openUrl, openRecentFile, buildDesktopMenu, listLaunchableApps, appNeedsNetwork};'
-)(win, winManager, desktop, appsModel, palette, openWith, notifications, bookmarks, shortcuts, wallpaperDialog, screensaver);
+)(win, winManager, desktop, appsModel, palette, openWith, notifications, bookmarks, shortcuts, wallpaperDialog, screensaver, settingsWindow);
 
 appsModel.init({listApps: api.listLaunchableApps});
 await appsModel.load();
@@ -232,11 +235,13 @@ check('search is one level up, not buried in a submenu',
 	menu.map(item => item.label).includes('Search...'), true);
 check('and so is the window overview',
 	menu.map(item => item.label).includes('All windows'), true);
-check('and it ends with wallpaper, the screensaver and peek', menu.slice(-4).map(item => item.label),
-	['Wallpaper...', 'Screensaver...', 'Start screensaver', 'Show desktop']);
+check('and it ends with settings, wallpaper, the screensaver and peek', menu.slice(-5).map(item => item.label),
+	['Settings...', 'Wallpaper...', 'Screensaver...', 'Start screensaver', 'Show desktop']);
+menu.find(i => i.label === 'Settings...').action();
 menu.find(i => i.label === 'Wallpaper...').action();
 menu.find(i => i.label === 'Screensaver...').action();
-check('the two open one dialog, each on its own tab', dialogOpened, ['background', 'screensaver']);
+check('the three open Settings: where it was left, and on each page', dialogOpened, ['settings', 'background', 'screensaver']);
+dialogOpened.shift();
 menu.find(i => i.label === 'Start screensaver').action();
 check('starting with nothing chosen leads to where one is chosen', [screensaverCalls, dialogOpened.slice(2)], [['start'], ['screensaver']]);
 screensaverChoice = {type: 'shader', value: 'aurora'};
@@ -462,6 +467,12 @@ check('the browser tab opens no PixOS window', await api.openFile('/home/rows.cs
 check('really none', opened.length, pickedTab);
 check('it hands the file to the browser, through the service worker like everything else',
 	tabs[0], 'http://localhost:8000/__browserfs__/home/rows.csv');
+// A navigation is answered by the worker whose scope it is in, and the scope is the shell's folder.
+globalThis.location.href = 'http://localhost:8081/repo/index.html?x#y';
+await api.openFile('/home/rows.csv');
+check('a PixOS served from a folder opens the tab inside it, where its worker answers',
+	tabs[1], 'http://localhost:8081/repo/__browserfs__/home/rows.csv');
+globalThis.location.href = 'http://localhost:8000/';
 
 answer = {choice: {kind: 'raw-window'}, setDefault: false};
 const pickedRaw = opened.length;

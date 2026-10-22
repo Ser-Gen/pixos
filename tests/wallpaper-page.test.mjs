@@ -80,6 +80,16 @@ check('an already-served path is not prefixed twice', page.pageUrl('/__browserfs
 check('a look may not climb out of its folder', page.pageUrl('/a/Tank.xscr', '../../settings/x.html'), null);
 check('nor start from the root', page.pageUrl('/a/Tank.xscr', '/settings/x.html'), null);
 check('nor go somewhere else entirely', page.pageUrl('/a/Tank.xscr', 'https://example.com/'), null);
+
+// A frame is pointed relative to the shell: a navigation is answered by the worker whose scope it is
+// in, and from a PixOS served at /repo/ the root's /__browserfs__ is in none. Resolved as the browser
+// resolves a frame's src, against the shell's own address.
+check('the frame\'s address is relative', page.frameAddress('/__browserfs__/home/Rain.xscr.html'), '__browserfs__/home/Rain.xscr.html');
+check('so a PixOS served from a folder opens it in that folder',
+	new URL(page.frameAddress(page.pageUrl('/apps/screensavers/Habitats.xscr', 'scenes/riverscape/wallpaper.html')), 'http://localhost:8081/repo/index.html').pathname,
+	'/repo/__browserfs__/apps/screensavers/Habitats.xscr/scenes/riverscape/wallpaper.html');
+check('and one served from the root where it always was',
+	new URL(page.frameAddress('/__browserfs__/home/Rain.xscr.html'), 'http://localhost:8000/').pathname, '/__browserfs__/home/Rain.xscr.html');
 check('nor javascript:', page.pageUrl('/a/Tank.xscr', 'javascript:alert(1)'), null);
 check('nor climb out behind a hash', page.pageUrl('/a/Tank.xscr', '..#x'), null);
 check('a name with two dots in it is still a name', page.pageUrl('/a/Tank.xscr', 'a..b.html'),
@@ -169,7 +179,7 @@ function loadedWindow (status, extra) {
 }
 
 let m = mountPage('/home/Rain.xscr.html');
-check('the frame points at the page', m.frame.src, '/__browserfs__/home/Rain.xscr.html');
+check('the frame points at the page', m.frame.src, '__browserfs__/home/Rain.xscr.html');
 check('and is in the element', m.host.children.length, 1);
 check('it is called by the screensaver\'s name', m.frame.title, 'Rain');
 check('it never takes the pointer itself', /pointer-events:none/.test(m.frame.style.cssText), true);
@@ -293,7 +303,7 @@ check('nothing is loaded until its looks are read', m.frame.src, '');
 await settle();
 check('which they are from the folder, through the worker, and then whether the first one\'s page is here',
 	asked, ['/__browserfs__/apps/screensavers/Matrix.xscr/looks.json', '/__browserfs__/apps/screensavers/Matrix.xscr/index.html?suppressWarnings=true']);
-check('then the frame opens the first look', m.frame.src, '/__browserfs__/apps/screensavers/Matrix.xscr/index.html?suppressWarnings=true');
+check('then the frame opens the first look', m.frame.src, '__browserfs__/apps/screensavers/Matrix.xscr/index.html?suppressWarnings=true');
 
 // Only Riverscape downloaded: the folder by its path alone opens the look that is here.
 const habitatsLooks = json({looks: [{name: 'Reefscape', entry: 'reef/wallpaper.html'}, {name: 'Riverscape', entry: 'river/wallpaper.html'}]});
@@ -301,37 +311,37 @@ const notHere = {ok: false, json: () => Promise.reject(new Error('404'))};
 answer = url => (/looks\.json$/.test(url) ? habitatsLooks : (/reef\//.test(url) ? notHere : {ok: true}));
 m = mountPage('/apps/screensavers/Habitats.xscr');
 await settle();
-check('a first look that is not here is passed over for one that is', m.frame.src, '/__browserfs__/apps/screensavers/Habitats.xscr/river/wallpaper.html');
+check('a first look that is not here is passed over for one that is', m.frame.src, '__browserfs__/apps/screensavers/Habitats.xscr/river/wallpaper.html');
 answer = url => (/looks\.json$/.test(url) ? habitatsLooks : (/reef\//.test(url) ? new Error('Failed to fetch') : notHere));
 m = mountPage('/apps/screensavers/Habitats.xscr');
 await settle();
-check('with none here it is the first look, whose 404 then says so', m.frame.src, '/__browserfs__/apps/screensavers/Habitats.xscr/reef/wallpaper.html');
+check('with none here it is the first look, whose 404 then says so', m.frame.src, '__browserfs__/apps/screensavers/Habitats.xscr/reef/wallpaper.html');
 
 answer = json({looks: [{name: 'Pipes'}]});
 m = mountPage('/apps/screensavers/Pipes.xscr');
 await settle();
-check('a first look with no page of its own is index.html', m.frame.src, '/__browserfs__/apps/screensavers/Pipes.xscr/index.html');
+check('a first look with no page of its own is index.html', m.frame.src, '__browserfs__/apps/screensavers/Pipes.xscr/index.html');
 answer = {ok: false, json: () => Promise.reject(new Error('a 404 page is not JSON'))};
 m = mountPage('/apps/screensavers/Tank.xscr');
 await settle();
-check('a folder with no looks.json opens index.html', m.frame.src, '/__browserfs__/apps/screensavers/Tank.xscr/index.html');
+check('a folder with no looks.json opens index.html', m.frame.src, '__browserfs__/apps/screensavers/Tank.xscr/index.html');
 answer = {ok: false, json: () => Promise.resolve({looks: [{name: 'Odd', entry: 'odd.html'}]})};
 m = mountPage('/apps/screensavers/Tank.xscr');
 await settle();
-check('a 404 is no looks, whatever its body says', m.frame.src, '/__browserfs__/apps/screensavers/Tank.xscr/index.html');
+check('a 404 is no looks, whatever its body says', m.frame.src, '__browserfs__/apps/screensavers/Tank.xscr/index.html');
 answer = new Error('Failed to fetch');
 m = mountPage('/apps/screensavers/Tank.xscr');
 await settle();
-check('and so does one whose looks.json cannot be read', m.frame.src, '/__browserfs__/apps/screensavers/Tank.xscr/index.html');
+check('and so does one whose looks.json cannot be read', m.frame.src, '__browserfs__/apps/screensavers/Tank.xscr/index.html');
 answer = json({looks: [{name: 'Out', entry: '../../settings/x.html'}]});
 m = mountPage('/apps/screensavers/Tank.xscr');
 await settle();
-check('a first look outside its folder is no look', m.frame.src, '/__browserfs__/apps/screensavers/Tank.xscr/index.html');
+check('a first look outside its folder is no look', m.frame.src, '__browserfs__/apps/screensavers/Tank.xscr/index.html');
 
 asked.length = 0;
 m = mountPage('/apps/screensavers/Matrix.xscr', {look: '3D', entry: 'index.html?version=3d'});
 check('a choice that names its look opens it at once, and reads nothing',
-	[m.frame.src, asked], ['/__browserfs__/apps/screensavers/Matrix.xscr/index.html?version=3d', []]);
+	[m.frame.src, asked], ['__browserfs__/apps/screensavers/Matrix.xscr/index.html?version=3d', []]);
 m = mountPage('/home/Rain.xscr.html');
 check('nor does a single page', asked, []);
 

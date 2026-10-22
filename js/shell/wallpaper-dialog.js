@@ -1,13 +1,16 @@
-// The dialog for the background and the screensaver: two tabs over one gallery. Phase 26.
+// The Background and Screensaver pages of Settings: one gallery offered on both. Phase 26, as a
+// dialog with two tabs; pages of the Settings window (js/shell/settings.js) since phase 27, with no
+// change in what they do. The file keeps its name: Explorer's *Preview* and *Set as…* still come
+// through `previewFile` and `useFile` here.
 //
-// Out of desktop.js since then, and taking both halves as parameters: the desktop owns the
+// Out of desktop.js since phase 26, and taking both halves as parameters: the desktop owns the
 // background and screensaver.js owns the screensaver, and neither should know the other exists.
 //
 // **One gallery.** Everything that moves -- the built-in shaders and every screensaver in
-// /apps/screensavers, or that PixOS can download into it -- is one list, offered in both tabs,
-// because anything that can be the background can be the screensaver. The Background tab adds the
-// colours and gradients; the Screensaver tab adds *None* and *Blank*. A page or shader file chosen
-// from somewhere else gets a tile of its own while it is the choice, so the dialog never shows a
+// /apps/screensavers, or that PixOS can download into it -- is one list, offered on both pages,
+// because anything that can be the background can be the screensaver. The Background page adds the
+// colours and gradients; the Screensaver page adds *None* and *Blank*. A page or shader file chosen
+// from somewhere else gets a tile of its own while it is the choice, so the page never shows a
 // choice it cannot point at.
 //
 // **A folder with looks is a tile per look** (pass 4), and a look not downloaded yet says on its
@@ -16,14 +19,15 @@
 // knows what is there and what can be fetched; this only asks it.
 //
 // **Sky asks where it is** (the Sky pass): while it is the choice, a row under the gallery sets the
-// one location PixOS keeps, typed or found by the browser. js/shell/location.js holds it.
+// one location PixOS keeps, typed or found by the browser -- the same row as the Location page's
+// (js/shell/location-page.js). js/shell/location.js holds it.
 //
-// **The extras** (pass 6): the Screensaver tab sets the hot corners and the PIN while a screensaver
-// is chosen, and both tabs carry the one battery setting, since it holds the background and the
+// **The extras** (pass 6): the Screensaver page sets the hot corners and the PIN while a screensaver
+// is chosen, and both pages carry the one battery setting, since it holds the background and the
 // screensaver still alike. js/shell/hot-corners.js and js/shell/pin.js do the work.
 //
-// **Every choice applies at once, and the dialog stays.** A new background is visible behind it
-// on an empty desktop, and the screensaver tab has more than one thing to set.
+// **Every choice applies at once, and the window stays.** A new background is visible behind it
+// on an empty desktop, and the screensaver page has more than one thing to set.
 
 import * as wallpaper from './wallpaper.js';
 import * as shader from './wallpaper-shader.js';
@@ -31,11 +35,12 @@ import {isScreensaverPath, pageName} from './wallpaper-page.js';
 import * as screensaverModule from './screensaver.js';
 import {SCREENSAVERS_DIR} from './screensaver-catalog.js';
 import * as failure from './failure.js';
-import {parseCoordinate} from './location.js';
 import {CORNERS} from './hot-corners.js';
 import {isValidPin} from './pin.js';
+import {section, note} from './settings.js';
+import {locationRow, readLocationFields} from './location-page.js';
 
-export {SCREENSAVERS_DIR};
+export {SCREENSAVERS_DIR, readLocationFields};
 export var SLIDESHOW = SCREENSAVERS_DIR + '/Slideshow.xscr';
 export var DEFAULT_PICTURES = '/home';
 export var SKY = SCREENSAVERS_DIR + '/Sky.xscr';
@@ -43,94 +48,11 @@ export var SKY = SCREENSAVERS_DIR + '/Sky.xscr';
 var STYLE_ID = 'pixos-wallpaper-dialog-style';
 
 var CSS = `
-.PixDialog {
-	position: absolute;
-	left: 50%;
-	top: 50%;
-	transform: translate(-50%, -50%);
-	width: min(560px, calc(100vw - 32px));
-	max-height: calc(100vh - 48px);
-	overflow-y: auto;
-	background: #23262b;
-	border: 1px solid #434850;
-	box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
-	font-family: Arial, Helvetica, sans-serif;
-	color: #e4e4e4;
-	font-size: 13px;
-}
+/* The window and its controls are js/shell/settings.js's; these are the gallery's and the corners'. */
 
-.PixDialog:focus {
-	outline: none;
-}
-
-.PixDialog__head {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 0 14px 0 6px;
-	border-bottom: 1px solid #383c44;
-	font-size: 13px;
-}
-
-.PixDialog__tabs {
-	display: flex;
-}
-
-.PixDialog__tab {
-	background: none;
-	border: 0;
-	border-bottom: 2px solid transparent;
-	color: #9aa1ac;
-	font: inherit;
-	padding: 11px 10px 9px;
-	cursor: pointer;
-}
-
-.PixDialog__tab:hover {
-	color: #e4e4e4;
-}
-
-.PixDialog__tab[aria-selected="true"] {
-	color: #fff;
-	border-bottom-color: #4f9dff;
-}
-
-.PixDialog__tab:focus-visible,
-.PixDialog__close:focus-visible,
-.PixSwatch:focus-visible,
-.PixButton:focus-visible {
+.PixSwatch:focus-visible {
 	outline: 2px solid #4f9dff;
 	outline-offset: 1px;
-}
-
-.PixDialog__close {
-	background: none;
-	border: none;
-	color: #9aa1ac;
-	font-size: 16px;
-	cursor: pointer;
-	line-height: 1;
-}
-
-.PixDialog__close:hover {
-	color: #fff;
-}
-
-.PixDialog__body {
-	padding: 14px;
-}
-
-.PixDialog__label {
-	display: block;
-	font-size: 11px;
-	text-transform: uppercase;
-	letter-spacing: .06em;
-	color: #8a919c;
-	margin: 0 0 8px;
-}
-
-.PixDialog__section + .PixDialog__section {
-	margin-top: 18px;
 }
 
 .PixSwatches {
@@ -198,66 +120,6 @@ var CSS = `
 	color: #8fc2ff;
 }
 
-.PixDialog__row {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-}
-
-.PixDialog__row input[type="text"],
-.PixDialog__row select {
-	flex: 1;
-	min-width: 0;
-	background: #1b1e23;
-	border: 1px solid #434850;
-	color: #e4e4e4;
-	padding: 6px 8px;
-	font-size: 12px;
-	font-family: inherit;
-}
-
-.PixDialog__row select {
-	flex: 0 0 110px;
-}
-
-.PixButton {
-	background: #333840;
-	border: 1px solid #4b515b;
-	color: #e4e4e4;
-	padding: 6px 12px;
-	font-size: 12px;
-	font-family: inherit;
-	cursor: pointer;
-}
-
-.PixButton:hover {
-	background: #3d434d;
-}
-
-.PixButton:disabled {
-	opacity: .45;
-	cursor: default;
-}
-
-.PixDialog__note {
-	margin: 10px 0 0;
-	font-size: 11px;
-	color: #8a919c;
-	line-height: 1.6;
-}
-
-.PixDialog__check {
-	display: flex;
-	gap: 8px;
-	align-items: center;
-	cursor: pointer;
-}
-
-.PixDialog__check input {
-	margin: 0;
-	accent-color: #4f9dff;
-}
-
 /* The four corners where they are: top left in the top left. */
 .PixDialog__corners {
 	display: grid;
@@ -294,11 +156,6 @@ var CSS = `
 	flex: 1;
 }
 
-.PixDialog__note .PixButton {
-	margin-left: 6px;
-	padding: 2px 8px;
-	font-size: 11px;
-}
 `;
 
 // What each moving tile looks like before it moves: a hint of its colours, not a picture of it.
@@ -561,7 +418,7 @@ export function powerNote (power) {
 
 // --- the dialog ------------------------------------------------------------------------------------
 
-var host = null;
+var settings = null;
 var getWallpaper = function () { return null; };
 var setWallpaper = function () { return Promise.resolve(); };
 var saver = null;
@@ -575,10 +432,8 @@ var progress = function () {
 };
 var describeError = failure.describeError;
 
-var dialog = null;
-var unsubscribe = null;
-var redraw = function () {};
-var relist = function () {};
+// What the catalog listed last, kept between showings so a page opened again draws its gallery at once.
+var screensavers = [];
 
 // Every choice counts one, wherever it was made, so that a download finishing late chooses its
 // look only if nothing was chosen after the click that asked for it.
@@ -596,13 +451,14 @@ function ensureStyle () {
 	document.head.append(style);
 }
 
-// cfg: host, getWallpaper, setWallpaper(config), screensaver (the module's own functions),
-// catalog (screensaver-catalog.js's list and download), describeKey(id) -> the chord to print
-// beside *Start screensaver*, notify(note) for what Explorer's *Set as screensaver* says,
-// progress(cfg) for a download's note, describeError(context, error) for its failure, location
-// (location.js's) for Sky's row, and power {get, set(still)} for the battery row.
+// cfg: settings (js/shell/settings.js, which the two pages are added to), getWallpaper,
+// setWallpaper(config), screensaver (the module's own functions), catalog (screensaver-catalog.js's
+// list and download), describeKey(id) -> the chord to print beside *Start screensaver*, notify(note)
+// for what Explorer's *Set as screensaver* says, progress(cfg) for a download's note,
+// describeError(context, error) for its failure, location (location.js's) for Sky's row, and power
+// {get, set(still)} for the battery row.
 export function init (cfg) {
-	host = cfg.host;
+	settings = cfg.settings || null;
 	getWallpaper = cfg.getWallpaper || getWallpaper;
 	setWallpaper = cfg.setWallpaper || setWallpaper;
 	saver = cfg.screensaver || null;
@@ -613,15 +469,68 @@ export function init (cfg) {
 	notify = cfg.notify || notify;
 	progress = cfg.progress || progress;
 	describeError = cfg.describeError || failure.describeError;
+	if (!settings) {
+		return;
+	}
+	settings.addPage({
+		id: 'background',
+		label: 'Background',
+		enter: relist,
+		render: function (body, ctx) {
+			ensureStyle();
+			renderBackground(body, ctx.render);
+		}
+	});
+	if (saver) {
+		settings.addPage({
+			id: 'screensaver',
+			label: 'Screensaver',
+			enter: function (ctx) {
+				relist();
+				// Idle detection allowed, or the preview over. What onChange returns is the unsubscribe.
+				return typeof saver.onChange === 'function' ? saver.onChange(ctx.refresh) : null;
+			},
+			render: function (body, ctx) {
+				ensureStyle();
+				renderScreensaver(body, ctx.render);
+			}
+		});
+	}
 }
 
+function ours () {
+	var page = settings ? settings.currentPage() : null;
+	return page === 'background' || page === 'screensaver';
+}
+
+// Whether Settings is open on one of these pages.
 export function isOpen () {
-	return !!dialog;
+	return ours();
 }
 
-// Drawn again, if it is open: the battery reading changed.
+// Drawn again, if one of these pages is showing: the battery reading changed, or a choice was made
+// somewhere else. Not while a field in it has the focus -- that would wipe out a path being typed.
 export function refresh () {
-	redraw();
+	if (ours()) {
+		settings.refresh();
+	}
+}
+
+var redraw = refresh;
+
+// The gallery grows when the listing arrives, and is listed again when a download ends, so the
+// size comes off the tile it paid for. Without the index -- offline, say -- it is what is on disk.
+// The page draws itself twice as it opens: at once, from the last listing, and again from this one.
+function relist () {
+	if (!catalog) {
+		return;
+	}
+	Promise.resolve(catalog.list()).catch(function () {
+		return [];
+	}).then(function (listed) {
+		screensavers = listed || [];
+		refresh();
+	});
 }
 
 function downloadKey (config) {
@@ -716,139 +625,15 @@ export function useFile (path, surface) {
 	return Promise.resolve(setWallpaper(config)).then(done);
 }
 
-export function close () {
-	if (unsubscribe) {
-		unsubscribe();
-		unsubscribe = null;
-	}
-	if (dialog) {
-		dialog.remove();
-		dialog = null;
-	}
-}
-
-// Opens on `tab`, 'background' or 'screensaver'. Opening it again while it is open switches tab.
+// Settings, on 'background' or 'screensaver'. The menus' *Wallpaper…* and *Screensaver…* come here.
 export function open (tab) {
-	ensureStyle();
-	var current = tab === 'screensaver' && saver ? 'screensaver' : 'background';
-	close();
-
-	var screensavers = [];
-	dialog = document.createElement('div');
-	dialog.className = 'PixDialog';
-	dialog.setAttribute('role', 'dialog');
-	dialog.setAttribute('tabindex', '-1');
-	dialog.setAttribute('aria-label', 'Background and screensaver');
-	dialog.innerHTML = '<div class="PixDialog__head"><div class="PixDialog__tabs" role="tablist"></div>'
-		+ '<button class="PixDialog__close" title="Close" aria-label="Close">×</button></div>'
-		+ '<div class="PixDialog__body"></div>';
-	var tabs = dialog.querySelector('.PixDialog__tabs');
-	var body = dialog.querySelector('.PixDialog__body');
-	dialog.querySelector('.PixDialog__close').onclick = close;
-	dialog.addEventListener('keydown', function (e) {
-		if (e.key === 'Escape') {
-			e.stopPropagation();
-			close();
-		}
-	});
-
-	[['background', 'Background'], ['screensaver', 'Screensaver']].forEach(function (pair) {
-		if (pair[0] === 'screensaver' && !saver) {
-			return;
-		}
-		var button = document.createElement('button');
-		button.className = 'PixDialog__tab';
-		button.setAttribute('role', 'tab');
-		button.dataset.tab = pair[0];
-		button.textContent = pair[1];
-		button.onclick = function () {
-			current = pair[0];
-			render();
-			button.focus();
-		};
-		tabs.append(button);
-	});
-
-	// Drawn again after every choice. The focus goes back to the tile it was on, or to the dialog
-	// itself -- left on a removed button it would fall out onto the page, and take Escape with it.
-	// A tile is found again by its key, not its tooltip, which changes once its look is downloaded.
-	function render () {
-		var active = document.activeElement;
-		var had = dialog.contains(active) && body.contains(active);
-		var onTile = had && active.classList.contains('PixSwatch') ? active.dataset.key : null;
-		tabs.querySelectorAll('.PixDialog__tab').forEach(function (button) {
-			button.setAttribute('aria-selected', button.dataset.tab === current ? 'true' : 'false');
-		});
-		body.replaceChildren();
-		if (current === 'screensaver') {
-			renderScreensaver(body, screensavers, render);
-		}
-		else {
-			renderBackground(body, screensavers, render);
-		}
-		if (had) {
-			var again = onTile === null ? null : Array.from(body.querySelectorAll('.PixSwatch')).find(function (tile) {
-				return tile.dataset.key === onTile;
-			});
-			(again || dialog).focus();
-		}
-	}
-
-	// A choice made somewhere else -- Explorer's menu -- is drawn, unless that would wipe out a path
-	// being typed.
-	redraw = function () {
-		var active = document.activeElement;
-		var typing = dialog && dialog.contains(active) && active.tagName === 'INPUT' && active.type !== 'checkbox';
-		if (dialog && !typing) {
-			render();
-		}
-	};
-	if (saver && typeof saver.onChange === 'function') {
-		// Idle detection allowed, or the preview over.
-		unsubscribe = saver.onChange(function () {
-			if (current === 'screensaver') {
-				redraw();
-			}
-		});
-	}
-
-	render();
-	host.append(dialog);
-	var selected = tabs.querySelector('[aria-selected="true"]');
-	if (selected) {
-		selected.focus();
-	}
-
-	// The gallery grows when the listing arrives, and is listed again when a download ends, so the
-	// size comes off the tile it paid for. Without the index -- offline, say -- it is what is on disk.
-	var shown = dialog;
-	relist = function () {
-		if (!catalog || dialog !== shown) {
-			return;
-		}
-		Promise.resolve(catalog.list()).catch(function () {
-			return [];
-		}).then(function (listed) {
-			if (dialog === shown) {
-				screensavers = listed || [];
-				redraw();
-			}
-		});
-	};
-	relist();
-	return dialog;
+	return settings ? settings.open(tab === 'screensaver' && saver ? 'screensaver' : 'background') : null;
 }
 
-function section (label) {
-	var element = document.createElement('div');
-	element.className = 'PixDialog__section';
-	if (label) {
-		var heading = document.createElement('span');
-		heading.className = 'PixDialog__label';
-		heading.textContent = label;
-		element.append(heading);
+export function close () {
+	if (ours()) {
+		settings.close();
 	}
-	return element;
 }
 
 function swatches (tiles, pick) {
@@ -899,13 +684,6 @@ function named (tiles) {
 	});
 }
 
-function note (text) {
-	var element = document.createElement('p');
-	element.className = 'PixDialog__note';
-	element.textContent = text;
-	return element;
-}
-
 function hasDownloads (screensavers) {
 	return (screensavers || []).some(function (saver) {
 		return (saver.looks || []).some(function (look) {
@@ -949,94 +727,17 @@ export function isSky (config) {
 	return !!config && config.type === 'page' && bare(config.value) === SKY;
 }
 
-// What the two fields of Sky's row say: a location, or which field is wrong and why.
-export function readLocationFields (latitudeText, longitudeText) {
-	var latitude = parseCoordinate(latitudeText, 90);
-	if (latitude === null) {
-		return {error: 'Latitude is a number from -90 to 90, north positive.', field: 'latitude'};
-	}
-	var longitude = parseCoordinate(longitudeText, 180);
-	if (longitude === null) {
-		return {error: 'Longitude is a number from -180 to 180, east positive.', field: 'longitude'};
-	}
-	return {location: {latitude: latitude, longitude: longitude}};
-}
-
 // Sky's one setting, drawn under the gallery while it is the choice: where the sky is seen from.
-// It is PixOS's, not the choice's -- set here, it is the background's and the screensaver's alike.
-function locationRow () {
-	var element = section('Sky over');
-	var row = document.createElement('div');
-	row.className = 'PixDialog__row';
-	var current = place.get();
-	var field = function (label, value, placeholder) {
-		var input = document.createElement('input');
-		input.type = 'text';
-		input.inputMode = 'decimal';
-		input.value = String(value);
-		input.placeholder = placeholder;
-		input.setAttribute('aria-label', label);
-		input.addEventListener('keydown', function (e) {
-			if (e.key === 'Enter') {
-				set.click();
-			}
-		});
-		return input;
-	};
-	var latitude = field('Latitude', current.latitude, 'Latitude');
-	var longitude = field('Longitude', current.longitude, 'Longitude');
-	var set = document.createElement('button');
-	set.className = 'PixButton';
-	set.textContent = 'Set';
-	var find = document.createElement('button');
-	find.className = 'PixButton';
-	find.textContent = 'Use my location';
-	var status = note('');
-	status.setAttribute('role', 'status');
-	status.hidden = true;
-	var say = function (text) {
-		status.textContent = text;
-		status.hidden = !text;
-	};
-	var show = function (where) {
-		latitude.value = String(where.latitude);
-		longitude.value = String(where.longitude);
-	};
-	var save = function (where) {
-		return place.set(where).then(show, function (err) {
-			show(place.get());
-			say('Shown, but not saved: ' + ((err && err.message) || err));
-		});
-	};
-	set.onclick = function () {
-		var read = readLocationFields(latitude.value, longitude.value);
-		latitude.setAttribute('aria-invalid', read.field === 'latitude' ? 'true' : 'false');
-		longitude.setAttribute('aria-invalid', read.field === 'longitude' ? 'true' : 'false');
-		say(read.error || '');
-		if (read.location) {
-			save(read.location);
-		}
-	};
-	// Asked in the click, which the browser's prompt needs.
-	find.onclick = function () {
-		find.disabled = true;
-		say('Finding where this is…');
-		place.locate().then(function (where) {
-			say('');
-			return save(where);
-		}, function (err) {
-			say((err && err.message) || String(err));
-		}).then(function () {
-			find.disabled = false;
-		});
-	};
-	row.append(latitude, longitude, set, find);
-	element.append(row, status, note('The sun, the moon, the planets and the stars as seen from there, for the background '
+// It is PixOS's, not the choice's -- set here, it is the background's and the screensaver's alike,
+// and the Location page sets the same one.
+function skyRow () {
+	var element = locationRow(place, 'Sky over', null);
+	element.append(note('The sun, the moon, the planets and the stars as seen from there, for the background '
 		+ 'and the screensaver alike. North and east are positive; Riga until another place is set.'));
 	return element;
 }
 
-// The one battery setting, drawn in both tabs.
+// The one battery setting, drawn on both pages.
 function powerRow () {
 	var element = section('On battery');
 	var label = document.createElement('label');
@@ -1179,21 +880,10 @@ function fileRow (placeholder, chosen, apply) {
 	return element;
 }
 
-// A choice may settle after a download, with the dialog closed or opened again since: it is
-// drawn again only if it is still the dialog it was made in.
-function redrawIfSame (render) {
-	var drawn = dialog;
-	return function () {
-		if (dialog && dialog === drawn) {
-			render();
-		}
-	};
-}
-
-function renderBackground (body, screensavers, render) {
+function renderBackground (body, render) {
 	var chosen = getWallpaper() || wallpaper.DEFAULT_WALLPAPER;
 	var pick = function (config, tile) {
-		var again = redrawIfSame(render);
+		var again = render;
 		choose(tile, config, setWallpaper).then(again, again);
 	};
 
@@ -1227,7 +917,7 @@ function renderBackground (body, screensavers, render) {
 		body.append(picturesRow(folder, pick));
 	}
 	if (isSky(chosen) && place) {
-		body.append(locationRow());
+		body.append(skyRow());
 	}
 	var file = fileRow('/home/pictures/sea.jpg, /home/plasma.glsl or /home/Rain.xscr.html', chosen, pick);
 	file.append(note('Easier: right-click an image or a screensaver in Explorer and choose Set as wallpaper. A .glsl file '
@@ -1235,7 +925,7 @@ function renderBackground (body, screensavers, render) {
 	body.append(file);
 }
 
-function renderScreensaver (body, screensavers, render) {
+function renderScreensaver (body, render) {
 	var current = saver.getSettings();
 	var chosen = current.show;
 	var pick = function (config, tile) {
@@ -1244,7 +934,7 @@ function renderScreensaver (body, screensavers, render) {
 		if (config && !chosen) {
 			saver.askForIdle();
 		}
-		var again = redrawIfSame(render);
+		var again = render;
 		choose(tile, config, function (next) {
 			return saver.setSettings({show: next});
 		}).then(again, again);
@@ -1262,7 +952,7 @@ function renderScreensaver (body, screensavers, render) {
 		body.append(picturesRow(folder, pick));
 	}
 	if (isSky(chosen) && place) {
-		body.append(locationRow());
+		body.append(skyRow());
 	}
 
 	var timing = section('Start after');

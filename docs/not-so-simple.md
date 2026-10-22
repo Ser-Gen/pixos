@@ -3,7 +3,8 @@
 **Why each of these is written down: it is behaviour you would not predict from the code,
 and in most cases somebody already lost an afternoon to it.** This was the bulk of
 `CLAUDE.md`, moved out when that file stopped being readable in one sitting. `CLAUDE.md`
-keeps the structure, the commands and the rules that must never be broken, and points here.
+keeps the commands and the rules that must never be broken, and points here; the full map of the
+repository is `docs/structure.md`.
 
 **Read the relevant section before changing the area it describes.** Nothing here is
 optional detail; a paragraph exists because the obvious change breaks something that is not
@@ -11,6 +12,61 @@ obvious. Where a rule is checked by a test, the test is named — those are the 
 will stop you. The rest will not.
 
 Keep this file in English, and update it when the behaviour it describes changes.
+
+## What each section covers
+
+Find the section for what you are about to change here, then read that section, not the whole file.
+
+- *Serving, offline, and saying when something failed* — the service worker and its query strings and
+  fragments, why a frame or tab is addressed relative to the shell (PixOS served from a folder), how it
+  reads a file on a mount (by asking a shell, and which one) and why a shell a hard reload left
+  uncontrolled reloads itself once, the notification surface and its three layers in Explorer,
+  `failure.js`, `needsNetwork` and the four record builders that keep dropping it, why the precache is
+  network-first and what it follows rather than lists, the error reporter the worker injects into
+  every app document so a window that dies before its own script runs still says so, and the progress
+  note a long operation draws in that same stack.
+- *Apps that carry their own engine* — 7-Zip's exit codes and staging rules, filmoskop's parser
+  boundary and its two editors, and the two apps whose folder is not their id.
+- *The desktop and its widgets* — peeks, widgets as doors, who knows the desktop is visible, and
+  animated backgrounds: paused when covered, unloaded after 30 s, a page's frames held from outside
+  because hiding a frame does not stop it, and the pointer handed in. The screensavers downloaded on
+  first use: what a look needs, the page written last, which look a folder opens by its path, and what
+  the gallery offers offline. Where this machine is, and why a page asks the shell for it; Follow me,
+  and why a boot never asks and waits for the tabs; the Settings window, a page's late redraw, and
+  refresh versus render; Sky's compass view and its twilights. The screensaver: whose idle counts, what
+  holds it off, the permission asked in a click, and why its key listener has to be registered first.
+  The PIN's lock in localStorage and every tab having it, a hot corner's three pixels and why a pressed
+  one waits for the pointer to leave, and a background held still on battery rather than unloaded.
+  Explorer previewing one, and its copy of which names are screensavers.
+- *Windows, desktops and sessions* — the five layers, why an iframe is never reparented, one windows
+  container for every desktop, and what a session actually persists.
+- *Getting around* — one model behind three launchers, keystroke bridging into iframes, the overview,
+  the file-search deadline, and the shortcuts sheet (one spelling for handler and sheet, `Ctrl/Cmd+/`
+  left to a text field, the chords a Mac is not shown).
+- *Launching, and the app contract* — `launch(descriptor)`, `openFile`/`markDirty`/`saveFileLocal`,
+  `setWindowPath` (where a window that moves inside itself now stands), `watchStorage` (the storage
+  figure, passed on only when it changes), `window.pixosShortcuts` (an app's keys, read by the shell
+  when its sheet opens), `autosave`, one tab owning the session, and `Ctrl/Cmd+W`.
+- *When a file changes underneath a window* — why no writer is asked to announce a write, the one `fs`
+  that is wrapped instead and the one writer that cannot be, quiet-plus-maxWait coalescing, what a
+  truncated batch is allowed to answer, `affects` versus `touches`, and why `watchFiles` takes the
+  app's own window.
+- *Storage, and what the browser will not keep* — eviction, the 128 MiB ceiling on a file, what a
+  refused write does and does not tell you, one spelling of a size, and which mounts come back after a
+  reload and which wait for a click.
+- *Manifests, boot, and what a fresh system is made of* — generated manifests, the two the generator
+  skips in silence, the four lists a file added to Explorer goes in (fonts included), `preinstall.json`,
+  and what a boot says on screen when it cannot fetch what it is made of.
+- *Frames that are not apps* — `launch({url})` and why every cross-origin iframe needs `credentialless`.
+- *Frontmatter, parsed twice* — and why that is deliberate.
+- *Peers: another machine* — the closed wire protocol, chat as a file, a call and its bar, and a shared
+  folder as a mount.
+- *The app system* — catalog versus local apps, the generated fallback catalog, why uninstalling is not
+  install reversed, and how a renamed app keeps answering to its old name.
+- *Opening a file* — the chooser, defaults, and the self-opening extensions.
+- *The bookmarks document* — two writers, one owner, a seeded starter, one queue for every edit from
+  outside the app, and Explorer's places as a group in it that looking never creates.
+- *Two smaller traps* — a clipboard that can refuse, and candidate-based extension matching.
 
 ---
 
@@ -27,6 +83,19 @@ that whole name and was a 404. Nothing opened one until phase 26's Pipes, whose 
 and `tests/sw-served-path.test.mjs` runs it. A directory URL without a trailing slash gets a
 redirect first (`withSlash`, which puts the slash before the query rather than after it), so
 relative `../` references inside an app resolve either way.
+
+**Anything the browser navigates to is addressed relative to the shell, never from the root**,
+because PixOS may be served from a folder (`http://host/repo/`) and its worker's scope is that
+folder. A *fetch* does not care: every fetch a controlled page makes goes to its own worker,
+whatever the path, and the worker finds `__browserfs__` anywhere in the URL — which is why
+`fetch('/__browserfs__/…')` works from the shell at any depth and nobody noticed. A *navigation*
+— a frame's `src`, a new tab — is answered only by the worker whose scope contains it, and
+`/__browserfs__/…` from a shell at `/repo/` is in no scope at all: the server answers, with a
+404, and COEP turns that into `ERR_BLOCKED_BY_RESPONSE`. App windows were always relative
+(`'__browserfs__' + url`); the wallpaper and screensaver frame was not, so every animated
+background was a blank under a folder, until `frameAddress` in `wallpaper-page.js`. *Open in a
+browser tab* and the addresses handed to the media player and the transcriber are resolved the
+same way, against `location.href` without the leading slash.
 
 **A file on a mount is read by asking a shell, and which shell is the whole question.** The
 worker has only IndexedDB; a zip, an iso, a local folder, a Files3 storage or a peer exists only
@@ -548,7 +617,8 @@ frames stops them entirely.
 
 **Where this machine is belongs to the shell, and a page asks the shell, not the file.**
 `js/shell/location.js` keeps one location for all of PixOS in `/settings/location.json` — Riga until one
-is set, from the *Sky over* row the dialog draws while Sky is the choice. It is a settings file, so only
+is set, on Settings' Location page or the *Sky over* row drawn under the gallery while Sky is the choice
+(one row, `js/shell/location-page.js`'s, drawn in both places). It is a settings file, so only
 the tab that owns the session writes it; but, like a wallpaper, a change applies in the tab it was made
 in either way — and a page reading the file in a tab that does not own the session would never see it.
 So a page calls `parent.watchLocation(window, handler)`, which calls back at once and on every change,
@@ -558,6 +628,33 @@ write arrives as a file change, not a call. *Use my location* keeps two decimals
 typed location keeps four. The dialog draws itself twice as it opens — at once, and again when the
 catalog's list arrives — and anything typed into one of its rows in between is replaced; a person is
 not that fast, a test script is. `tests/location.test.mjs`, `tests/shell-watch-location.test.mjs`.
+
+**Follow me finds the place again at every boot, and a boot never asks.** It is `"follow": true` in
+`location.json`, left out of the file while it is off. At boot the shell asks `navigator.permissions`
+first and calls `getCurrentPosition` only on *granted*: on *prompt* the call would put Chrome's prompt
+in front of someone who did nothing. So it is turned on in a click that finds the place there and then
+— that click is when the browser may ask — and a refusal leaves it off. **The boot's finding waits for
+the tabs to settle who writes** (`tabs.subscribe`, until an owner is known): Chrome answers from its
+cache (`maximumAge` ten minutes) inside the election's quarter second, and before this wait the place
+was applied in the tab and never written, so the file kept the old one. A typed place turns it off, or
+the next boot would put the found one back over it. `permissions.query` that throws, or answers with no
+state, is *unsupported*, and the box is not offered. `tests/location.test.mjs`,
+`tests/location-page.test.mjs`.
+
+**Settings is a shell dialog with pages, and a page's late redraw does nothing.** `js/shell/settings.js`
+draws the window and the sidebar and knows nothing about any page; a module that owns a setting adds its
+page (`addPage({id, label, render, enter})`), and the sidebar orders them by `PAGE_ORDER`, not by who
+added first. It is not a tiled window because `wm.js` positions iframes only. Each showing of a page
+gets its own `ctx`, and `ctx.render`/`ctx.refresh` do nothing once that showing is over — a download or
+a geolocation answer can settle after the window was closed, or moved to another page. **`refresh`
+leaves the page alone while a text field in it has the focus; `render` does not.** A change made
+elsewhere (Explorer's *Set as wallpaper*, a battery reading, a location from another tab) is a refresh,
+a page's own click a render. A checkbox, a radio or a slider with the focus is not typing. After a
+redraw the focus goes back to the control with the same `data-key`, or to the window, never to the
+page underneath, which would take Escape with it. The Background and Screensaver pages are the phase
+26 dialog's two tabs, still in `wallpaper-dialog.js` because Explorer's commands come through it.
+`Ctrl/Cmd+,` opens and closes it; whether Chrome on a Mac hands a page `⌘,` is on the phase 27
+checklist. `tests/settings.test.mjs`.
 
 **Sky's screen is a compass, exactly as wide as the year's widest day.** It faces the equator — south
 in the middle north of it, sunrise on the left — and runs from the widest sunrise to the widest sunset

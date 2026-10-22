@@ -2,7 +2,7 @@
 // `{"latitude": 56.9496, "longitude": 24.1052}`. Phase 26, the Sky pass; docs/screensavers-plan.md.
 //
 // **One place for all of PixOS**, the user's choice over keeping it in each screensaver's address,
-// the way the slideshow keeps its folder: set once, in the Wallpaper dialog, and both the background
+// the way the slideshow keeps its folder: set once, in Settings, and both the background
 // and the screensaver -- and anything later that wants sunrise times -- see the same one. **Riga until
 // it is set.**
 //
@@ -15,9 +15,15 @@
 // *Use my location* asks the browser once, in the click that asks for it, and keeps two decimals --
 // about a kilometre, more than the sky needs, and less than a house.
 //
+// **Follow me** (phase 27, the Settings window's Location page) finds it again at every boot, and
+// only when the browser's permission is already *granted*: a boot never shows a prompt. It is
+// turned on in a click, which finds the place once there and then -- that is when the browser may
+// ask -- and is kept in the same file, as `"follow": true`, written only while it is on. Typing a
+// place turns it off: the next boot would otherwise put back the place that was just typed over.
+//
 // createLocation(deps) -- deps: readText(path) resolving to the file's text and rejecting when there
 // is none; writeText(path, text); canWrite() (this tab owns the session); geolocation (the browser's,
-// or null); timeout (ms, for finding it).
+// or null); permissions (navigator.permissions, or null); timeout (ms, for finding it).
 
 export var LOCATION_FILE = '/settings/location.json';
 
@@ -60,6 +66,21 @@ export function parseCoordinate (text, limit) {
 	return isFinite(value) && Math.abs(value) <= limit ? value : null;
 }
 
+// Whether a stored location follows the browser. Only `true` is: an old file has no such field.
+export function readFollow (doc) {
+	return !!doc && typeof doc === 'object' && doc.follow === true;
+}
+
+// What the file holds for a location, following or not. `follow` is left out while it is off, so
+// a file nobody turned it on for is what it always was.
+export function locationDoc (location, follow) {
+	var doc = {latitude: location.latitude, longitude: location.longitude};
+	if (follow) {
+		doc.follow = true;
+	}
+	return doc;
+}
+
 export function sameLocation (a, b) {
 	return !!a && !!b && a.latitude === b.latitude && a.longitude === b.longitude;
 }
@@ -80,6 +101,7 @@ export function describeGeolocationError (error) {
 export function createLocation (deps) {
 	var current = {latitude: DEFAULT_LOCATION.latitude, longitude: DEFAULT_LOCATION.longitude};
 	var saved = false;
+	var following = false;
 	var listeners = [];
 
 	function copy () {
@@ -123,33 +145,101 @@ export function createLocation (deps) {
 			return Promise.resolve().then(function () {
 				return deps.readText(LOCATION_FILE);
 			}).then(function (text) {
-				var read = null;
+				var doc = null;
 				try {
-					read = readLocation(JSON.parse(text));
+					doc = JSON.parse(text);
 				}
 				catch (err) {
-					read = null;
+					doc = null;
 				}
+				var read = readLocation(doc);
+				following = !!read && readFollow(doc);
 				apply(read || DEFAULT_LOCATION, !!read);
 				return copy();
 			}, function () {
+				following = false;
 				apply(DEFAULT_LOCATION, false);
 				return copy();
 			});
 		},
 
-		// Applies at once, here, and writes the file if this tab owns the session.
-		set: function (location) {
+		// Applies at once, here, and writes the file if this tab owns the session. `options.follow`
+		// turns following on or off with it; left out, it stays as it is.
+		set: function (location, options) {
 			var read = readLocation(location);
 			if (!read) {
 				return Promise.reject(new Error('Not a location: ' + JSON.stringify(location)));
 			}
 			var rounded = {latitude: roundTo(read.latitude, TYPED_PLACES), longitude: roundTo(read.longitude, TYPED_PLACES)};
+			if (options && typeof options.follow === 'boolean') {
+				following = options.follow;
+			}
 			apply(rounded, true);
 			if (!deps.canWrite()) {
 				return Promise.resolve(copy());
 			}
-			return Promise.resolve(deps.writeText(LOCATION_FILE, JSON.stringify(rounded, null, 2) + '\n')).then(copy);
+			return Promise.resolve(deps.writeText(LOCATION_FILE, JSON.stringify(locationDoc(rounded, following), null, 2) + '\n')).then(copy);
+		},
+
+		isFollowing: function () {
+			return following;
+		},
+
+		// Turns following on -- finding the place now, in the click, so the browser may ask -- or off.
+		// Resolves to the location. Turning it on rejects as locate does, and then nothing changes.
+		follow: function (on) {
+			var self = this;
+			if (on) {
+				return self.locate().then(function (where) {
+					return self.set(where, {follow: true});
+				});
+			}
+			if (!following) {
+				return Promise.resolve(copy());
+			}
+			return self.set(copy(), {follow: false});
+		},
+
+		// What the browser says about being asked where this is: 'granted', 'prompt', 'denied', or
+		// 'unsupported' when it will not say.
+		permission: function () {
+			var permissions = deps.permissions;
+			if (!deps.geolocation || !permissions || typeof permissions.query !== 'function') {
+				return Promise.resolve('unsupported');
+			}
+			return Promise.resolve().then(function () {
+				return permissions.query({name: 'geolocation'});
+			}).then(function (status) {
+				return status && status.state ? status.state : 'unsupported';
+			}, function () {
+				return 'unsupported';
+			});
+		},
+
+		// At boot: found again if following, and only if the browser would answer without asking.
+		// Resolves to {found} or {skipped: why} -- 'off', the permission's state, or 'failed' -- and
+		// never rejects: a boot has nobody to tell. Turned off while it was finding, it sets nothing.
+		refind: function () {
+			var self = this;
+			if (!following) {
+				return Promise.resolve({skipped: 'off'});
+			}
+			return self.permission().then(function (state) {
+				if (state !== 'granted') {
+					return {skipped: state};
+				}
+				return self.locate().then(function (where) {
+					if (!following) {
+						return {skipped: 'off'};
+					}
+					return self.set(where).then(function (set) {
+						return {found: set};
+					});
+				});
+			}).catch(function (err) {
+				console.warn('Follow me could not find this place', err);
+				return {skipped: 'failed'};
+			});
 		},
 
 		// Asks the browser where this is. Does not set it: the dialog shows it, then sets it.

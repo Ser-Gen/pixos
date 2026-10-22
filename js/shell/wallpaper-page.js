@@ -260,6 +260,15 @@ export function firstLookEntry (path) {
 	});
 }
 
+// The frame is pointed at the page relative to the shell, as an app window is, so that it lands in
+// the worker's scope wherever PixOS is served from. A navigation is answered by the worker whose
+// scope it is in, and `/__browserfs__/...` from a shell served at `/repo/` is in none: the server
+// answers, with a 404. A fetch is not -- every fetch a controlled page makes goes to its worker --
+// which is why `served` above and an image background never noticed.
+export function frameAddress (url) {
+	return url.replace(/^\/+/, '');
+}
+
 function mountPage (element, config, context) {
 	var path = config.value;
 	var entry = config.options && config.options.entry;
@@ -334,12 +343,12 @@ function mountPage (element, config, context) {
 	if (isFolderPath(path) && !entry) {
 		firstLookEntry(path).then(function (first) {
 			if (!gone) {
-				frame.src = (first && pageUrl(path, first)) || url;
+				frame.src = frameAddress((first && pageUrl(path, first)) || url);
 			}
 		});
 	}
 	else {
-		frame.src = url;
+		frame.src = frameAddress(url);
 	}
 	element.append(frame);
 

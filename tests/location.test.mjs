@@ -28,7 +28,7 @@ check('not a number is not a coordinate', ['', '  ', 'north', '56.9.4', '1e2', '
 check('rounding', [loc.roundTo(56.94961234, 4), loc.roundTo(24.105, 2), loc.roundTo(-0.005, 2)], [56.9496, 24.11, -0]);
 
 function world (file, options) {
-	const w = {file: file, writes: [], owner: true, told: [], position: null, error: null, asked: []};
+	const w = {file: file, writes: [], owner: true, told: [], position: null, error: null, asked: [], permission: 'granted', queried: []};
 	w.location = loc.createLocation({
 		readText: path => w.file === undefined ? Promise.reject(Object.assign(new Error('ENOENT'), {code: 'ENOENT'})) : Promise.resolve(w.file),
 		writeText: (path, text) => {
@@ -44,6 +44,12 @@ function world (file, options) {
 			getCurrentPosition (ok, fail, settings) {
 				w.asked.push(settings);
 				return w.error ? fail(w.error) : ok(w.position);
+			}
+		},
+		permissions: options && options.noPermissions ? null : {
+			query (descriptor) {
+				w.queried.push(descriptor);
+				return w.permission === 'throws' ? Promise.reject(new TypeError('not a permission')) : Promise.resolve({state: w.permission});
 			}
 		},
 		timeout: 5000
@@ -144,6 +150,118 @@ check('a browser without it', /cannot say where it is/.test(await refusal(null, 
 	const w = world(undefined);
 	w.position = {coords: {latitude: NaN, longitude: 0}};
 	check('an answer that is not a place is a failure', /could not work out/.test(await w.location.locate().then(() => '', e => e.message)), true);
+}
+
+// --- Follow me (phase 27) ---------------------------------------------------------------------------
+
+check('a file follows only when it says true', [loc.readFollow({follow: true}), loc.readFollow({follow: 'true'}), loc.readFollow({}),
+	loc.readFollow(null)], [true, false, false, false]);
+check('what is written: follow only while it is on', [loc.locationDoc(RIGA, false), loc.locationDoc(RIGA, true)],
+	[RIGA, {latitude: 56.9496, longitude: 24.1052, follow: true}]);
+{
+	const w = world(undefined);
+	await w.location.load();
+	check('nothing set does not follow', w.location.isFollowing(), false);
+	check('so a boot finds nothing, and asks nothing', [await w.location.refind(), w.queried.length, w.asked.length], [{skipped: 'off'}, 0, 0]);
+
+	w.position = {coords: {latitude: 59.43696, longitude: 24.75353}};
+	const on = await w.location.follow(true);
+	check('turning it on finds the place there and then', [on, w.asked.length], [{latitude: 59.44, longitude: 24.75}, 1]);
+	check('and writes it with follow', [w.location.isFollowing(), JSON.parse(w.file)], [true, {latitude: 59.44, longitude: 24.75, follow: true}]);
+
+	w.position = {coords: {latitude: 54.68, longitude: 25.28}};
+	const fresh = world(w.file);
+	fresh.position = w.position;
+	await fresh.location.load();
+	check('a boot reads it back as following', [fresh.location.isFollowing(), fresh.location.get()], [true, {latitude: 59.44, longitude: 24.75}]);
+	fresh.location.subscribe(where => fresh.told.push(where));
+	const again = await fresh.location.refind();
+	check('and finds the place again, having asked only whether it may', [again, fresh.queried, fresh.asked.length],
+		[{found: {latitude: 54.68, longitude: 25.28}}, [{name: 'geolocation'}], 1]);
+	check('which is told to every page, and written still following', [fresh.told.length, JSON.parse(fresh.file)],
+		[2, {latitude: 54.68, longitude: 25.28, follow: true}]);
+
+	for (const state of ['prompt', 'denied']) {
+		const b = world(w.file);
+		b.permission = state;
+		await b.location.load();
+		check('a boot that would have to ask does not: ' + state, [await b.location.refind(), b.asked.length, b.writes.length],
+			[{skipped: state}, 0, 0]);
+	}
+	const odd = world(w.file);
+	odd.permission = 'throws';
+	await odd.location.load();
+	check('a browser that will not say is not asked', [await odd.location.refind(), odd.asked.length], [{skipped: 'unsupported'}, 0]);
+	const none = world(w.file, {noPermissions: true});
+	await none.location.load();
+	check('nor one with no permissions to ask', [await none.location.refind(), none.asked.length], [{skipped: 'unsupported'}, 0]);
+
+	const warn = console.warn;
+	console.warn = () => {};
+	const failing = world(w.file);
+	failing.error = {code: 2};
+	await failing.location.load();
+	const failed = await failing.location.refind();
+	console.warn = warn;
+	check('a boot whose finding fails keeps the place it had, and does not throw', [failed, failing.location.get(), failing.writes.length],
+		[{skipped: 'failed'}, {latitude: 59.44, longitude: 24.75}, 0]);
+
+	const typed = await w.location.set({latitude: 48.8566, longitude: 2.3522}, {follow: false});
+	check('typing a place turns it off, and the file says so by leaving it out', [typed, w.location.isFollowing(), JSON.parse(w.file)],
+		[{latitude: 48.8566, longitude: 2.3522}, false, {latitude: 48.8566, longitude: 2.3522}]);
+	await w.location.follow(true);
+	await w.location.set({latitude: 1, longitude: 2});
+	check('a set that says nothing about it leaves it as it was', [w.location.isFollowing(), JSON.parse(w.file).follow], [true, true]);
+	await w.location.set({latitude: 1, longitude: 2}, {});
+	check('nor does one whose options leave it out', w.location.isFollowing(), true);
+	const writes = w.writes.length;
+	const off = await w.location.follow(false);
+	check('turned off, the place stays and the file loses follow', [off, w.location.isFollowing(), JSON.parse(w.file), w.writes.length],
+		[{latitude: 1, longitude: 2}, false, {latitude: 1, longitude: 2}, writes + 1]);
+	await w.location.follow(false);
+	check('turning off what is off writes nothing', w.writes.length, writes + 1);
+
+	w.error = {code: 1};
+	const refused = await w.location.follow(true).then(() => 'on', err => err.message);
+	check('turned on and refused by the browser: it says why, and stays off', [/not allowed/.test(refused), w.location.isFollowing()], [true, false]);
+}
+{
+	// Turned off while a boot's finding was still on its way: what it finds is not set.
+	const w = world('{"latitude": 1, "longitude": 2, "follow": true}');
+	await w.location.load();
+	let answer = null;
+	const real = w.location.locate;
+	w.location.locate = () => new Promise(resolve => { answer = resolve; });
+	const finding = w.location.refind();
+	await new Promise(resolve => setTimeout(resolve, 0));
+	await w.location.follow(false);
+	answer({latitude: 50, longitude: 50});
+	check('a place found after it was turned off is not set', [await finding, w.location.get()], [{skipped: 'off'}, {latitude: 1, longitude: 2}]);
+	w.location.locate = real;
+}
+{
+	const w = world('{"latitude": 1, "longitude": 2, "follow": true}');
+	await w.location.load();
+	w.file = '{"latitude": 1, "longitude": 2}';
+	await w.location.load();
+	check('another tab turning it off is read', w.location.isFollowing(), false);
+	w.file = '{"latitude": 999, "longitude": 2, "follow": true}';
+	await w.location.load();
+	check('a file that is not a place does not follow', w.location.isFollowing(), false);
+	await w.location.set({latitude: 1, longitude: 2}, {follow: true});
+	w.file = undefined;
+	await w.location.load();
+	check('nor does no file', w.location.isFollowing(), false);
+}
+{
+	const w = world(undefined);
+	w.location = loc.createLocation({readText: () => Promise.reject(new Error('ENOENT')), writeText: () => Promise.resolve(), canWrite: () => true,
+		geolocation: {getCurrentPosition () {}}, permissions: {query: () => Promise.resolve({})}});
+	check('a permission answered with no state is unsupported', await w.location.permission(), 'unsupported');
+}
+{
+	const w = world(undefined, {noGeolocation: true});
+	check('no geolocation: the permission is unsupported, whatever the browser would say', await w.location.permission(), 'unsupported');
 }
 
 process.exit(report('location') ? 1 : 0);

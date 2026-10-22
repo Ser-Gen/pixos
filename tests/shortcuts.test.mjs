@@ -74,7 +74,12 @@ check('the peek is left off a Mac too: Ctrl+Alt+D and Cmd+Alt+D are both the sys
 check('a command prints its first usable chord', [describeShortcut('overview', true), describeShortcut('overview', false)], ['⇧⌘K', 'Ctrl+Shift+K']);
 check('a command with none prints nothing', describeShortcut('no-such', false), '');
 check('every chord the handler reads by name is on the list',
-	['palette', 'overview', 'desktop', 'peek', 'screensaver', 'shortcuts', 'close'].filter(id => !shellKeys(id).length), []);
+	['palette', 'overview', 'desktop', 'peek', 'screensaver', 'settings', 'shortcuts', 'close'].filter(id => !shellKeys(id).length), []);
+// Phase 27: the chord most programs open their settings with. Chrome on a Mac has ⌘, for its own --
+// the phase 27 checklist checks that a page that takes it gets it there.
+check('Settings is Mod+comma, drawn for each machine', [describeShortcut('settings', true), describeShortcut('settings', false)], ['⌘,', 'Ctrl+,']);
+check('and a comma is its code', [matchesChord(key('Comma', {metaKey: true}), 'Mod+,'), matchesChord(key('Period', {metaKey: true}), 'Mod+,')],
+	[true, false]);
 // Phase 26. Not Ctrl+Alt+<letter>: on Windows that is AltGr, which types ś or @ in half of Europe.
 check('the screensaver starts on Mod+Shift+L, drawn for each machine',
 	[describeShortcut('screensaver', true), describeShortcut('screensaver', false)], ['⇧⌘L', 'Ctrl+Shift+L']);
@@ -121,7 +126,7 @@ if (from === -1 || to === -1) {
 
 function world (opts) {
 	opts = opts || {};
-	const w = {trace: [], locked: !!opts.locked};
+	const w = {trace: [], locked: !!opts.locked, settingsOpen: false};
 	const overlay = name => ({
 		open: () => w.trace.push(name + ':open'),
 		close: () => w.trace.push(name + ':close'),
@@ -138,11 +143,17 @@ function world (opts) {
 		getActiveWorkspace: () => 'w1',
 		closeWindow: id => w.trace.push('close:' + id)
 	};
-	w.api = new Function('shortcuts', 'winManager', 'startMenu', 'palette', 'overview', 'fullscreen', 'getLaunchableApp',
+	const settingsWindow = {
+		isOpen: () => w.settingsOpen,
+		open: () => { w.settingsOpen = true; w.trace.push('settings:open'); },
+		close: () => { w.settingsOpen = false; w.trace.push('settings:close'); }
+	};
+	w.api = new Function('shortcuts', 'winManager', 'startMenu', 'palette', 'overview', 'fullscreen', 'getLaunchableApp', 'settingsWindow',
 		shell.slice(from, to) + '\n; return {onShellHotkey, frontAppShortcuts, isTypingTarget};')(
 		sheet, w.winManager, overlay('start'), overlay('palette'), overlay('overview'),
 		{isKeyboardLocked: () => w.locked},
-		id => (id === 'explorer' ? {name: 'Explorer'} : null)
+		id => (id === 'explorer' ? {name: 'Explorer'} : null),
+		settingsWindow
 	);
 	w.press = (code, extra) => {
 		w.trace.length = 0;
@@ -169,6 +180,11 @@ function world (opts) {
 		['start:close', 'palette:close', 'sheet:close', 'overview:toggle']);
 	check('Ctrl+` is the overview\'s second chord', w.press('Backquote', {ctrlKey: true}).trace.includes('overview:toggle'), true);
 	check('Ctrl+Space the palette\'s', w.press('Space', {ctrlKey: true}).trace.includes('palette:toggle'), true);
+
+	check('Cmd+, opens Settings, closing whatever else is open', w.press('Comma', {metaKey: true}),
+		{trace: ['start:close', 'palette:close', 'overview:close', 'sheet:close', 'settings:open'], prevented: true});
+	check('and closes it again', w.press('Comma', {ctrlKey: true}).trace.slice(-1), ['settings:close']);
+	check('Cmd+Shift+, is not it', w.press('Comma', {metaKey: true, shiftKey: true}).trace, []);
 
 	check('Ctrl+Shift+2 goes to the second desktop', w.press('Digit2', {ctrlKey: true, shiftKey: true}), {trace: ['switch:w2'], prevented: true});
 	check('a desktop that is not there is left to the browser', w.press('Digit7', {ctrlKey: true, shiftKey: true}), {trace: [], prevented: false});
