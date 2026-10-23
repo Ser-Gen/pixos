@@ -1,490 +1,505 @@
-import { scanFileList, mergeScanResults } from './scan.js';
-import { layoutTreemap } from './treemap.js';
-import { TreemapRenderer } from './render.js';
-import { formatBytes, formatPercent } from './format.js';
-import {
-  isPixosEmbedded,
-  parsePathFromQuery,
-  scanPixosPath,
-} from './scan-pixos.js';
-import { canOpenFile, openTreemapFile } from './open-file.js';
+// Disk Treemap: the page. Scanning is in scan-pixos.js and scan-local.js, the picture in layout.js
+// and render.js, the words in view.js; this wires them to the DOM.
 
+import { combine, kindTotals } from './tree.js';
+import { scanPixos, getPixosFs, listMountPoints, normalizePath } from './scan-pixos.js';
+import { scanFiles } from './scan-local.js';
+import { layout, hitTest } from './layout.js';
+import { Renderer, THEME, kindOfNode } from './render.js';
+import { KINDS, PAINT, kindOf } from './kinds.js';
+import { formatBytes, formatPercent, formatCount, plural } from './format.js';
+import { getShellOpener, canOpen, openNode } from './open-file.js';
+import { startView, crumbs, canGoIn, describe, summary, notes, displayPath } from './view.js';
+
+const LIST_LIMIT = 60;
+const TIP_OFFSET = 14;
+const TIP_MARGIN = 8;
+
+const $ = (id) => document.getElementById(id);
 const els = {
-  btnOpen: document.getElementById('btn-open'),
-  btnAddFolder: document.getElementById('btn-add-folder'),
-  btnReset: document.getElementById('btn-reset'),
-  btnOpenEmpty: document.getElementById('btn-open-empty'),
-  folderInput: document.getElementById('folder-input'),
-  breadcrumb: document.getElementById('breadcrumb'),
-  stats: document.getElementById('stats'),
-  main: document.getElementById('main'),
-  emptyState: document.getElementById('empty-state'),
-  canvas: document.getElementById('treemap-canvas'),
-  progressWrap: document.getElementById('progress-wrap'),
-  progressBar: document.getElementById('progress-bar'),
-  progressText: document.getElementById('progress-text'),
-  hoverInfo: document.getElementById('hover-info'),
-  hoverTooltip: document.getElementById('hover-tooltip'),
-  hoverTooltipName: document.querySelector('#hover-tooltip .hover-tooltip__name'),
-  hoverTooltipMeta: document.querySelector('#hover-tooltip .hover-tooltip__meta'),
-  hoverTooltipHint: document.querySelector('#hover-tooltip .hover-tooltip__hint'),
+  up: $('up'),
+  crumbs: $('crumbs'),
+  status: $('status'),
+  rescan: $('rescan'),
+  pick: $('pick'),
+  add: $('add'),
+  clear: $('clear'),
+  input: $('folder-input'),
+  map: $('map'),
+  base: $('base'),
+  overlay: $('overlay'),
+  tip: $('tip'),
+  tipName: $('tip-name'),
+  tipMeta: $('tip-meta'),
+  tipHint: $('tip-hint'),
+  empty: $('empty'),
+  emptyError: $('empty-error'),
+  measureRoot: $('measure-root'),
+  pickEmpty: $('pick-empty'),
+  busy: $('busy'),
+  busyWhere: $('busy-where'),
+  busyFiles: $('busy-files'),
+  busyBytes: $('busy-bytes'),
+  busyBar: $('busy-bar'),
+  busyFill: $('busy-fill'),
+  busyAt: $('busy-at'),
+  stop: $('stop'),
+  side: $('side'),
+  list: $('list'),
+  kinds: $('kinds'),
+  hover: $('hover'),
+  note: $('note'),
 };
 
-const renderer = new TreemapRenderer(els.canvas);
-const pixosEmbedded = isPixosEmbedded();
+const fs = getPixosFs();
+const opener = getShellOpener();
+const renderer = new Renderer(els.base, els.overlay);
 
 const state = {
   root: null,
-  currentNode: null,
-  pathStack: [],
-  layoutRects: [],
-  totalBytes: 0,
-  fileCount: 0,
-  folderCount: 0,
-  scanning: false,
-  hoverIndex: -1,
-  scanRootPath: null,
-  localFileMap: null,
-  combined: false,
-  localSelection: false,
+  view: null,
+  rects: null,
+  hover: -1,
+  hoverNode: null,
+  source: null, // 'pixos' | 'local'
+  fsPath: null,
+  took: null,
+  unreadable: 0,
+  mounts: [],
+  scan: null, // {stopped} while one runs
+  rows: new Map(), // node -> its row in the side list
 };
 
-function isLocalSelectionActive() {
-  return state.localSelection && !state.scanRootPath;
+// --- what is on screen -------------------------------------------------------------------------
+
+function showPanel(which) {
+  els.empty.hidden = which !== 'empty';
+  els.busy.hidden = which !== 'busy';
+  const map = which === 'map';
+  els.base.hidden = !map;
+  els.overlay.hidden = !map;
+  els.side.hidden = !map;
+  if (!map) hideTip();
 }
 
-function updateLocalFolderControls() {
-  const showLocalActions = isLocalSelectionActive();
-  els.btnAddFolder.hidden = !showLocalActions;
-  els.btnReset.hidden = !showLocalActions;
-  if (!pixosEmbedded) {
-    els.btnOpen.hidden = showLocalActions;
-  }
-  configureStandaloneUi();
+function updateActions() {
+  const busy = !!state.scan;
+  const local = state.source === 'local' && !!state.root;
+  els.rescan.hidden = !(state.source === 'pixos' && state.root) || busy;
+  els.pick.hidden = local || busy || !state.root;
+  els.add.hidden = !local || busy;
+  els.clear.hidden = !local || busy;
+  els.measureRoot.hidden = !fs;
+  els.pickEmpty.textContent = fs ? 'Pick a folder on this computer…' : 'Pick a folder…';
+  els.up.disabled = !state.view || !state.view.parent || busy;
 }
 
-function setScanning(active) {
-  state.scanning = active;
-  els.btnOpen.disabled = active;
-  els.btnOpenEmpty.disabled = active;
-  els.btnAddFolder.disabled = active;
-  els.btnReset.disabled = active;
-  els.progressWrap.hidden = !active;
-  if (active) {
-    els.canvas.hidden = true;
-  }
+function showEmpty(error = '') {
+  state.root = null;
+  state.view = null;
+  state.rects = null;
+  state.source = null;
+  els.emptyError.textContent = error;
+  els.emptyError.hidden = !error;
+  els.crumbs.textContent = 'Disk Treemap';
+  els.status.textContent = '';
+  els.hover.textContent = '';
+  els.note.textContent = '';
+  showPanel('empty');
+  updateActions();
 }
 
-function updateProgress(current, total) {
-  const pct = total > 0 ? (current / total) * 100 : 0;
-  els.progressBar.style.setProperty('--progress', `${pct}%`);
-  if (total > 0) {
-    els.progressText.textContent = `${current.toLocaleString('ru-RU')} / ${total.toLocaleString('ru-RU')} файлов`;
-    return;
-  }
-  els.progressText.textContent = `${current.toLocaleString('ru-RU')} файлов`;
-}
-
-function expandSingleFolderChain() {
-  while (
-    state.currentNode
-    && !state.currentNode.isFile
-    && state.currentNode.sortedChildren?.length === 1
-    && !state.currentNode.sortedChildren[0].isFile
-  ) {
-    const child = state.currentNode.sortedChildren[0];
-    state.pathStack.push(child);
-    state.currentNode = child;
-  }
-}
-
-function getCurrentChildren() {
-  if (!state.currentNode || state.currentNode.isFile) return [];
-  return state.currentNode.sortedChildren || [];
-}
-
-function refreshLayout() {
-  const bounds = els.main.getBoundingClientRect();
-  renderer.resize(bounds.width, bounds.height);
-
-  const children = getCurrentChildren();
-  state.layoutRects = layoutTreemap(children, bounds.width, bounds.height);
-  renderer.setLayout(state.layoutRects);
-  updateBreadcrumb();
-  updateStats();
-  updateCursor();
-}
-
-function updateStats() {
-  if (!state.root) {
-    els.stats.textContent = '';
-    return;
-  }
-  const currentSize = state.currentNode?.size ?? state.totalBytes;
-  els.stats.textContent = [
-    formatBytes(currentSize),
-    `${state.fileCount.toLocaleString('ru-RU')} файлов`,
-    `${state.folderCount.toLocaleString('ru-RU')} папок`,
-  ].join(' · ');
-}
-
-function updateBreadcrumb() {
-  els.breadcrumb.replaceChildren();
-
-  const items = state.pathStack.length > 0
-    ? [state.root, ...state.pathStack]
-    : state.root ? [state.root] : [];
-
-  items.forEach((node, i) => {
+function drawCrumbs() {
+  els.crumbs.replaceChildren();
+  const list = crumbs(state.view);
+  list.forEach(({ node, label }, i) => {
     if (i > 0) {
       const sep = document.createElement('span');
-      sep.className = 'breadcrumb-sep';
+      sep.className = 'Tm__crumbSep';
       sep.textContent = '/';
-      els.breadcrumb.appendChild(sep);
+      els.crumbs.append(sep);
     }
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'breadcrumb-item';
-    btn.textContent = node.name;
-    btn.title = node.path;
-
-    const isLast = i === items.length - 1;
-    if (isLast) {
-      btn.classList.add('is-current');
-      btn.disabled = true;
-    } else {
-      btn.addEventListener('click', () => navigateToIndex(i));
+    const last = i === list.length - 1;
+    const part = document.createElement(last ? 'span' : 'button');
+    part.className = 'Tm__crumb' + (last ? ' Tm__crumb--current' : '');
+    part.textContent = label;
+    if (!last) {
+      part.type = 'button';
+      part.addEventListener('click', () => go(node));
     }
-
-    els.breadcrumb.appendChild(btn);
+    els.crumbs.append(part);
   });
 }
 
-function navigateToIndex(index) {
-  if (!state.root) return;
-  if (index === 0) {
-    state.currentNode = state.root;
-    state.pathStack = [];
-  } else {
-    state.pathStack = state.pathStack.slice(0, index);
-    state.currentNode = state.pathStack[state.pathStack.length - 1];
+function swatchFor(node) {
+  return node.kids === null ? PAINT[kindOfNode(node)].swatch : THEME.folders[3];
+}
+
+function drawSide() {
+  const view = state.view;
+  state.rows = new Map();
+  const rows = view.kids.slice(0, LIST_LIMIT).map((node) => {
+    const li = document.createElement('li');
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'Tm__row';
+    const swatch = document.createElement('span');
+    swatch.className = 'Tm__swatch';
+    swatch.style.background = swatchFor(node);
+    const name = document.createElement('span');
+    name.className = 'Tm__rowName' + (node.kids !== null ? ' Tm__rowName--folder' : '');
+    name.textContent = node.name;
+    const size = document.createElement('span');
+    size.className = 'Tm__rowSize';
+    size.textContent = formatBytes(node.size);
+    const bar = document.createElement('span');
+    bar.className = 'Tm__rowBar';
+    const fill = document.createElement('span');
+    fill.style.width = `${view.size ? (node.size / view.size) * 100 : 0}%`;
+    bar.append(fill);
+    row.append(swatch, name, size, bar);
+    row.title = describe(node, view, canOpen(node, opener)).meta;
+    row.disabled = !canGoIn(node) && !canOpen(node, opener);
+    row.addEventListener('click', () => activate(node));
+    row.addEventListener('pointerenter', () => hoverNode(node));
+    row.addEventListener('pointerleave', () => hoverNode(null));
+    row.addEventListener('focus', () => hoverNode(node));
+    row.addEventListener('blur', () => hoverNode(null));
+    state.rows.set(node, row);
+    li.append(row);
+    return li;
+  });
+  if (view.kids.length > LIST_LIMIT) {
+    const more = document.createElement('li');
+    more.className = 'Tm__more';
+    more.textContent = `and ${plural(view.kids.length - LIST_LIMIT, 'more', 'more')}`;
+    rows.push(more);
   }
-  state.hoverIndex = -1;
-  els.hoverInfo.textContent = '—';
-  hideHoverTooltip();
-  refreshLayout();
+  els.list.replaceChildren(...rows);
+
+  const totals = kindTotals(view, kindOf);
+  const kinds = KINDS.filter((kind) => totals[kind.id] > 0).sort((a, b) => totals[b.id] - totals[a.id]);
+  els.kinds.replaceChildren(...kinds.map((kind) => {
+    const li = document.createElement('li');
+    li.className = 'Tm__row';
+    const swatch = document.createElement('span');
+    swatch.className = 'Tm__swatch';
+    swatch.style.background = PAINT[kind.id].swatch;
+    const name = document.createElement('span');
+    name.className = 'Tm__rowName';
+    name.textContent = kind.label;
+    const size = document.createElement('span');
+    size.className = 'Tm__rowSize';
+    size.textContent = `${formatBytes(totals[kind.id])} · ${formatPercent(totals[kind.id], view.size)}`;
+    const bar = document.createElement('span');
+    bar.className = 'Tm__rowBar';
+    const fill = document.createElement('span');
+    fill.style.width = `${view.size ? (totals[kind.id] / view.size) * 100 : 0}%`;
+    fill.style.background = PAINT[kind.id].swatch;
+    bar.append(fill);
+    li.append(swatch, name, size, bar);
+    return li;
+  }));
 }
 
-function drillDown(node) {
-  if (node.isFile || node.children.size === 0) return;
-  state.pathStack.push(node);
-  state.currentNode = node;
-  state.hoverIndex = -1;
-  els.hoverInfo.textContent = '—';
-  hideHoverTooltip();
-  refreshLayout();
+function relayout() {
+  if (!state.view) return;
+  const box = els.map.getBoundingClientRect();
+  const width = Math.floor(box.width);
+  const height = Math.floor(box.height);
+  renderer.resize(width, height);
+  state.rects = layout(state.view, width, height);
+  renderer.draw(state.rects);
+  setHover(-1);
 }
 
-function navigateUp() {
-  if (state.pathStack.length === 0) return;
-  state.pathStack.pop();
-  state.currentNode = state.pathStack.length > 0
-    ? state.pathStack[state.pathStack.length - 1]
-    : state.root;
-  state.hoverIndex = -1;
-  els.hoverInfo.textContent = '—';
-  hideHoverTooltip();
-  refreshLayout();
-}
-
-function hasLocalFileSource() {
-  return state.localFileMap instanceof Map && state.localFileMap.size > 0;
-}
-
-function canOpenNode(node) {
-  return canOpenFile(node, {
-    pixosEmbedded: pixosEmbedded && !hasLocalFileSource(),
-    hasLocalSource: hasLocalFileSource(),
-    localFile: state.localFileMap?.get(node.path),
+let relayoutQueued = false;
+function queueRelayout() {
+  if (relayoutQueued) return;
+  relayoutQueued = true;
+  requestAnimationFrame(() => {
+    relayoutQueued = false;
+    relayout();
   });
 }
 
-const TOOLTIP_OFFSET = 14;
-const TOOLTIP_MARGIN = 8;
-
-function buildHoverDetails(node) {
-  const total = state.currentNode?.size ?? state.totalBytes;
-  const type = node.isFile ? 'файл' : 'папка';
-  let hint = '';
-  if (node.isFile && canOpenNode(node)) {
-    hint = 'Щелчок — открыть';
-  } else if (!node.isFile && node.children.size > 0) {
-    hint = 'Щелчок — войти';
-  }
-  const meta = `${formatBytes(node.size)} · ${formatPercent(node.size, total)} · ${type}`;
-  const line = hint ? `${node.name} · ${meta} · ${hint.toLowerCase()}` : `${node.name} · ${meta}`;
-  return { name: node.name, meta, hint, line };
+function go(node) {
+  if (!node || node.kids === null || node.rest) return;
+  state.view = node;
+  els.overlay.setAttribute('aria-label', `Treemap of ${displayPath(node)}: ${summary(node, state.root, null)}`);
+  drawCrumbs();
+  els.status.textContent = summary(state.view, state.root, state.took);
+  drawSide();
+  updateActions();
+  relayout();
 }
 
-function hideHoverTooltip() {
-  els.hoverTooltip.hidden = true;
+function up() {
+  if (state.view?.parent && !state.scan) go(state.view.parent);
 }
 
-function positionHoverTooltip(clientX, clientY) {
-  const tip = els.hoverTooltip;
-  tip.hidden = false;
-
-  const rect = tip.getBoundingClientRect();
-  let x = clientX + TOOLTIP_OFFSET;
-  let y = clientY + TOOLTIP_OFFSET;
-
-  if (x + rect.width > window.innerWidth - TOOLTIP_MARGIN) {
-    x = clientX - rect.width - TOOLTIP_OFFSET;
-  }
-  if (y + rect.height > window.innerHeight - TOOLTIP_MARGIN) {
-    y = clientY - rect.height - TOOLTIP_OFFSET;
-  }
-
-  tip.style.left = `${Math.max(TOOLTIP_MARGIN, x)}px`;
-  tip.style.top = `${Math.max(TOOLTIP_MARGIN, y)}px`;
+function show(root, extra = {}) {
+  state.root = root;
+  state.took = extra.took ?? null;
+  state.unreadable = extra.unreadable ?? 0;
+  state.mounts = extra.mounts ?? [];
+  els.note.textContent = notes(state);
+  showPanel('map');
+  go(startView(root));
 }
 
-function updateHoverTooltip(node, clientX, clientY) {
-  if (!node || clientX == null || clientY == null) {
-    hideHoverTooltip();
+// --- the pointer -------------------------------------------------------------------------------
+
+function hideTip() {
+  els.tip.hidden = true;
+}
+
+function placeTip(clientX, clientY) {
+  const tip = els.tip;
+  const width = tip.offsetWidth;
+  const height = tip.offsetHeight;
+  let x = clientX + TIP_OFFSET;
+  let y = clientY + TIP_OFFSET;
+  if (x + width > innerWidth - TIP_MARGIN) x = clientX - width - TIP_OFFSET;
+  if (y + height > innerHeight - TIP_MARGIN) y = clientY - height - TIP_OFFSET;
+  tip.style.transform = `translate(${Math.max(TIP_MARGIN, x)}px, ${Math.max(TIP_MARGIN, y)}px)`;
+}
+
+function setHover(index) {
+  const node = index >= 0 ? state.rects.node[index] : null;
+  state.hover = index;
+  renderer.highlight(index);
+  if (state.hoverNode !== node) {
+    state.rows.get(state.hoverNode)?.classList.remove('is-hover');
+    state.rows.get(node)?.classList.add('is-hover');
+    state.hoverNode = node;
+  }
+  if (!node) {
+    els.hover.textContent = '';
+    els.overlay.classList.remove('is-actionable');
+    hideTip();
+    return null;
+  }
+  const openable = canOpen(node, opener);
+  const said = describe(node, state.view, openable);
+  els.hover.textContent = said.line;
+  els.tipName.textContent = said.name;
+  els.tipMeta.textContent = said.meta;
+  els.tipHint.textContent = said.hint;
+  els.overlay.classList.toggle('is-actionable', openable || canGoIn(node) || (node.rest && node.parent !== state.view));
+  return node;
+}
+
+// A row in the side list pointed at: the same outline on the map, if the node got a rect.
+function hoverNode(node) {
+  if (!state.rects) return;
+  const top = state.rects.top;
+  let index = -1;
+  for (let i = top.first; node && i < top.first + top.count; i++) {
+    if (state.rects.node[i] === node) index = i;
+  }
+  setHover(index);
+  hideTip();
+  if (!node) return;
+  // The status line says it either way, rect or not.
+  els.hover.textContent = describe(node, state.view, canOpen(node, opener)).line;
+}
+
+function activate(node) {
+  if (!node) return;
+  if (node.rest) {
+    if (node.parent !== state.view) go(node.parent);
     return;
   }
-
-  const details = buildHoverDetails(node);
-  els.hoverTooltipName.textContent = details.name;
-  els.hoverTooltipName.title = details.name;
-  els.hoverTooltipMeta.textContent = details.meta;
-  els.hoverTooltipHint.textContent = details.hint;
-  positionHoverTooltip(clientX, clientY);
-}
-
-function updateHoverInfo(index, clientX, clientY) {
-  const rect = renderer.getRect(index);
-  if (!rect) {
-    els.hoverInfo.textContent = '—';
-    hideHoverTooltip();
+  if (canGoIn(node)) {
+    go(node);
     return;
   }
-
-  const details = buildHoverDetails(rect.data);
-  els.hoverInfo.textContent = details.line;
-  updateHoverTooltip(rect.data, clientX, clientY);
+  const problem = openNode(node, opener);
+  if (problem) els.hover.textContent = `${node.name}: ${problem}`;
 }
 
-function updateCursor() {
-  const rect = renderer.getRect(state.hoverIndex);
-  const isFolder = rect && !rect.data.isFile && rect.data.children.size > 0;
-  const isOpenableFile = rect
-    && rect.data.isFile
-    && canOpenNode(rect.data);
-  els.canvas.classList.toggle('is-folder-hover', isFolder);
-  els.canvas.classList.toggle('is-file-hover', isOpenableFile);
-  if (state.hoverIndex < 0) {
-    els.canvas.style.cursor = '';
-  } else {
-    els.canvas.style.cursor = (isFolder || isOpenableFile) ? 'pointer' : 'default';
+function pointAt(event) {
+  const box = els.overlay.getBoundingClientRect();
+  return hitTest(state.rects, event.clientX - box.left, event.clientY - box.top);
+}
+
+els.overlay.addEventListener('pointermove', (event) => {
+  if (!state.rects) return;
+  const index = pointAt(event);
+  if (index !== state.hover) setHover(index);
+  if (index >= 0) {
+    els.tip.hidden = false;
+    placeTip(event.clientX, event.clientY);
+  }
+});
+
+els.overlay.addEventListener('pointerleave', () => setHover(-1));
+
+els.overlay.addEventListener('click', (event) => {
+  if (!state.rects) return;
+  const index = pointAt(event);
+  if (index >= 0) activate(state.rects.node[index]);
+});
+
+// --- measuring ---------------------------------------------------------------------------------
+
+function startScan(where) {
+  if (state.scan) state.scan.stopped = true;
+  const scan = { stopped: false };
+  state.scan = scan;
+  els.busyWhere.textContent = where;
+  els.busyFiles.textContent = '0 files';
+  els.busyBytes.textContent = '0 B';
+  els.busyAt.textContent = '';
+  els.busyBar.hidden = true;
+  showPanel('busy');
+  updateActions();
+  els.stop.focus();
+  return scan;
+}
+
+function endScan(scan) {
+  if (state.scan === scan) state.scan = null;
+  updateActions();
+}
+
+function progress({ files, total, bytes, at }) {
+  els.busyFiles.textContent = total ? `${formatCount(files)} of ${plural(total, 'file', 'files')}` : plural(files, 'file', 'files');
+  els.busyBytes.textContent = formatBytes(bytes);
+  if (at) els.busyAt.textContent = at;
+  if (total) {
+    els.busyBar.hidden = false;
+    els.busyFill.style.width = `${(files / total) * 100}%`;
   }
 }
 
-function openNodeFile(node) {
-  const result = openTreemapFile(node, {
-    pixosEmbedded,
-    scanRootPath: state.scanRootPath,
-    localFileMap: state.localFileMap,
-  });
-  if (!result.ok && result.message) {
-    els.hoverInfo.textContent = result.message;
+async function measurePixos(path) {
+  if (!fs) {
+    showEmpty('PixOS’s filesystem is not reachable from here: open Disk Treemap inside PixOS.');
+    return;
   }
-}
-
-function applyScanResult(result) {
-  if (!result?.root) {
-    return false;
-  }
-
-  state.root = result.root;
-  state.currentNode = result.root;
-  state.pathStack = [];
-  expandSingleFolderChain();
-  state.totalBytes = result.root.size;
-  state.fileCount = result.fileCount;
-  state.folderCount = result.folderCount;
-  state.scanRootPath = result.scanRootPath ?? null;
-  state.localFileMap = result.localFileMap ?? null;
-  state.combined = result.combined ?? false;
-  state.localSelection = result.localFileMap instanceof Map;
-
-  els.emptyState.hidden = true;
-  els.canvas.hidden = false;
-  updateLocalFolderControls();
-  refreshLayout();
-  return true;
-}
-
-function resetLocalSelection() {
-  state.root = null;
-  state.currentNode = null;
-  state.pathStack = [];
-  state.layoutRects = [];
-  state.totalBytes = 0;
-  state.fileCount = 0;
-  state.folderCount = 0;
-  state.hoverIndex = -1;
-  state.scanRootPath = null;
-  state.localFileMap = null;
-  state.combined = false;
-  state.localSelection = false;
-
-  els.emptyState.hidden = false;
-  els.canvas.hidden = true;
-  renderer.clear();
-  els.canvas.classList.remove('is-folder-hover');
-  els.canvas.classList.remove('is-file-hover');
-  els.hoverInfo.textContent = '—';
-  hideHoverTooltip();
-  els.stats.textContent = '';
-  els.breadcrumb.replaceChildren();
-  updateLocalFolderControls();
-}
-
-async function runScan(scanFn) {
-  setScanning(true);
-  updateProgress(0, 0);
+  const where = normalizePath(path);
+  const scan = startScan(where);
+  const began = performance.now();
   try {
-    const result = await scanFn(({ current, total }) => {
-      updateProgress(current, total);
+    const result = await scanPixos({
+      fs,
+      path: where,
+      mounts: listMountPoints(),
+      onProgress: progress,
+      stopped: () => scan.stopped,
     });
-    applyScanResult(result);
-  } finally {
-    setScanning(false);
+    if (scan.stopped) return;
+    endScan(scan);
+    state.source = 'pixos';
+    state.fsPath = where;
+    show(result.root, { took: performance.now() - began, unreadable: result.unreadable, mounts: result.mounts });
+  } catch (error) {
+    if (scan.stopped) return;
+    endScan(scan);
+    showEmpty(`${where} could not be measured: ${error?.message || error}`);
   }
 }
 
-async function handleFolderSelect(event) {
-  const files = event.target.files;
-  if (!files || files.length === 0) return;
+async function measureLocal(files, adding) {
+  const scan = startScan(adding ? 'Adding a folder' : 'Reading the folder');
+  const began = performance.now();
+  const root = await scanFiles(files, { onProgress: progress, stopped: () => scan.stopped });
+  if (scan.stopped) return;
+  endScan(scan);
+  if (!root) {
+    if (state.root) restore();
+    else showEmpty();
+    return;
+  }
+  const combined = adding && state.source === 'local' && state.root ? combine(state.root, root) : root;
+  state.source = 'local';
+  state.fsPath = null;
+  show(combined, { took: performance.now() - began });
+}
 
-  setScanning(true);
-  updateProgress(0, files.length);
+// Stopping a scan goes back to what was there before it, if anything was.
+function restore() {
+  showPanel('map');
+  updateActions();
+  queueRelayout();
+}
 
-  try {
-    const incoming = await scanFileList(files, ({ current, total }) => {
-      updateProgress(current, total);
-    });
-    if (!incoming?.root) {
-      return;
+function stopScan() {
+  const scan = state.scan;
+  if (!scan) return;
+  scan.stopped = true;
+  endScan(scan);
+  if (state.root) restore();
+  else showEmpty();
+}
+
+let adding = false;
+function pickFolder(add) {
+  if (state.scan) return;
+  adding = add;
+  els.input.click();
+}
+
+els.input.addEventListener('change', () => {
+  const files = els.input.files;
+  if (files && files.length) {
+    void measureLocal(Array.from(files), adding);
+  }
+  els.input.value = '';
+});
+
+els.pick.addEventListener('click', () => pickFolder(false));
+els.pickEmpty.addEventListener('click', () => pickFolder(false));
+els.add.addEventListener('click', () => pickFolder(true));
+els.clear.addEventListener('click', () => showEmpty());
+els.rescan.addEventListener('click', () => {
+  const keep = state.view;
+  const wanted = keep ? crumbs(keep).slice(1).map((c) => c.node.name) : [];
+  void measurePixos(state.fsPath).then(() => {
+    // Back to the folder that was being looked at, if it is still there.
+    let at = state.root;
+    for (const name of wanted) {
+      const next = at?.kids?.find((kid) => kid.name === name && kid.kids !== null);
+      if (!next) break;
+      at = next;
     }
+    if (at && at !== state.view) go(at);
+  });
+});
+els.measureRoot.addEventListener('click', () => void measurePixos('/'));
+els.stop.addEventListener('click', stopScan);
+els.up.addEventListener('click', up);
 
-    const merged = state.localSelection
-      ? mergeScanResults({
-        root: state.root,
-        fileCount: state.fileCount,
-        folderCount: state.folderCount,
-        localFileMap: state.localFileMap,
-        combined: state.combined,
-      }, incoming)
-      : incoming;
-
-    applyScanResult(merged);
-  } finally {
-    setScanning(false);
-    els.folderInput.value = '';
-  }
-}
-
-function openFolderPicker() {
-  if (!state.scanning) els.folderInput.click();
-}
-
-async function openPixosPath(fsPath) {
-  const normalized = String(fsPath || '').trim();
-  if (!normalized || state.scanning) {
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.scan) {
+    event.preventDefault();
+    stopScan();
     return;
   }
-  await runScan((onProgress) => scanPixosPath(normalized, onProgress));
-}
-
-function configureStandaloneUi() {
-  if (pixosEmbedded) {
-    els.btnOpen.textContent = 'Локальная папка';
-    els.btnAddFolder.textContent = 'Добавить локальную папку';
-    els.btnOpenEmpty.textContent = 'Локальная папка';
-    return;
-  }
-  els.btnOpen.textContent = 'Выбрать папку';
-  els.btnAddFolder.textContent = 'Добавить папку';
-  els.btnOpenEmpty.textContent = 'Выбрать папку';
-}
-
-els.btnOpen.addEventListener('click', openFolderPicker);
-els.btnAddFolder.addEventListener('click', openFolderPicker);
-els.btnReset.addEventListener('click', () => {
-  if (!state.scanning) resetLocalSelection();
-});
-els.btnOpenEmpty.addEventListener('click', openFolderPicker);
-els.folderInput.addEventListener('change', handleFolderSelect);
-
-els.canvas.addEventListener('mousemove', (e) => {
-  const index = renderer.hitTest(e.clientX, e.clientY);
-  state.hoverIndex = index;
-  renderer.setHoverIndex(index);
-  updateHoverInfo(index, e.clientX, e.clientY);
-  updateCursor();
-});
-
-els.canvas.addEventListener('mouseleave', () => {
-  state.hoverIndex = -1;
-  renderer.setHoverIndex(-1);
-  els.hoverInfo.textContent = '—';
-  hideHoverTooltip();
-  els.canvas.style.cursor = '';
-  els.canvas.classList.remove('is-folder-hover');
-  els.canvas.classList.remove('is-file-hover');
-});
-
-els.canvas.addEventListener('click', (e) => {
-  const index = renderer.hitTest(e.clientX, e.clientY);
-  const rect = renderer.getRect(index);
-  if (!rect) return;
-
-  if (rect.data.isFile) {
-    if (canOpenNode(rect.data)) {
-      openNodeFile(rect.data);
-    }
-    return;
-  }
-
-  if (rect.data.children.size > 0) {
-    drillDown(rect.data);
+  const typing = event.target instanceof HTMLInputElement;
+  if (!typing && state.view && (event.key === 'Backspace' || (event.altKey && event.key === 'ArrowUp'))) {
+    event.preventDefault();
+    up();
   }
 });
 
-const resizeObserver = new ResizeObserver(() => {
-  if (state.root && !state.scanning) refreshLayout();
-});
-resizeObserver.observe(els.main);
+new ResizeObserver(() => {
+  if (state.view && !state.scan) queueRelayout();
+}).observe(els.map);
 
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Backspace' && state.root && !state.scanning) {
-    e.preventDefault();
-    navigateUp();
-  }
-});
+// The canvas draws its text in DM Mono, and a canvas does not ask for a face the way an element
+// does: asked for here, and drawn again once it is in. `document.fonts.ready` would not do — it can
+// settle before anything has asked for the face at all.
+Promise.all(['400 10px "DM Mono"', '500 11px "DM Mono"'].map((face) => document.fonts?.load(face))).then(() => {
+  if (state.view && !state.scan) relayout();
+}, () => {});
 
-window.openPath = function openPath(fsPath) {
-  void openPixosPath(fsPath);
-};
+// The shell, or anything else in PixOS, can point an open window at another folder.
+window.openPath = (path) => void measurePixos(path);
 
-configureStandaloneUi();
-updateLocalFolderControls();
-
-const pathFromQuery = parsePathFromQuery();
-if (pathFromQuery) {
-  void openPixosPath(pathFromQuery);
-}
+const query = new URLSearchParams(location.search);
+const asked = (query.get('path') || query.get('dir') || '').trim();
+showEmpty();
+if (asked) void measurePixos(asked);

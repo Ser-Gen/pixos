@@ -54,8 +54,9 @@ Find the section for what you are about to change here, then read that section, 
   truncated batch is allowed to answer, `affects` versus `touches`, and why `watchFiles` takes the
   app's own window.
 - *Storage, and what the browser will not keep* — eviction, the 128 MiB ceiling on a file, what a
-  refused write does and does not tell you, one spelling of a size, and which mounts come back after a
-  reload and which wait for a click.
+  refused write does and does not tell you, one spelling of a size, which mounts come back after a
+  reload and which wait for a click, and why a `stat` costs the size of its folder (Disk Treemap reads
+  the store directly).
 - *Manifests, boot, and what a fresh system is made of* — generated manifests, the two the generator
   skips in silence, the four lists a file added to Explorer goes in (fonts included), `preinstall.json`,
   and what a boot says on screen when it cannot fetch what it is made of.
@@ -237,8 +238,9 @@ import it — they are installed into BrowserFS — so it is exposed as
 `window.describeFetchFailure` / `window.describeError`, and callers degrade when absent.
 
 **`needsNetwork: true` in `pixos.app.json`** marks an app that loads part of itself from a
-CDN — `ace` (cdnjs), `treemap` (d3 from jsdelivr) and `emulatorjs`. `monaco` and `tinymce`
-were on that list until phase 7 vendored them into `apps/*/vendor` (see below).
+CDN — `ace` (cdnjs) and `emulatorjs`. `monaco` and `tinymce` were on that list until phase 7
+vendored them into `apps/*/vendor` (see below), and `treemap` until its 2.0 drew its own layout
+instead of d3's.
 Hand-declared in the stub, carried by the generator, and — this is the part that
 bites — it must be listed explicitly in **all four** record builders in
 `js/app-registry.js`: `normalizeManifest`, `manifestToAppRecord`, `scanLocalAppsInFs`
@@ -1099,6 +1101,26 @@ connecting — writes a table of one over the table about to be restored. And, a
 session, **only the tab that owns the settings writes** it; a follower restores and adds nothing.
 The handles, the document and the pruning of handles nobody uses are three separate steps, so a
 handle store that will not open costs the local folders their handle and not the zips their place.
+
+**A `stat` costs the size of the folder it is in.** BrowserFS's IndexedDB backend finds a file by
+its path, and past a cache of 100 paths that means reading the parent folder's whole listing and
+parsing it again, once per file. So a walk through `fs` costs the square of each folder's size:
+Disk Treemap took 4 s over one folder of 3 000 files and 0.5 s over 5 000 files in 250 folders. Its
+2.1 (`apps/treemap/js/scan-pixos.js`) reads a folder in that backend **directly**: one read-only
+transaction, the listing read once, every entry's inode asked for by id. A folder's inode is handed
+down to its own walk, so no path is looked up twice. That is 43 ms for the 3 000 and 82 ms for the
+5 000, and `/` on a fresh system went from 6.3 s (1.x) to 0.15 s, all measured by
+`tests/browser/treemap.mjs`. It is a reach past the `fs` API into private methods (`_getFs`,
+`findINode`, `getDirListing`, `getINode`, `store`), as `mount-manager.js` already makes with
+`_getFs`, so anything that is not that backend, or a BrowserFS where those are missing, is read
+through `readdir` and `stat` as before. Two rules keep it working. **Every request is made inside the
+callback before it**: an IndexedDB transaction closes once nothing is pending, and an `await` in
+between would close it; BrowserFS reports that as an error on each entry, so the mistake reads as
+files counted unreadable, not as a hang. And **a listing read from the store does not name a mount
+point** the way `MountableFileSystem.readdir` does, so the mounts below the folder measured are added
+back by name, to be left out and named like the rest. Measuring `/`, which the Storage widget opens,
+leaves out every mount below it: a folder on the disk or a cloud storage is neither in this browser's
+storage nor cheap to walk. Measuring a mount point itself still measures the mount.
 
 ## Manifests, boot, and what a fresh system is made of
 

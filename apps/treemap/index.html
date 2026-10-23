@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,43 +8,71 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header class="toolbar">
-    <h1 class="toolbar-title">Disk Treemap</h1>
-    <div class="toolbar-actions">
-      <button type="button" id="btn-open" class="btn">Выбрать папку</button>
-      <button type="button" id="btn-add-folder" class="btn" hidden>Добавить папку</button>
-      <button type="button" id="btn-reset" class="btn btn-ghost" hidden>Сбросить</button>
-    </div>
-    <input type="file" id="folder-input" webkitdirectory hidden>
-    <nav id="breadcrumb" class="breadcrumb" aria-label="Навигация"></nav>
-    <div id="stats" class="stats"></div>
-  </header>
-
-  <main id="main" class="main">
-    <div id="empty-state" class="empty-state">
-      <p class="empty-state-title">Анализатор занятого места</p>
-      <p class="empty-state-hint">Выберите одну или несколько папок для построения treemap. Каждая следующая папка добавляется к анализу — так можно не сканировать огромный каталог целиком. Пустые каталоги не отображаются.</p>
-      <div class="empty-state-actions">
-        <button type="button" id="btn-open-empty" class="btn btn-lg">Выбрать папку</button>
+  <div class="Tm">
+    <header class="Tm__head">
+      <div class="Tm__titleRow">
+        <button type="button" class="Tm__up" id="up" title="Up one folder (Backspace)" aria-label="Up one folder" disabled>&uarr;</button>
+        <h1 class="Tm__crumbs" id="crumbs">Disk Treemap</h1>
       </div>
-    </div>
-    <canvas id="treemap-canvas" hidden></canvas>
-    <div id="hover-tooltip" class="hover-tooltip" hidden role="tooltip">
-      <div class="hover-tooltip__name"></div>
-      <div class="hover-tooltip__meta"></div>
-      <div class="hover-tooltip__hint"></div>
-    </div>
-  </main>
+      <div class="Tm__sub">
+        <span class="Tm__status" id="status"></span>
+        <div class="Tm__acts">
+          <button type="button" class="Tm__act" id="rescan" hidden>Measure again</button>
+          <button type="button" class="Tm__act" id="pick" hidden>Local folder&hellip;</button>
+          <button type="button" class="Tm__act" id="add" hidden>Add a folder&hellip;</button>
+          <button type="button" class="Tm__act" id="clear" hidden>Clear</button>
+        </div>
+      </div>
+      <input type="file" id="folder-input" webkitdirectory multiple hidden>
+    </header>
 
-  <footer class="footer">
-    <div id="progress-wrap" class="progress-wrap" hidden>
-      <div id="progress-bar" class="progress-bar"></div>
-      <span id="progress-text" class="progress-text"></span>
-    </div>
-    <div id="hover-info" class="hover-info">—</div>
-  </footer>
+    <div class="Tm__body">
+      <main class="Tm__map" id="map">
+        <canvas class="Tm__canvas" id="base" hidden></canvas>
+        <canvas class="Tm__canvas Tm__canvas--over" id="overlay" role="img" aria-label="Treemap" hidden></canvas>
+        <div class="Tm__tip" id="tip" role="tooltip" hidden>
+          <div class="Tm__tipName" id="tip-name"></div>
+          <div class="Tm__tipMeta" id="tip-meta"></div>
+          <div class="Tm__tipHint" id="tip-hint"></div>
+        </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+        <section class="Tm__panel" id="empty">
+          <p class="Tm__eyebrow">Disk Treemap</p>
+          <h2 class="Tm__panelTitle">What is taking up the space</h2>
+          <p class="Tm__panelText" id="empty-text">Every file is a block sized by its bytes, inside the folders that hold it. Click a folder to go in, a file to open it.</p>
+          <p class="Tm__refusal" id="empty-error" hidden></p>
+          <div class="Tm__panelActs">
+            <button type="button" class="Tm__btn Tm__btn--primary" id="measure-root" hidden>Measure PixOS storage</button>
+            <button type="button" class="Tm__btn" id="pick-empty">Pick a local folder&hellip;</button>
+          </div>
+        </section>
+
+        <section class="Tm__panel" id="busy" hidden aria-live="polite">
+          <p class="Tm__eyebrow">Measuring</p>
+          <h2 class="Tm__panelTitle Tm__busyWhere" id="busy-where"></h2>
+          <p class="Tm__counters"><span id="busy-files">0 files</span><span class="Tm__dot">&middot;</span><span id="busy-bytes">0 B</span><span class="Tm__caret" aria-hidden="true"></span></p>
+          <div class="Tm__bar" id="busy-bar" hidden><div class="Tm__barFill" id="busy-fill"></div></div>
+          <p class="Tm__at" id="busy-at"></p>
+          <div class="Tm__panelActs">
+            <button type="button" class="Tm__btn" id="stop">Stop</button>
+          </div>
+        </section>
+      </main>
+
+      <aside class="Tm__side" id="side" hidden>
+        <h2 class="Tm__sideHead">Largest here</h2>
+        <ol class="Tm__list" id="list"></ol>
+        <h2 class="Tm__sideHead">By kind</h2>
+        <ul class="Tm__kinds" id="kinds"></ul>
+      </aside>
+    </div>
+
+    <footer class="Tm__foot">
+      <span class="Tm__hover" id="hover"></span>
+      <span class="Tm__note" id="note"></span>
+    </footer>
+  </div>
+
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

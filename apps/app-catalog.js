@@ -2347,76 +2347,71 @@
 		},
 		"treemap": {
 			"name": "Disk Treemap",
-			"version": "1.0.2",
+			"version": "2.1.1",
 			"entryPath": "/apps/treemap/index.html",
 			"files": [
 				{
 					"path": "/apps/treemap/css/style.css",
-					"hash": "sha256:cd07dbe208806ee16ededd3575e9c2600a35bcbfc5ec6a7b705224a517d90a75"
+					"hash": "sha256:fddf4896ef5c5f165584798988acb282a53781b1edb82ec61d2079b36583c34e"
 				},
 				{
 					"path": "/apps/treemap/favicon.svg",
-					"hash": "sha256:f291018eb5bd9afa878d189981ad58e4f2f96ce86e963e3c2ce88ebdac661487"
+					"hash": "sha256:67645e08eed51e274c4fbb25e4dffdb9bb71d34d047e1ce6b064855f0bf01beb"
 				},
 				{
 					"path": "/apps/treemap/index.html",
-					"hash": "sha256:983b528e72abc6b4cf6e5bb29366ea5e7e09b2f12004611719f460d9a867b4a6"
+					"hash": "sha256:da21cfa0b6f51f08438cb23425c32a16f023a144413542d97ee6b7a6583427aa"
 				},
 				{
 					"path": "/apps/treemap/js/app.js",
-					"hash": "sha256:dbded4b3a7506b2c156304ad4055ad3e6bff85f87ce1228343be0ac6745a5f21"
-				},
-				{
-					"path": "/apps/treemap/js/colors.js",
-					"hash": "sha256:bbc6878c4d036631df8bc3497a6ec6899f08a952e0e599d269aface957547265"
+					"hash": "sha256:c19a8290d93ce8242bc76b1e61173da35fa0af764b98b0bf4619e4a6cc63afc9"
 				},
 				{
 					"path": "/apps/treemap/js/format.js",
-					"hash": "sha256:2f9bd95af4fad8a0618b06f4739d11ddeab7e5208de2d184803a901153bfe750"
+					"hash": "sha256:cc03197389a21c1e106eaf36903c6e3b983b6ed9eaa135f606a6a0bee1fa3e8b"
+				},
+				{
+					"path": "/apps/treemap/js/kinds.js",
+					"hash": "sha256:88b4a7f7d60b02f5e3bdb360c78cb10eaad41a287ea05c91228970b438185ef1"
+				},
+				{
+					"path": "/apps/treemap/js/layout.js",
+					"hash": "sha256:cd71670b7ec08b43f6837e13a03f6d1870fda8dedae71940779378a890a8b87a"
 				},
 				{
 					"path": "/apps/treemap/js/open-file.js",
-					"hash": "sha256:fc3b1c63a896c8614246cddbfe220ee16f7acc82ca5a98e9b9cb8d10c0520264"
+					"hash": "sha256:5f5452698a8d52476088c961bafea3d9e9ab25b59aa7f7a55e64377099e25706"
 				},
 				{
 					"path": "/apps/treemap/js/render.js",
-					"hash": "sha256:7c08d43730a3289997482bef5e9f5b63cd562fc73a7b4238475a2c22406c4944"
+					"hash": "sha256:5276eb609dbb7f0d5c1433564a5a19c9199f60ba60d26a593a5bf02cfd43fe21"
+				},
+				{
+					"path": "/apps/treemap/js/scan-local.js",
+					"hash": "sha256:1da849ab3018c789b7c32a988662a4560417df92c189366346ba652b33b1b076"
 				},
 				{
 					"path": "/apps/treemap/js/scan-pixos.js",
-					"hash": "sha256:f286645be3644e242d7ef3602775025f932f595b694947aa0c4f824abc98b3f5"
+					"hash": "sha256:e40b0ae085f6077daa9d1cfaea408d95481b5b0f779710d458c5f85e77e0628e"
 				},
 				{
-					"path": "/apps/treemap/js/scan.js",
-					"hash": "sha256:fc3baa6651d2427e99a3248768ed20ea2471c2b0d02abe9e170d4e150e2253b2"
+					"path": "/apps/treemap/js/tree.js",
+					"hash": "sha256:2f9f94a8d85dc5e1635c91b62bc72c4def3a9a90d7da4fc657116d53232b7abe"
 				},
 				{
-					"path": "/apps/treemap/js/treemap.js",
-					"hash": "sha256:6e4ff9bf7cca99c582f3559713a01d78ca5185dc9171e3c507e62c94062fbff9"
+					"path": "/apps/treemap/js/view.js",
+					"hash": "sha256:afd5f4a775da213c82a509cda50c54774d78d3c6c78a736040352bfd9aa99f2e"
+				},
+				{
+					"path": "/apps/treemap/js/yield.js",
+					"hash": "sha256:579b22748014abeab31104bc1b5085956e152511de2557f9ff9ae591d8a9b09b"
 				},
 				{
 					"path": "/apps/treemap/pixos.app.json",
-					"hash": "sha256:78c8f3fd15471d4424662a1c445392fcc81e873f51edf067d5b9e6b86dbdd391"
-				},
-				{
-					"path": "/apps/treemap/test-data/readme.txt",
-					"hash": "sha256:a948904f2f0f479b8f8197694b30184b0d2ed1c1cd2a1ec0fb85d299a192a447"
-				},
-				{
-					"path": "/apps/treemap/test-data/subdir/big.bin",
-					"hash": "sha256:16fa66a7dc98d93f2a4c5d20baf5177f59c4c37fc62face65690c11c15fe6ff9"
-				},
-				{
-					"path": "/apps/treemap/test-data/subdir/file.js",
-					"hash": "sha256:434728a410a78f56fc1b5899c3593436e61ab0c731e9072d95e96db290205e53"
-				},
-				{
-					"path": "/apps/treemap/test-data/subdir/nested/deep.json",
-					"hash": "sha256:2396099c6c084fa4b9beac9f0d52cf3be9cf8d47040ef127883d532b5790cd74"
+					"hash": "sha256:fd370103788d0daa5737898fd227e3c0e817d63e327ac2f32baad72dcb51201c"
 				}
 			],
-			"icon": "/apps/treemap/favicon.svg",
-			"needsNetwork": true
+			"icon": "/apps/treemap/favicon.svg"
 		},
 		"vips": {
 			"name": "vips",
